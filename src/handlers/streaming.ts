@@ -9,6 +9,12 @@ import type { Message } from "grammy/types";
 import { InlineKeyboard } from "grammy";
 import type { StatusCallback } from "../types";
 import { convertMarkdownToHtml } from "../formatting";
+import {
+  TELEGRAM_MESSAGE_LIMIT,
+  TELEGRAM_SAFE_LIMIT,
+  STREAMING_THROTTLE_MS,
+  BUTTON_LABEL_MAX_LENGTH,
+} from "../config";
 
 /**
  * Create inline keyboard for ask_user options.
@@ -18,7 +24,10 @@ export function createAskUserKeyboard(requestId: string, options: string[]): Inl
   for (let idx = 0; idx < options.length; idx++) {
     const option = options[idx]!;
     // Truncate long options for button display
-    const display = option.length > 30 ? option.slice(0, 30) + "..." : option;
+    const display =
+      option.length > BUTTON_LABEL_MAX_LENGTH
+        ? option.slice(0, BUTTON_LABEL_MAX_LENGTH) + "..."
+        : option;
     const callbackData = `askuser:${requestId}:${idx}`;
     keyboard.text(display, callbackData).row();
   }
@@ -96,7 +105,10 @@ export function createStatusCallback(ctx: Context, state: StreamingState): Statu
 
         if (!state.textMessages.has(segmentId)) {
           // New segment - create message
-          const display = content.length > 4000 ? content.slice(0, 4000) + "..." : content;
+          const display =
+            content.length > TELEGRAM_SAFE_LIMIT
+              ? content.slice(0, TELEGRAM_SAFE_LIMIT) + "..."
+              : content;
           const formatted = convertMarkdownToHtml(display);
           try {
             const msg = await ctx.reply(formatted, { parse_mode: "HTML" });
@@ -106,10 +118,13 @@ export function createStatusCallback(ctx: Context, state: StreamingState): Statu
             state.textMessages.set(segmentId, msg);
           }
           state.lastEditTimes.set(segmentId, now);
-        } else if (now - lastEdit > 500) {
+        } else if (now - lastEdit > STREAMING_THROTTLE_MS) {
           // Update existing segment message (throttled)
           const msg = state.textMessages.get(segmentId)!;
-          const display = content.length > 4000 ? content.slice(0, 4000) + "..." : content;
+          const display =
+            content.length > TELEGRAM_SAFE_LIMIT
+              ? content.slice(0, TELEGRAM_SAFE_LIMIT) + "..."
+              : content;
           const formatted = convertMarkdownToHtml(display);
           try {
             await ctx.api.editMessageText(msg.chat.id, msg.message_id, formatted, {
@@ -129,7 +144,7 @@ export function createStatusCallback(ctx: Context, state: StreamingState): Statu
           const msg = state.textMessages.get(segmentId)!;
           const formatted = convertMarkdownToHtml(content);
 
-          if (formatted.length <= 4096) {
+          if (formatted.length <= TELEGRAM_MESSAGE_LIMIT) {
             try {
               await ctx.api.editMessageText(msg.chat.id, msg.message_id, formatted, {
                 parse_mode: "HTML",
@@ -144,8 +159,8 @@ export function createStatusCallback(ctx: Context, state: StreamingState): Statu
             } catch {
               // Ignore errors
             }
-            for (let i = 0; i < formatted.length; i += 4000) {
-              const chunk = formatted.slice(i, i + 4000);
+            for (let i = 0; i < formatted.length; i += TELEGRAM_SAFE_LIMIT) {
+              const chunk = formatted.slice(i, i + TELEGRAM_SAFE_LIMIT);
               try {
                 await ctx.reply(chunk, { parse_mode: "HTML" });
               } catch {

@@ -18,6 +18,7 @@ import {
   THINKING_KEYWORDS,
   THINKING_DEEP_KEYWORDS,
   TEMP_PATHS,
+  STREAMING_THROTTLE_MS,
 } from "./config";
 import { isPathAllowed, checkCommandSafety } from "./security";
 import { formatToolStatus } from "./formatting";
@@ -270,7 +271,7 @@ class ClaudeSession {
 
               // Stream text updates (throttled)
               const now = Date.now();
-              if (now - lastTextUpdate > 500 && currentSegmentText.length > 20) {
+              if (now - lastTextUpdate > STREAMING_THROTTLE_MS && currentSegmentText.length > 20) {
                 await statusCallback("text", currentSegmentText, currentSegmentId);
                 lastTextUpdate = now;
               }

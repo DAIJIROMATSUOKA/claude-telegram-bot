@@ -192,6 +192,13 @@ export const THINKING_DEEP_KEYWORDS = thinkingDeepKeywordsStr.split(",").map((k)
 
 export const MEDIA_GROUP_TIMEOUT = 1000; // ms to wait for more photos in a group
 
+// ============== Telegram Message Limits ==============
+
+export const TELEGRAM_MESSAGE_LIMIT = 4096; // Max characters per message
+export const TELEGRAM_SAFE_LIMIT = 4000; // Safe limit with buffer for formatting
+export const STREAMING_THROTTLE_MS = 500; // Throttle streaming updates
+export const BUTTON_LABEL_MAX_LENGTH = 30; // Max chars for inline button labels
+
 // ============== Audit Logging ==============
 
 export const AUDIT_LOG_PATH = process.env.AUDIT_LOG_PATH || "/tmp/claude-telegram-audit.log";
