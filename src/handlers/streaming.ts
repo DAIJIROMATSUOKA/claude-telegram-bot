@@ -32,10 +32,11 @@ export async function checkPendingAskUserRequests(
   ctx: Context,
   chatId: number
 ): Promise<boolean> {
-  const glob = new Bun.Glob("/tmp/ask-user-*.json");
+  const glob = new Bun.Glob("ask-user-*.json");
   let buttonsSent = false;
 
-  for await (const filepath of glob.scan({ absolute: true })) {
+  for await (const filename of glob.scan({ cwd: "/tmp", absolute: false })) {
+    const filepath = `/tmp/${filename}`;
     try {
       const file = Bun.file(filepath);
       const text = await file.text();
@@ -52,7 +53,6 @@ export async function checkPendingAskUserRequests(
       if (options.length > 0 && requestId) {
         const keyboard = createAskUserKeyboard(requestId, options);
         await ctx.reply(`❓ ${question}`, { reply_markup: keyboard });
-        console.log(`Sent ask_user keyboard: ${requestId}`);
         buttonsSent = true;
 
         // Mark as sent

@@ -1,22 +1,13 @@
 /**
  * Session management for Claude Telegram Bot.
  *
- * ClaudeSession class manages Claude Code sessions using the Agent SDK V2.
+ * ClaudeSession class manages Claude Code sessions using the Agent SDK V1.
+ * V1 supports full options (cwd, mcpServers, settingSources, etc.)
  */
 
-import {
-  unstable_v2_createSession,
-  unstable_v2_resumeSession,
-  type SDKMessage,
-} from "@anthropic-ai/claude-agent-sdk";
+import { query, type SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { StatusCallback, SessionData, TokenUsage } from "./types";
-
-// Type for SDK V2 session (types may be incomplete in the SDK)
-interface SDKSession {
-  send(message: string): Promise<void>;
-  receive(): AsyncIterable<SDKMessage>;
-  close(): void;
-}
+import type { Context } from "grammy";
 import {
   WORKING_DIR,
   SAFETY_PROMPT,
@@ -28,6 +19,7 @@ import {
 } from "./config";
 import { isPathAllowed, checkCommandSafety } from "./security";
 import { formatToolStatus } from "./formatting";
+import { checkPendingAskUserRequests } from "./handlers/streaming";
 
 /**
  * Determine thinking token budget based on message keywords.
@@ -104,13 +96,16 @@ class ClaudeSession {
 
   /**
    * Send a message to Claude with streaming updates via callback.
+   *
+   * @param ctx - grammY context for ask_user button display
    */
   async sendMessageStreaming(
     message: string,
     username: string,
     userId: number,
     statusCallback: StatusCallback,
-    chatId?: number
+    chatId?: number,
+    ctx?: Context
   ): Promise<string> {
     // Set chat context for ask_user MCP tool
     if (chatId) {
@@ -122,16 +117,18 @@ class ClaudeSession {
     const thinkingLabel =
       { 0: "off", 10000: "normal", 50000: "deep" }[thinkingTokens] || String(thinkingTokens);
 
-    // Build SDK options
+    // Build SDK V1 options - supports all features
     const options = {
       model: "claude-sonnet-4-20250514",
       cwd: WORKING_DIR,
       settingSources: ["project" as const],
       permissionMode: "bypassPermissions" as const,
+      allowDangerouslySkipPermissions: true,
       systemPrompt: SAFETY_PROMPT,
       mcpServers: MCP_SERVERS,
       maxThinkingTokens: thinkingTokens,
       additionalDirectories: ALLOWED_PATHS,
+      resume: this.sessionId || undefined,
     };
 
     if (this.sessionId && !isNewSession) {
@@ -154,19 +151,20 @@ class ClaudeSession {
     let currentSegmentText = "";
     let lastTextUpdate = 0;
     let queryCompleted = false;
+    let askUserTriggered = false;
 
     try {
-      // Create or resume session
-      // Cast to SDKSession since V2 types may be incomplete
-      const sessionInstance = (this.sessionId
-        ? unstable_v2_resumeSession(this.sessionId, options)
-        : unstable_v2_createSession(options)) as unknown as SDKSession;
-
-      // Send the message
-      await sessionInstance.send(message);
+      // Use V1 query() API - supports all options including cwd, mcpServers, etc.
+      const queryInstance = query({
+        prompt: message,
+        options: {
+          ...options,
+          abortController: this.abortController,
+        },
+      });
 
       // Process streaming response
-      for await (const event of sessionInstance.receive()) {
+      for await (const event of queryInstance) {
         // Check for abort
         if (this.stopRequested) {
           console.log("Query aborted by user");
@@ -240,9 +238,27 @@ class ClaudeSession {
               this.lastTool = toolDisplay;
               console.log(`Tool: ${toolDisplay}`);
 
-              // Don't show tool status for ask_user
+              // Don't show tool status for ask_user - the buttons are self-explanatory
               if (!toolName.startsWith("mcp__ask-user")) {
                 await statusCallback("tool", toolDisplay);
+              }
+
+              // Check for pending ask_user requests after ask-user MCP tool
+              if (toolName.startsWith("mcp__ask-user") && ctx && chatId) {
+                // Small delay to let MCP server write the file
+                await new Promise((resolve) => setTimeout(resolve, 200));
+
+                // Retry a few times in case of timing issues
+                for (let attempt = 0; attempt < 3; attempt++) {
+                  const buttonsSent = await checkPendingAskUserRequests(ctx, chatId);
+                  if (buttonsSent) {
+                    askUserTriggered = true;
+                    break;
+                  }
+                  if (attempt < 2) {
+                    await new Promise((resolve) => setTimeout(resolve, 100));
+                  }
+                }
               }
             }
 
@@ -259,6 +275,11 @@ class ClaudeSession {
               }
             }
           }
+
+          // Break out of event loop if ask_user was triggered
+          if (askUserTriggered) {
+            break;
+          }
         }
 
         // Result message
@@ -274,13 +295,12 @@ class ClaudeSession {
         }
       }
 
-      // Close the session
-      sessionInstance.close();
+      // V1 query completes automatically when the generator ends
     } catch (error) {
       const errorStr = String(error).toLowerCase();
       const isCleanupError = errorStr.includes("cancel") || errorStr.includes("abort");
 
-      if (isCleanupError && (queryCompleted || this.stopRequested)) {
+      if (isCleanupError && (queryCompleted || askUserTriggered || this.stopRequested)) {
         console.warn(`Suppressed post-completion error: ${error}`);
       } else {
         console.error(`Error in query: ${error}`);
@@ -298,6 +318,12 @@ class ClaudeSession {
     this.lastActivity = new Date();
     this.lastError = null;
     this.lastErrorTime = null;
+
+    // If ask_user was triggered, return early - user will respond via button
+    if (askUserTriggered) {
+      await statusCallback("done", "");
+      return "[Waiting for user selection]";
+    }
 
     // Emit final segment
     if (currentSegmentText) {

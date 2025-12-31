@@ -93,6 +93,14 @@ export async function handleCallback(ctx: Context): Promise<void> {
   // 8. Send the choice to Claude as a message
   const message = selectedOption;
 
+  // Interrupt any running query - button responses are always immediate
+  if (session.isRunning) {
+    console.log("Interrupting current query for button response");
+    await session.stop();
+    // Small delay to ensure clean interruption
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+
   // Intent check
   const intent = await classifyIntent(message);
   if (!intent.safe && intent.confidence > INTENT_BLOCK_THRESHOLD) {
@@ -115,7 +123,8 @@ export async function handleCallback(ctx: Context): Promise<void> {
       username,
       userId,
       statusCallback,
-      chatId
+      chatId,
+      ctx
     );
 
     await auditLog(userId, username, "CALLBACK", message, response);

@@ -90,7 +90,8 @@ async function processPhotos(
       username,
       userId,
       statusCallback,
-      chatId
+      chatId,
+      ctx
     );
 
     await auditLog(userId, username, "PHOTO", prompt, response);
@@ -174,17 +175,8 @@ export async function handlePhoto(ctx: Context): Promise<void> {
     return;
   }
 
-  // 2. Download photo
-  let photoPath: string;
-  try {
-    photoPath = await downloadPhoto(ctx);
-  } catch (error) {
-    console.error("Failed to download photo:", error);
-    await ctx.reply("❌ Failed to download photo.");
-    return;
-  }
-
-  // 3. Single photo - process immediately
+  // 2. For single photos, show status and rate limit early
+  let statusMsg: Awaited<ReturnType<typeof ctx.reply>> | null = null;
   if (!mediaGroupId) {
     // Rate limit
     const [allowed, retryAfter] = rateLimiter.check(userId);
@@ -194,11 +186,44 @@ export async function handlePhoto(ctx: Context): Promise<void> {
       return;
     }
 
-    await processPhotos(ctx, [photoPath], ctx.message?.caption, userId, username, chatId);
+    // Show status immediately
+    statusMsg = await ctx.reply("📷 Processing image...");
+  }
+
+  // 3. Download photo
+  let photoPath: string;
+  try {
+    photoPath = await downloadPhoto(ctx);
+  } catch (error) {
+    console.error("Failed to download photo:", error);
+    if (statusMsg) {
+      try {
+        await ctx.api.editMessageText(statusMsg.chat.id, statusMsg.message_id, "❌ Failed to download photo.");
+      } catch {
+        await ctx.reply("❌ Failed to download photo.");
+      }
+    } else {
+      await ctx.reply("❌ Failed to download photo.");
+    }
     return;
   }
 
-  // 4. Media group - buffer with timeout
+  // 4. Single photo - process immediately
+  if (!mediaGroupId && statusMsg) {
+    await processPhotos(ctx, [photoPath], ctx.message?.caption, userId, username, chatId);
+
+    // Clean up status message
+    try {
+      await ctx.api.deleteMessage(statusMsg.chat.id, statusMsg.message_id);
+    } catch {
+      // Ignore
+    }
+    return;
+  }
+
+  // 5. Media group - buffer with timeout
+  if (!mediaGroupId) return; // TypeScript guard
+
   if (!pendingMediaGroups.has(mediaGroupId)) {
     // Rate limit on first photo only
     const [allowed, retryAfter] = rateLimiter.check(userId);

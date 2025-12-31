@@ -65,7 +65,8 @@ export async function handleText(ctx: Context): Promise<void> {
       username,
       userId,
       statusCallback,
-      chatId
+      chatId,
+      ctx
     );
 
     // 8. Audit log

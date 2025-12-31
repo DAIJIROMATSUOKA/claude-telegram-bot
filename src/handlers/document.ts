@@ -143,7 +143,8 @@ async function processDocuments(
       username,
       userId,
       statusCallback,
-      chatId
+      chatId,
+      ctx
     );
 
     await auditLog(userId, username, "DOCUMENT", `[${documents.length} docs] ${caption || ""}`, response);
