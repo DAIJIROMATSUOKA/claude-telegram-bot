@@ -12,6 +12,8 @@ import { isAuthorized, rateLimiter } from "../security";
 import { auditLog, auditLogRateLimit, startTypingIndicator } from "../utils";
 import { StreamingState, createStatusCallback } from "./streaming";
 import { createMediaGroupBuffer, handleProcessingError } from "./media-group";
+import { controlTowerDB } from "../utils/control-tower-db";
+import { redactSensitiveData } from "../utils/redaction-filter";
 
 // Supported text file extensions
 const TEXT_EXTENSIONS = [
@@ -262,6 +264,20 @@ async function processArchive(
     const state = new StreamingState();
     const statusCallback = createStatusCallback(ctx, state);
 
+    // Start action trace
+    const sessionId = `telegram_${chatId}_${Date.now()}`;
+    const startedAt = Date.now();
+    const actionName = `Archive: ${fileName}`.slice(0, 50);
+    const inputsRedacted = redactSensitiveData(prompt).sanitized.slice(0, 500);
+
+    const traceId = controlTowerDB.startActionTrace({
+      session_id: sessionId,
+      action_type: 'archive_message',
+      action_name: actionName,
+      inputs_redacted: inputsRedacted,
+      metadata: { username, userId: String(userId), fileName, fileCount: tree.length },
+    });
+
     const response = await session.sendMessageStreaming(
       prompt,
       username,
@@ -270,6 +286,19 @@ async function processArchive(
       chatId,
       ctx
     );
+
+    // Complete action trace (success)
+    const completedAt = Math.floor(Date.now() / 1000);
+    const durationMs = Date.now() - startedAt;
+    const outputsSummary = response.slice(0, 200);
+
+    controlTowerDB.completeActionTrace({
+      id: traceId,
+      status: 'completed',
+      completed_at: completedAt,
+      duration_ms: durationMs,
+      outputs_summary: outputsSummary,
+    });
 
     await auditLog(
       userId,
@@ -290,6 +319,23 @@ async function processArchive(
     }
   } catch (error) {
     console.error("Archive processing error:", error);
+
+    // Complete action trace (failed)
+    const sessionId = `telegram_${chatId}_${Date.now()}`;
+    const latestTrace = controlTowerDB.getLatestActionTrace(sessionId);
+    if (latestTrace && latestTrace.status === 'started') {
+      const completedAt = Math.floor(Date.now() / 1000);
+      const errorSummary = String(error).slice(0, 200);
+
+      controlTowerDB.completeActionTrace({
+        id: latestTrace.id,
+        status: 'failed',
+        completed_at: completedAt,
+        duration_ms: Date.now() - (latestTrace.started_at * 1000),
+        error_summary: errorSummary,
+      });
+    }
+
     // Delete status message on error
     try {
       await ctx.api.deleteMessage(statusMsg.chat.id, statusMsg.message_id);
@@ -351,6 +397,20 @@ async function processDocuments(
   const state = new StreamingState();
   const statusCallback = createStatusCallback(ctx, state);
 
+  // Start action trace
+  const sessionId = `telegram_${chatId}_${Date.now()}`;
+  const startedAt = Date.now();
+  const actionName = `${documents.length} docs: ${documents.map(d => d.name).join(', ')}`.slice(0, 50);
+  const inputsRedacted = redactSensitiveData(prompt).sanitized.slice(0, 500);
+
+  const traceId = controlTowerDB.startActionTrace({
+    session_id: sessionId,
+    action_type: 'document_message',
+    action_name: actionName,
+    inputs_redacted: inputsRedacted,
+    metadata: { username, userId: String(userId), documentCount: documents.length },
+  });
+
   try {
     const response = await session.sendMessageStreaming(
       prompt,
@@ -361,6 +421,19 @@ async function processDocuments(
       ctx
     );
 
+    // Complete action trace (success)
+    const completedAt = Math.floor(Date.now() / 1000);
+    const durationMs = Date.now() - startedAt;
+    const outputsSummary = response.slice(0, 200);
+
+    controlTowerDB.completeActionTrace({
+      id: traceId,
+      status: 'completed',
+      completed_at: completedAt,
+      duration_ms: durationMs,
+      outputs_summary: outputsSummary,
+    });
+
     await auditLog(
       userId,
       username,
@@ -369,6 +442,19 @@ async function processDocuments(
       response
     );
   } catch (error) {
+    // Complete action trace (failed)
+    const completedAt = Math.floor(Date.now() / 1000);
+    const durationMs = Date.now() - startedAt;
+    const errorSummary = String(error).slice(0, 200);
+
+    controlTowerDB.completeActionTrace({
+      id: traceId,
+      status: 'failed',
+      completed_at: completedAt,
+      duration_ms: durationMs,
+      error_summary: errorSummary,
+    });
+
     await handleProcessingError(ctx, error, state.toolMessages);
   } finally {
     stopProcessing();

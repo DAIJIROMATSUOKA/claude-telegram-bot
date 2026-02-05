@@ -8,21 +8,21 @@ import type { Context } from "grammy";
 import type { Message } from "grammy/types";
 import { InlineKeyboard } from "grammy";
 import type { StatusCallback } from "../types";
-import { convertMarkdownToHtml, escapeHtml } from "../formatting";
+import { convertMarkdownToHtml } from "../formatting";
 import {
   TELEGRAM_MESSAGE_LIMIT,
   TELEGRAM_SAFE_LIMIT,
   STREAMING_THROTTLE_MS,
   BUTTON_LABEL_MAX_LENGTH,
 } from "../config";
+import { getSessionIdFromContext } from "../utils/session-helper.js";
+import { updateStatus } from "../utils/control-tower-helper.js";
+import { controlTowerDB } from "../utils/control-tower-db.js";
 
 /**
  * Create inline keyboard for ask_user options.
  */
-export function createAskUserKeyboard(
-  requestId: string,
-  options: string[]
-): InlineKeyboard {
+export function createAskUserKeyboard(requestId: string, options: string[]): InlineKeyboard {
   const keyboard = new InlineKeyboard();
   for (let idx = 0; idx < options.length; idx++) {
     const option = options[idx]!;
@@ -87,32 +87,61 @@ export class StreamingState {
   toolMessages: Message[] = []; // ephemeral tool status messages
   lastEditTimes = new Map<number, number>(); // segment_id -> last edit time
   lastContent = new Map<number, string>(); // segment_id -> last sent content
+  actionTraceIds = new Map<string, number>(); // action_key -> trace_id for tracking
 }
 
 /**
  * Create a status callback for streaming updates.
  */
-export function createStatusCallback(
-  ctx: Context,
-  state: StreamingState
-): StatusCallback {
+export function createStatusCallback(ctx: Context, state: StreamingState): StatusCallback {
   return async (statusType: string, content: string, segmentId?: number) => {
     try {
+      // Get session ID for D1 tracking
+      const sessionId = getSessionIdFromContext(ctx);
+
       if (statusType === "thinking") {
-        // Show thinking inline, compact (first 500 chars)
-        const preview =
-          content.length > 500 ? content.slice(0, 500) + "..." : content;
-        const escaped = escapeHtml(preview);
-        const thinkingMsg = await ctx.reply(`🧠 <i>${escaped}</i>`, {
-          parse_mode: "HTML",
-        });
-        state.toolMessages.push(thinkingMsg);
+        // Log thinking (no Telegram notification)
+        const preview = content.length > 500 ? content.slice(0, 500) + "..." : content;
+        console.log(`🧠 Thinking: ${preview}`);
+
+        // Record to D1
+        if (sessionId) {
+          await updateStatus(sessionId, 'thinking', null, preview, ctx);
+
+          // Start action trace for thinking
+          const traceId = controlTowerDB.startActionTrace({
+            session_id: sessionId,
+            action_type: 'thinking',
+            action_name: 'Claude thinking',
+            inputs_redacted: preview,
+          });
+          state.actionTraceIds.set('thinking', traceId);
+        }
       } else if (statusType === "tool") {
-        const toolMsg = await ctx.reply(content, { parse_mode: "HTML" });
-        state.toolMessages.push(toolMsg);
+        // Log tool execution (no Telegram notification)
+        console.log(`🔧 Tool: ${content}`);
+
+        // Record to D1
+        if (sessionId) {
+          await updateStatus(sessionId, 'tool', null, content, ctx);
+
+          // Start action trace for tool
+          const traceId = controlTowerDB.startActionTrace({
+            session_id: sessionId,
+            action_type: 'tool',
+            action_name: content,
+            inputs_redacted: content,
+          });
+          state.actionTraceIds.set(`tool:${content}`, traceId);
+        }
       } else if (statusType === "text" && segmentId !== undefined) {
         const now = Date.now();
         const lastEdit = state.lastEditTimes.get(segmentId) || 0;
+
+        // Record to D1
+        if (sessionId) {
+          await updateStatus(sessionId, 'text', null, `Segment ${segmentId}`, ctx);
+        }
 
         if (!state.textMessages.has(segmentId)) {
           // New segment - create message
@@ -146,23 +175,14 @@ export function createStatusCallback(
             return;
           }
           try {
-            await ctx.api.editMessageText(
-              msg.chat.id,
-              msg.message_id,
-              formatted,
-              {
-                parse_mode: "HTML",
-              }
-            );
+            await ctx.api.editMessageText(msg.chat.id, msg.message_id, formatted, {
+              parse_mode: "HTML",
+            });
             state.lastContent.set(segmentId, formatted);
           } catch (htmlError) {
             console.debug("HTML edit failed, trying plain text:", htmlError);
             try {
-              await ctx.api.editMessageText(
-                msg.chat.id,
-                msg.message_id,
-                formatted
-              );
+              await ctx.api.editMessageText(msg.chat.id, msg.message_id, formatted);
               state.lastContent.set(segmentId, formatted);
             } catch (editError) {
               console.debug("Edit message failed:", editError);
@@ -182,14 +202,9 @@ export function createStatusCallback(
 
           if (formatted.length <= TELEGRAM_MESSAGE_LIMIT) {
             try {
-              await ctx.api.editMessageText(
-                msg.chat.id,
-                msg.message_id,
-                formatted,
-                {
-                  parse_mode: "HTML",
-                }
-              );
+              await ctx.api.editMessageText(msg.chat.id, msg.message_id, formatted, {
+                parse_mode: "HTML",
+              });
             } catch (error) {
               console.debug("Failed to edit final message:", error);
             }
@@ -205,16 +220,39 @@ export function createStatusCallback(
               try {
                 await ctx.reply(chunk, { parse_mode: "HTML" });
               } catch (htmlError) {
-                console.debug(
-                  "HTML chunk failed, using plain text:",
-                  htmlError
-                );
+                console.debug("HTML chunk failed, using plain text:", htmlError);
                 await ctx.reply(chunk);
               }
             }
           }
         }
       } else if (statusType === "done") {
+        // Record to D1
+        if (sessionId) {
+          await updateStatus(sessionId, 'done', null, null, ctx);
+
+          // Complete all pending action traces
+          const now = Math.floor(Date.now() / 1000);
+          for (const [key, traceId] of state.actionTraceIds.entries()) {
+            try {
+              const trace = controlTowerDB.getActionTraces(sessionId, 1000).find(t => t.id === traceId);
+              if (trace && trace.status === 'started') {
+                const duration = now - trace.started_at;
+                controlTowerDB.completeActionTrace({
+                  id: traceId,
+                  status: 'completed',
+                  completed_at: now,
+                  duration_ms: duration * 1000,
+                  outputs_summary: 'Completed successfully',
+                });
+              }
+            } catch (error) {
+              console.error(`Failed to complete action trace ${traceId}:`, error);
+            }
+          }
+          state.actionTraceIds.clear();
+        }
+
         // Delete tool messages - text messages stay
         for (const toolMsg of state.toolMessages) {
           try {

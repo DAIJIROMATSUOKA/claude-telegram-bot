@@ -34,6 +34,135 @@ import type {
 } from "./types";
 
 /**
+ * Fetch context from memory-gateway API or fallback to local file.
+ */
+async function fetchJarvisContext(): Promise<string> {
+  const MEMORY_GATEWAY_URL = process.env.MEMORY_GATEWAY_URL || 'https://jarvis-memory-gateway.jarvis-matsuoka.workers.dev';
+  const GATEWAY_API_KEY = process.env.GATEWAY_API_KEY || '';
+
+  // Try memory-gateway API first
+  try {
+    const response = await fetch(`${MEMORY_GATEWAY_URL}/api/memory/jarvis_context`, {
+      headers: {
+        'Authorization': `Bearer ${GATEWAY_API_KEY}`,
+      },
+      signal: AbortSignal.timeout(1000) // 1秒タイムアウト
+    });
+    if (response.ok) {
+      const data = await response.json() as {
+        current_task?: string;
+        current_phase?: string;
+        current_assumption?: string;
+        important_decisions?: string[];
+      };
+
+      const parts: string[] = [];
+      if (data.current_task) parts.push(`タスク: ${data.current_task}`);
+      if (data.current_phase) parts.push(`Phase: ${data.current_phase}`);
+      if (data.current_assumption) parts.push(`前提: ${data.current_assumption}`);
+      if (data.important_decisions?.length) {
+        parts.push(`重要な決定: ${data.important_decisions.join(", ")}`);
+      }
+
+      if (parts.length > 0) return parts.join("\n");
+    }
+  } catch (error) {
+    console.warn(`Memory gateway unavailable, falling back to file: ${error}`);
+  }
+
+  // Fallback to local jarvis_context file
+  try {
+    const contextPath = `${WORKING_DIR}/claude-telegram-bot/jarvis_context`;
+    console.log(`[fetchJarvisContext] Reading fallback file: ${contextPath}`);
+    const content = readFileSync(contextPath, 'utf-8').trim();
+    if (!content) {
+      console.log("[fetchJarvisContext] File is empty");
+      return "";
+    }
+
+    // Parse YAML-like format
+    const parts: string[] = [];
+    const lines = content.split('\n');
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) continue;
+
+      if (trimmed.startsWith('current_task:')) {
+        const task = trimmed.substring('current_task:'.length).trim();
+        if (task) parts.push(`タスク: ${task}`);
+      } else if (trimmed.startsWith('current_phase:')) {
+        const phase = trimmed.substring('current_phase:'.length).trim();
+        if (phase) parts.push(`Phase: ${phase}`);
+      } else if (trimmed.startsWith('current_assumption:')) {
+        const assumption = trimmed.substring('current_assumption:'.length).trim();
+        if (assumption) parts.push(`前提: ${assumption}`);
+      }
+    }
+
+    const result = parts.length > 0 ? parts.join("\n") : "";
+    console.log(`[fetchJarvisContext] Parsed ${parts.length} fields from fallback file`);
+    return result;
+  } catch (error) {
+    console.warn(`[fetchJarvisContext] Failed to read jarvis_context file: ${error}`);
+    return "";
+  }
+}
+
+/**
+ * Fetch recent chat history from memory-gateway API.
+ */
+async function fetchChatHistory(): Promise<string> {
+  const MEMORY_GATEWAY_URL = process.env.MEMORY_GATEWAY_URL || 'https://jarvis-memory-gateway.jarvis-matsuoka.workers.dev';
+  const GATEWAY_API_KEY = process.env.GATEWAY_API_KEY || '';
+
+  try {
+    // Use /v1/db/query endpoint to fetch chat history
+    const response = await fetch(`${MEMORY_GATEWAY_URL}/v1/db/query`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${GATEWAY_API_KEY}`,
+      },
+      body: JSON.stringify({
+        sql: `SELECT role, content, timestamp
+              FROM jarvis_chat_history
+              ORDER BY timestamp DESC
+              LIMIT ?`,
+        params: [10],
+      }),
+      signal: AbortSignal.timeout(3000) // 3秒タイムアウト
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    const data = await response.json() as {
+      ok?: boolean;
+      success?: boolean;
+      results?: Array<{ role: string; content: string; timestamp: string }>;
+    };
+
+    if (!data.results?.length) {
+      console.log("[fetchChatHistory] No chat history returned from DB");
+      return "";
+    }
+
+    // Format: "user: message" or "assistant: message"
+    // Reverse order to show oldest first
+    const lines = data.results
+      .reverse()
+      .map((item) => `${item.role}: ${item.content.slice(0, 200)}${item.content.length > 200 ? '...' : ''}`);
+
+    console.log(`[fetchChatHistory] Fetched ${lines.length} messages from Memory Gateway DB`);
+    return lines.join("\n");
+  } catch (error) {
+    console.warn(`Failed to fetch chat_history from Memory Gateway: ${error}`);
+    return "";
+  }
+}
+
+/**
  * Determine thinking token budget based on message keywords.
  */
 function getThinkingLevel(message: string): number {
@@ -188,22 +317,48 @@ class ClaudeSession {
 
     // Inject current date/time at session start so Claude doesn't need to call a tool for it
     let messageToSend = message;
-    if (isNewSession) {
-      const now = new Date();
-      const datePrefix = `[Current date/time: ${now.toLocaleDateString(
-        "en-US",
-        {
-          weekday: "long",
-          year: "numeric",
-          month: "long",
-          day: "numeric",
-          hour: "2-digit",
-          minute: "2-digit",
-          timeZoneName: "short",
-        }
-      )}]\n\n`;
-      messageToSend = datePrefix + message;
+    const now = new Date();
+    const datePrefix = `[Current date/time: ${now.toLocaleDateString(
+      "en-US",
+      {
+        weekday: "long",
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        timeZoneName: "short",
+      }
+    )}]\n\n`;
+
+    // Fetch context from memory-gateway (always inject, not just on new session)
+    const [jarvisContext, chatHistory] = await Promise.all([
+      fetchJarvisContext(),
+      fetchChatHistory(),
+    ]);
+
+    console.log("[Context Injection] jarvisContext:", jarvisContext || "(none)");
+    console.log("[Context Injection] chatHistory:", chatHistory || "(none)");
+
+    // Build context block - always include SYSTEM CONTEXT
+    const contextParts: string[] = ["[SYSTEM CONTEXT]"];
+    contextParts.push("プロジェクト: /Users/daijiromatsuokam1/claude-telegram-bot");
+    contextParts.push("制約: 従量課金API使用禁止");
+    contextParts.push("");
+
+    if (jarvisContext) {
+      contextParts.push(jarvisContext);
+      contextParts.push("");
     }
+    if (chatHistory) {
+      contextParts.push("[RECENT CONVERSATION]");
+      contextParts.push(chatHistory);
+      contextParts.push("");
+    }
+
+    const contextBlock = contextParts.length > 0 ? contextParts.join("\n") + "\n" : "";
+    console.log("[Context Injection] Final context block length:", contextBlock.length);
+    messageToSend = datePrefix + contextBlock + message;
 
     // Build SDK V1 options - supports all features
     const options: Options = {

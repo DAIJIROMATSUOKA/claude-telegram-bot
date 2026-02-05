@@ -42,6 +42,9 @@ export const ALLOWED_USERS: number[] = (
   .map((x) => parseInt(x.trim(), 10))
   .filter((x) => !isNaN(x));
 
+// DJ's chat ID for bot notifications
+export const DJ_CHAT_ID = ALLOWED_USERS[0]; // First user is DJ
+
 export const WORKING_DIR = process.env.CLAUDE_WORKING_DIR || HOME;
 export const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
 

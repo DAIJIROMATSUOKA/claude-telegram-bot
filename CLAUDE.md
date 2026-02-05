@@ -2,6 +2,139 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+---
+
+## 🚨 絶対ルール
+
+### 1. 従量課金API は絶対使わない
+- API使用前に必ず課金体系を確認
+- 無料枠超過時は停止、代替案を提示
+- 詳細は「API使用ポリシー」セクション参照
+
+### 2. Phase完了毎にSTOP & 報告
+- 各フェーズ完了時に必ずユーザーに報告
+- 次のフェーズに進む前に承認を待つ
+- 勝手に先に進まない
+
+### 3. 仕様書の指示に従う
+- 勝手に省略・簡略化しない
+- 不明点があれば質問する
+- ユーザーの意図を最優先
+
+### 4. 文脈を必ず確認して使う
+- [SYSTEM]ブロック内のjarvis_contextに現在のタスクが書いてある
+- 「状況は？」と聞かれたらjarvis_contextの内容を答える
+- chat_historyに直近の会話がある。必ず読んで会話を継続する
+- プロジェクトパスは /Users/daijiromatsuokam1/claude-telegram-bot
+- 「こんにちは」「何かお手伝いできますか」等の初回挨拶は禁止。文脈に基づいて返答する
+
+### 5. Bot再起動方法
+- 必ず ~/claude-telegram-bot/scripts/start-bot.sh を使用
+- pkillやbunを直接呼ばないこと
+
+### 6. タイムトラッキングとステータス更新
+- ステータス変更（START/STOP/PAUSE）時は必ずtimer-sync.shでM3 Agentと同期
+- 作業時間の記録はDJのタスク管理に直結するため、絶対に忘れない
+
+### 7. 文脈ブロックの取り扱い
+- [SYSTEM CONTEXT]や[RECENT CONVERSATION]はClaudeへの内部情報
+- ユーザーへの応答にそのまま表示しない
+
+### 8. 全体の文体ルール（応答・会話・council全て）
+- 敬語禁止。「だ/である」調を使え
+- 不要な前置きを省け
+- 質問するな。最善の判断で自分で進め
+- 長文禁止。要点だけ伝えろ
+- 「どれを進めますか？」のような選択肢を出すな。自分で判断して実行しろ
+- council:の議論も同じルール。丁寧語は不要
+
+---
+
+## 🔄 標準ワークフロー
+
+### 簡単なタスク
+```
+DJ → Jarvis直接実行
+```
+- 単純なファイル編集
+- 明確な仕様の実装
+- 1-2ステップで完了するタスク
+
+### 複雑なタスク
+```
+DJ → council: で設計 → Jarvis実装
+```
+- 複数ファイルにまたがる変更
+- アーキテクチャ設計が必要
+- 複数の選択肢がある場合
+
+使用例：
+```
+council: Darwin Engineのパフォーマンス改善方法を3つ提案して
+```
+
+### つまずいた時
+```
+DJ → council: に相談 → 代替案提示
+```
+- エラーが解決できない
+- 設計の方向性が不明
+- 技術的な判断が必要
+
+---
+
+## Bot再起動方法
+
+### 🚨 必ずこのスクリプトを使用
+
+**絶対に以下のスクリプトで起動してください：**
+
+```bash
+~/claude-telegram-bot/scripts/start-bot.sh
+```
+
+### ⚠️ 重要な注意事項
+
+1. **直接コマンドを実行しない**
+   - ❌ `pkill -9 -f "bun.*index.ts"` （禁止）
+   - ❌ `bun run src/index.ts` （禁止）
+   - ❌ `nohup bun run ...` （禁止）
+   - ❌ 任意のbunコマンド直接実行 （禁止）
+
+2. **なぜこのスクリプトを使う必要があるか**
+   - **Error 409問題**: Telegramは同じbotトークンで複数のgetUpdatesリクエストを許可しません
+   - 既存プロセスが完全に停止する前に新しいインスタンスを起動すると、以下のエラーでbotが停止します：
+     ```
+     GrammyError: Call to 'getUpdates' failed! (409: Conflict:
+     terminated by other getUpdates request; make sure that only
+     one bot instance is running)
+     ```
+   - このスクリプトは以下を保証します：
+     - ✅ 既存の全プロセスを確実に停止（pkill -9）
+     - ✅ 3秒待機して完全な停止を確認
+     - ✅ 停止できない場合は起動せずエラー終了
+     - ✅ 単一インスタンスのみを起動
+     - ✅ 起動確認とログ出力
+
+3. **スクリプトの動作**
+   ```bash
+   # 1. 既存プロセスを強制停止（pkill -9）
+   # 2. 3秒待機して完全に停止
+   # 3. まだプロセスが残っていればエラーで終了
+   # 4. ログディレクトリ作成
+   # 5. 新しいインスタンスを起動
+   # 6. 3秒待機して起動確認
+   # 7. PIDとログパスを表示
+   ```
+
+### トラブルシューティング
+
+**Bot が Error 409 で停止する場合:**
+- 複数のbotインスタンスが起動している可能性があります
+- 必ず `~/claude-telegram-bot/scripts/start-bot.sh` を使用してください
+- 手動で起動した場合は、一度全て停止してからスクリプトで起動
+- **絶対にpkillやbunコマンドを直接実行しないでください**
+
 ## Commands
 
 ```bash
@@ -57,9 +190,55 @@ All config via `.env` (copy from `.env.example`). Key variables:
 - `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ALLOWED_USERS` (required)
 - `CLAUDE_WORKING_DIR` - Working directory for Claude
 - `ALLOWED_PATHS` - Directories Claude can access
-- `OPENAI_API_KEY` - For voice transcription
+- `GEMINI_API_KEY` - For AI features (free tier, 1500 req/day)
 
 MCP servers defined in `mcp-config.ts`.
+
+### ⚠️ CRITICAL: API使用ポリシー
+
+**絶対ルール: 従量課金APIは使用禁止**
+
+#### ✅ 許可されているAPI
+
+| API | 用途 | 制限 |
+|-----|------|------|
+| `GEMINI_API_KEY` | AI機能 | 無料枠: 5 req/min, 1,500 req/day |
+| `TELEGRAM_BOT_TOKEN` | Bot通信 | 完全無料 |
+| `GATEWAY_API_KEY` | Memory Gateway | 内部認証（無料） |
+| `M3_AGENT_TOKEN` | M3 Agent | 内部認証（無料） |
+
+#### ❌ 禁止されているAPI
+
+| API | 理由 |
+|-----|------|
+| `ANTHROPIC_API_KEY` | 従量課金のみ（無料枠なし） |
+| `OPENAI_API_KEY` | 従量課金（$5トライアル後は課金） |
+
+#### 🔧 AI呼び出し方法（従量課金回避）
+
+**AI Router経由で呼び出す（`src/handlers/ai-router.ts`）:**
+
+```typescript
+// ❌ 直接API呼び出し（禁止）
+import { AnthropicProvider } from './providers/anthropic';
+const provider = new AnthropicProvider(); // 従量課金API使用
+
+// ✅ AI Router経由（推奨）
+import { callClaudeCLI, callCodexCLI, callGeminiAPI } from './handlers/ai-router';
+
+// Claude via CLI（Telegram転送 = 無料）
+const response = await callClaudeCLI(prompt, memoryPack);
+
+// ChatGPT via Codex CLI（Telegram転送 = 無料）
+const response = await callCodexCLI(prompt, memoryPack);
+
+// Gemini via API（無料枠）
+const response = await callGeminiAPI(prompt, memoryPack);
+```
+
+**Darwin Engine**: すべてのモデル（claude/chatgpt/gemini）をAI Router経由で呼び出し
+
+**Voice transcription**: 現在無効（OpenAI API使用のため）
 
 ### Runtime Files
 
@@ -114,3 +293,14 @@ launchctl load ~/Library/LaunchAgents/com.claude-telegram-ts.plist
 tail -f /tmp/claude-telegram-bot-ts.log
 tail -f /tmp/claude-telegram-bot-ts.err
 ```
+
+### 4. 文脈を必ず確認して使う
+- [SYSTEM]ブロック内のjarvis_contextに現在のタスクが書いてある
+- 「状況は？」と聞かれたらjarvis_contextの内容を答える
+- chat_historyに直近の会話がある。必ず読んで会話を継続する
+- プロジェクトパスは /Users/daijiromatsuokam1/claude-telegram-bot
+- 「こんにちは」「何かお手伝いできますか」等の初回挨拶は禁止。文脈に基づいて返答する
+
+### 5. Bot再起動方法
+- 必ず ~/claude-telegram-bot/scripts/start-bot.sh を使用
+- pkillやbunを直接呼ばないこと
