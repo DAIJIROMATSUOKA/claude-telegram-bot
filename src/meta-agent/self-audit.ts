@@ -80,7 +80,16 @@ export async function performSelfAudit(logPath: string = './logs/bot.log'): Prom
 
     // Count messages and sessions
     const totalMessages = lines.filter((line) => line.includes('Received message')).length;
-    const totalSessions = db.prepare('SELECT COUNT(DISTINCT session_id) as count FROM jarvis_control_tower').get() as { count: number };
+
+    // Get total sessions (use focus_sessions if control_tower doesn't exist)
+    let totalSessions = 0;
+    try {
+      const sessionResult = db.prepare('SELECT COUNT(DISTINCT session_id) as count FROM focus_sessions').get() as { count: number } | undefined;
+      totalSessions = sessionResult?.count || 0;
+    } catch (error) {
+      // Table doesn't exist, default to 0
+      totalSessions = 0;
+    }
 
     const auditResult: SelfAuditResult = {
       date,
@@ -91,7 +100,7 @@ export async function performSelfAudit(logPath: string = './logs/bot.log'): Prom
       recommendations: JSON.stringify(recommendations),
       log_file_size: logFileSize,
       total_messages: totalMessages,
-      total_sessions: totalSessions.count,
+      total_sessions: totalSessions,
       metadata: JSON.stringify({
         log_path: logPath,
         lines_analyzed: lines.length,
