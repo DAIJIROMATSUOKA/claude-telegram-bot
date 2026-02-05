@@ -21,6 +21,9 @@ import { isFocusModeEnabled, bufferNotification } from "../utils/focus-mode";
 import { preloadToolContext, formatPreloadedContext } from "../utils/tool-preloader";
 import { WORKING_DIR } from "../config";
 
+// Smart Router: 同じモードで連続提案しないようキャッシュ（1時間TTL）
+const _routerSuggestedCache = new Set<string>();
+
 /**
  * Handle incoming text messages.
  */
@@ -108,14 +111,12 @@ export async function handleText(ctx: Context): Promise<void> {
     await autoDetectAndUpdateWorkMode(userId, message);
     const jarvisContext = await getJarvisContext(userId);
 
-    // 10.6. Tool Pre-Loading - Preload context based on work mode
+    // 10.6. Tool Pre-Loading - Detect file refs, git context, errors from message
     let preloadedContext = '';
-    if (jarvisContext?.work_mode && jarvisContext.work_mode !== 'chatting') {
-      const preloaded = preloadToolContext(jarvisContext.work_mode as any, WORKING_DIR);
-      preloadedContext = formatPreloadedContext(preloaded);
-      if (preloadedContext) {
-        console.log(`[Tool Preloader] Loaded context for mode: ${jarvisContext.work_mode}`);
-      }
+    const preloaded = preloadToolContext(message);
+    preloadedContext = formatPreloadedContext(preloaded);
+    if (preloadedContext) {
+      console.log(`[Tool Preloader] Loaded ${preloaded.length} context(s): ${preloaded.map(p => p.type).join(', ')}`);
     }
 
     // 11. Check for croppy: prefix and inject context
@@ -143,6 +144,19 @@ export async function handleText(ctx: Context): Promise<void> {
 
     // 12. Save assistant response to chat history
     await saveChatMessage(userId, 'assistant', response);
+
+    // 12.5. Smart Router - suggest council for planning-mode questions
+    if (jarvisContext?.work_mode === 'planning' &&
+        jarvisContext.mode_confidence >= 0.7 &&
+        !_lm.startsWith('council') &&
+        !_lm.startsWith('croppy:')) {
+      const cacheKey = `${userId}_planning`;
+      if (!_routerSuggestedCache.has(cacheKey)) {
+        _routerSuggestedCache.add(cacheKey);
+        await ctx.reply('💡 戦略的な相談は council: で聞いてみて');
+        setTimeout(() => _routerSuggestedCache.delete(cacheKey), 60 * 60 * 1000);
+      }
+    }
 
     // 13. Auto-update jarvis_context (task, phase, assumptions, decisions)
     await autoUpdateContext(userId, response);
