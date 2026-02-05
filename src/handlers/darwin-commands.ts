@@ -442,6 +442,150 @@ async function handlePriorityCommand(ctx: Context, theme: string): Promise<void>
   }
 }
 
+// ==================== Workflow Optimizer Commands (v1.3) ====================
+
+/**
+ * darwin patterns - Show workflow patterns
+ */
+export async function handleDarwinPatterns(ctx: Context): Promise<void> {
+  const userId = ctx.from?.id;
+  if (!isAuthorized(userId, ALLOWED_USERS)) {
+    await ctx.reply('Unauthorized.');
+    return;
+  }
+
+  try {
+    const db = new DarwinDB(MEMORY_GATEWAY_URL, GATEWAY_API_KEY);
+    const result = await db.query(
+      `SELECT pattern_name, pattern_type, frequency_count, avg_duration_ms, success_rate, last_seen_at
+       FROM workflow_patterns
+       ORDER BY frequency_count DESC
+       LIMIT 10`
+    );
+
+    const patterns = result.results || [];
+
+    if (patterns.length === 0) {
+      await ctx.reply('📊 No workflow patterns detected yet.\n\nRun `darwin analyze` to analyze your workflows.');
+      return;
+    }
+
+    const lines: string[] = [];
+    lines.push('🔄 **Top Workflow Patterns**\n');
+
+    for (const pattern of patterns) {
+      const emoji = pattern.pattern_type === 'sequence' ? '➡️' : pattern.pattern_type === 'parallel' ? '⚡' : '🔀';
+      const duration = Math.round(pattern.avg_duration_ms / 1000);
+      const successRate = (pattern.success_rate * 100).toFixed(0);
+
+      lines.push(`${emoji} **${pattern.pattern_name}**`);
+      lines.push(`   Frequency: ${pattern.frequency_count}x | ${duration}s avg | ${successRate}% success`);
+      lines.push('');
+    }
+
+    lines.push('_Updated: ' + new Date(patterns[0].last_seen_at).toLocaleString('ja-JP') + '_');
+
+    await ctx.reply(lines.join('\n'), { parse_mode: 'Markdown' });
+  } catch (error) {
+    await ctx.reply(`❌ Error: ${error}`);
+  }
+}
+
+/**
+ * darwin bottlenecks - Show detected bottlenecks
+ */
+export async function handleDarwinBottlenecks(ctx: Context): Promise<void> {
+  const userId = ctx.from?.id;
+  if (!isAuthorized(userId, ALLOWED_USERS)) {
+    await ctx.reply('Unauthorized.');
+    return;
+  }
+
+  try {
+    const db = new DarwinDB(MEMORY_GATEWAY_URL, GATEWAY_API_KEY);
+    const result = await db.query(
+      `SELECT action_name, expected_duration_ms, actual_duration_ms, slowdown_factor, detected_at, suggested_optimization
+       FROM bottleneck_detections
+       WHERE resolved = 0
+       ORDER BY detected_at DESC
+       LIMIT 10`
+    );
+
+    const bottlenecks = result.results || [];
+
+    if (bottlenecks.length === 0) {
+      await ctx.reply('✅ No bottlenecks detected. Your workflows are running smoothly!');
+      return;
+    }
+
+    const lines: string[] = [];
+    lines.push('🐌 **Detected Bottlenecks**\n');
+
+    for (const bottleneck of bottlenecks) {
+      const expected = Math.round(bottleneck.expected_duration_ms / 1000);
+      const actual = Math.round(bottleneck.actual_duration_ms / 1000);
+      const factor = bottleneck.slowdown_factor.toFixed(1);
+
+      lines.push(`⚠️ **${bottleneck.action_name}**`);
+      lines.push(`   Expected: ${expected}s | Actual: ${actual}s (${factor}x slower)`);
+      if (bottleneck.suggested_optimization) {
+        lines.push(`   💡 ${bottleneck.suggested_optimization}`);
+      }
+      lines.push('');
+    }
+
+    await ctx.reply(lines.join('\n'), { parse_mode: 'Markdown' });
+  } catch (error) {
+    await ctx.reply(`❌ Error: ${error}`);
+  }
+}
+
+/**
+ * darwin analyze - Run pattern analysis now
+ */
+export async function handleDarwinAnalyze(ctx: Context): Promise<void> {
+  const userId = ctx.from?.id;
+  if (!isAuthorized(userId, ALLOWED_USERS)) {
+    await ctx.reply('Unauthorized.');
+    return;
+  }
+
+  await ctx.reply('🔍 Starting workflow analysis...\n\nThis may take a minute.');
+
+  try {
+    const { execSync } = await import('child_process');
+    const result = execSync('bash scripts/analyze-patterns.sh', {
+      cwd: '/Users/daijiromatsuokam1/claude-telegram-bot',
+      encoding: 'utf-8',
+      timeout: 120000,
+    });
+
+    // Extract stats from output
+    const patternsMatch = result.match(/Patterns: (\d+)/);
+    const bottlenecksMatch = result.match(/Bottlenecks: (\d+)/);
+    const predictionsMatch = result.match(/Predictions: (\d+)/);
+    const skipMatch = result.match(/Skip Candidates: (\d+)/);
+
+    const patterns = patternsMatch ? parseInt(patternsMatch[1]) : 0;
+    const bottlenecks = bottlenecksMatch ? parseInt(bottlenecksMatch[1]) : 0;
+    const predictions = predictionsMatch ? parseInt(predictionsMatch[1]) : 0;
+    const skipCandidates = skipMatch ? parseInt(skipMatch[1]) : 0;
+
+    await ctx.reply(
+      `✅ **Analysis Complete**\n\n` +
+      `📊 Results:\n` +
+      `• Patterns: ${patterns}\n` +
+      `• Bottlenecks: ${bottlenecks}\n` +
+      `• Predictions: ${predictions}\n` +
+      `• Skip Candidates: ${skipCandidates}\n\n` +
+      `Use \`darwin patterns\` or \`darwin bottlenecks\` to view details.`,
+      { parse_mode: 'Markdown' }
+    );
+  } catch (error) {
+    await ctx.reply(`❌ Analysis failed: ${error}`);
+  }
+}
+
 // ==================== Main Router ====================
 
 /**
@@ -457,6 +601,10 @@ export async function routeDarwinCommand(ctx: Context, args: string[]): Promise<
       '• `darwin history` - Recent runs\n' +
       '• `darwin detail <run_id>` - Run details\n' +
       '• `darwin feedback <idea_id> <reaction> [comment]` - Submit feedback\n\n' +
+      '**Workflow Optimizer (v1.3):**\n' +
+      '• `darwin patterns` - Show workflow patterns\n' +
+      '• `darwin bottlenecks` - Show detected bottlenecks\n' +
+      '• `darwin analyze` - Run pattern analysis now\n\n' +
       '**Night Commands (23:00-02:45):**\n' +
       '• `darwin STATUS` - Real-time status\n' +
       '• `darwin PRIORITY <theme>` - Boost theme\n' +
@@ -498,6 +646,19 @@ export async function routeDarwinCommand(ctx: Context, args: string[]): Promise<
         return;
       }
       await handleDarwinFeedback(ctx, restArgs[0], restArgs[1], restArgs.slice(2).join(' ') || undefined);
+      break;
+
+    // Workflow Optimizer commands (v1.3)
+    case 'patterns':
+      await handleDarwinPatterns(ctx);
+      break;
+
+    case 'bottlenecks':
+      await handleDarwinBottlenecks(ctx);
+      break;
+
+    case 'analyze':
+      await handleDarwinAnalyze(ctx);
       break;
 
     // Night commands
