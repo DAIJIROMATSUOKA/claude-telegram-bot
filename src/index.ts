@@ -27,6 +27,9 @@ import {
   handleCroppyEnable,
   handleCroppyDisable,
   handleCroppyStatus,
+  handleTaskStart,
+  handleTaskStop,
+  handleTaskPause,
 } from "./handlers";
 
 // ============== Global Context ==============
@@ -86,6 +89,9 @@ bot.command("resume", handleResume);
 bot.command("restart", handleRestart);
 bot.command("retry", handleRetry);
 bot.command("why", handleWhy);
+bot.command("task_start", handleTaskStart);
+bot.command("task_stop", handleTaskStop);
+bot.command("task_pause", handleTaskPause);
 
 // Croppy auto-approval commands
 bot.command("croppy", async (ctx) => {
