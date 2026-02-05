@@ -10,6 +10,9 @@ export {
   handleResume,
   handleRestart,
   handleRetry,
+  handleTaskStart,
+  handleTaskStop,
+  handleTaskPause,
 } from "./commands";
 export { handleText } from "./text";
 export { handleVoice } from "./voice";

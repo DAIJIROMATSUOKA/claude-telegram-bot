@@ -8,6 +8,8 @@ import type { Context } from "grammy";
 import { session } from "../session";
 import { WORKING_DIR, ALLOWED_USERS, RESTART_FILE } from "../config";
 import { isAuthorized } from "../security";
+import { execSync } from "child_process";
+import { join } from "path";
 
 /**
  * /start - Show welcome message and status.
@@ -299,4 +301,79 @@ export async function handleRetry(ctx: Context): Promise<void> {
   } as Context;
 
   await handleText(fakeCtx);
+}
+
+/**
+ * /task_start - Start time tracking for a task.
+ */
+export async function handleTaskStart(ctx: Context): Promise<void> {
+  const userId = ctx.from?.id;
+
+  if (!isAuthorized(userId, ALLOWED_USERS)) {
+    await ctx.reply("Unauthorized.");
+    return;
+  }
+
+  // Extract task name from message (format: /task_start Task Name)
+  const text = ctx.message?.text || "";
+  const taskName = text.replace(/^\/task_start\s*/, "").trim() || "Unnamed Task";
+
+  try {
+    const scriptPath = join(WORKING_DIR, "scripts", "timer-sync.sh");
+    execSync(`"${scriptPath}" START "${taskName}"`, { encoding: "utf-8" });
+    await ctx.reply(`⏱ タスク開始: ${taskName}`);
+  } catch (error: any) {
+    console.error("[task_start] Timer sync failed:", error.message);
+    await ctx.reply(`⚠️ タイマー同期失敗: ${error.message}`);
+  }
+}
+
+/**
+ * /task_stop - Stop time tracking for a task.
+ */
+export async function handleTaskStop(ctx: Context): Promise<void> {
+  const userId = ctx.from?.id;
+
+  if (!isAuthorized(userId, ALLOWED_USERS)) {
+    await ctx.reply("Unauthorized.");
+    return;
+  }
+
+  // Extract task name from message (format: /task_stop Task Name)
+  const text = ctx.message?.text || "";
+  const taskName = text.replace(/^\/task_stop\s*/, "").trim() || "Unnamed Task";
+
+  try {
+    const scriptPath = join(WORKING_DIR, "scripts", "timer-sync.sh");
+    execSync(`"${scriptPath}" STOP "${taskName}"`, { encoding: "utf-8" });
+    await ctx.reply(`⏹ タスク停止: ${taskName}`);
+  } catch (error: any) {
+    console.error("[task_stop] Timer sync failed:", error.message);
+    await ctx.reply(`⚠️ タイマー同期失敗: ${error.message}`);
+  }
+}
+
+/**
+ * /task_pause - Pause time tracking for a task.
+ */
+export async function handleTaskPause(ctx: Context): Promise<void> {
+  const userId = ctx.from?.id;
+
+  if (!isAuthorized(userId, ALLOWED_USERS)) {
+    await ctx.reply("Unauthorized.");
+    return;
+  }
+
+  // Extract task name from message (format: /task_pause Task Name)
+  const text = ctx.message?.text || "";
+  const taskName = text.replace(/^\/task_pause\s*/, "").trim() || "Unnamed Task";
+
+  try {
+    const scriptPath = join(WORKING_DIR, "scripts", "timer-sync.sh");
+    execSync(`"${scriptPath}" PAUSE "${taskName}"`, { encoding: "utf-8" });
+    await ctx.reply(`⏸ タスク一時停止: ${taskName}`);
+  } catch (error: any) {
+    console.error("[task_pause] Timer sync failed:", error.message);
+    await ctx.reply(`⚠️ タイマー同期失敗: ${error.message}`);
+  }
 }
