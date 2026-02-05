@@ -1,0 +1,283 @@
+diff --git a/src/handlers/text.ts b/src/handlers/text.ts
+index d91382d..4ff9edf 100644
+--- a/src/handlers/text.ts
++++ b/src/handlers/text.ts
+@@ -13,6 +13,172 @@ import {
+   startTypingIndicator,
+ } from "../utils";
+ import { StreamingState, createStatusCallback } from "./streaming";
++import { checkAutoRules } from "./auto-rules";
++import {
++  parseRoutePrefix,
++  routeToAI,
++  extractAndSaveMemory,
++  getAIDisplayName,
++  type AIProvider,
++} from "./ai-router";
++import { checkMessageIntent } from "../utils/approval-manager";
++
++/**
++ * Handle AI Router requests (gpt:, gemini:, croppy:, all:, council:)
++ */
++async function handleAIRouterRequest(
++  ctx: Context,
++  provider: AIProvider,
++  prompt: string,
++  userId: number,
++  username: string
++): Promise<void> {
++  const typing = startTypingIndicator(ctx);
++
++  try {
++    const credentialsPath =
++      process.env.GOOGLE_CREDENTIALS_PATH ||
++      "/Users/daijiromatsuokam1/jarvis-docs-credentials.json";
++    const documentId = process.env.AI_MEMORY_DOC_ID || "";
++
++    if (!documentId) {
++      await ctx.reply("❌ AI_MEMORY_DOC_ID is not configured");
++      return;
++    }
++
++    // AI Routerでリクエスト処理
++    const response = await routeToAI(provider, prompt, credentialsPath, documentId);
++
++    const displayName = getAIDisplayName(provider);
++
++    // AI Council の場合は特別処理
++    if (provider === 'council' && 'advisorResponses' in response) {
++      // 1. アドバイザーの意見を送信
++      await sendLongMessage(ctx, response.advisorResponses);
++
++      // 2. Jarvisが統合判断するためのプロンプトを構築
++      const councilPrompt = `あなたはJarvis🤖です。以下の3人のAIアドバイザーの意見を総合的に判断し、最良の回答を提供してください。
++
++## ユーザーの質問
++${prompt}
++
++${response.advisorResponses}
++
++---
++
++上記の3人の意見を踏まえて、あなた（Jarvis）の最終判断を提示してください。
++- 共通する見解があれば統合
++- 異なる見解があれば比較検討
++- あなた自身の判断を明確に示す`;
++
++      // 3. Jarvisセッションに送信（通常のメッセージと同様に処理）
++      const stopProcessing = session.startProcessing();
++      const state = new StreamingState();
++      const statusCallback = createStatusCallback(ctx, state);
++
++      try {
++        const jarvisResponse = await session.sendMessageStreaming(
++          councilPrompt,
++          username,
++          userId,
++          statusCallback,
++          ctx.chat!.id,
++          ctx
++        );
++
++        // Audit log
++        await auditLog(
++          userId,
++          username,
++          "AI_COUNCIL",
++          prompt,
++          `Advisors:\n${response.advisorResponses}\n\nJarvis:\n${jarvisResponse}`
++        );
++      } finally {
++        stopProcessing();
++      }
++
++      return;
++    }
++
++    // 通常のAIルーター応答
++    if ('error' in response && response.error) {
++      await ctx.reply(`❌ Error from ${displayName}: ${response.error}`);
++      return;
++    }
++
++    if ('content' in response && !response.content) {
++      await ctx.reply(`⚠️ No response from ${displayName}`);
++      return;
++    }
++
++    // Telegramに結果を返す（4096文字制限対応で分割送信）
++    const header = provider !== 'all' ? `**${displayName}**\n\n` : '';
++    const content = 'content' in response ? header + response.content : '';
++
++    await sendLongMessage(ctx, content);
++
++    // MEMORYタグがあればAI_MEMORYに保存（停止中）
++    // await extractAndSaveMemory(response, credentialsPath, documentId);
++
++    // Audit log
++    await auditLog(
++      userId,
++      username,
++      "AI_ROUTER",
++      `${provider}: ${prompt}`,
++      'content' in response ? response.content : ''
++    );
++  } catch (error) {
++    console.error("[AI Router] Error:", error);
++    await ctx.reply(`❌ AI Router error: ${String(error).slice(0, 200)}`);
++  } finally {
++    typing.stop();
++  }
++}
++
++/**
++ * 長いメッセージを4096文字制限に対応して分割送信
++ */
++async function sendLongMessage(ctx: Context, content: string): Promise<void> {
++  const maxLength = 4000; // 少し余裕を持たせる
++
++  if (content.length <= maxLength) {
++    await ctx.reply(content);
++    return;
++  }
++
++  // 長いメッセージを分割
++  const chunks: string[] = [];
++  let remaining = content;
++
++  while (remaining.length > 0) {
++    if (remaining.length <= maxLength) {
++      chunks.push(remaining);
++      break;
++    }
++
++    // 改行位置で分割を試みる
++    let splitIndex = remaining.lastIndexOf('\n', maxLength);
++    if (splitIndex < maxLength / 2) {
++      // 良い分割点が見つからない場合、スペースで分割
++      splitIndex = remaining.lastIndexOf(' ', maxLength);
++    }
++    if (splitIndex < maxLength / 2) {
++      // それでも見つからない場合、強制分割
++      splitIndex = maxLength;
++    }
++
++    chunks.push(remaining.slice(0, splitIndex));
++    remaining = remaining.slice(splitIndex).trimStart();
++  }
++
++  // 分割して送信
++  for (let i = 0; i < chunks.length; i++) {
++    const header = chunks.length > 1 ? `(${i + 1}/${chunks.length})\n` : '';
++    await ctx.reply(header + chunks[i]);
++  }
++}
+ 
+ /**
+  * Handle incoming text messages.
+@@ -39,7 +205,33 @@ export async function handleText(ctx: Context): Promise<void> {
+     return;
+   }
+ 
+-  // 3. Rate limit check
++  // 3. Check AI Router prefix (gpt:, gemini:, croppy:, all:, council:)
++  const route = parseRoutePrefix(message);
++  if (route.provider !== 'jarvis') {
++    // Route to specific AI
++    await handleAIRouterRequest(ctx, route.provider, route.prompt, userId, username);
++    return;
++  }
++
++  // 4. Check for dangerous intent in user message
++  await checkMessageIntent(ctx, message);
++
++  // 5. Check auto-execution rules from CLAUDE.md (including AI Council consultation)
++  const ruleMatched = await checkAutoRules(ctx, message);
++  if (ruleMatched) {
++    // Rule was executed, don't send to Claude
++    return;
++  }
++
++  // 5.5. Check if AI Council advice is available (from pre-implementation consultation)
++  let enhancedMessage = message;
++  if ((ctx as any).aiCouncilAdvice) {
++    const advice = (ctx as any).aiCouncilAdvice;
++    enhancedMessage = `[AI Councilからの事前助言]\n${advice}\n\n---\n\n[ユーザーのリクエスト]\n${message}`;
++    console.log('[Text Handler] Using AI Council advice in message');
++  }
++
++  // 6. Rate limit check
+   const [allowed, retryAfter] = rateLimiter.check(userId);
+   if (!allowed) {
+     await auditLogRateLimit(userId, username, retryAfter!);
+@@ -49,10 +241,10 @@ export async function handleText(ctx: Context): Promise<void> {
+     return;
+   }
+ 
+-  // 4. Store message for retry
++  // 7. Store message for retry
+   session.lastMessage = message;
+ 
+-  // 5. Set conversation title from first message (if new session)
++  // 8. Set conversation title from first message (if new session)
+   if (!session.isActive) {
+     // Truncate title to ~50 chars
+     const title =
+@@ -60,23 +252,23 @@ export async function handleText(ctx: Context): Promise<void> {
+     session.conversationTitle = title;
+   }
+ 
+-  // 6. Mark processing started
++  // 9. Mark processing started
+   const stopProcessing = session.startProcessing();
+ 
+-  // 7. Start typing indicator
++  // 10. Start typing indicator
+   const typing = startTypingIndicator(ctx);
+ 
+-  // 8. Create streaming state and callback
++  // 11. Create streaming state and callback
+   let state = new StreamingState();
+   let statusCallback = createStatusCallback(ctx, state);
+ 
+-  // 9. Send to Claude with retry logic for crashes
++  // 12. Send to Claude with retry logic for crashes
+   const MAX_RETRIES = 1;
+ 
+   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+     try {
+       const response = await session.sendMessageStreaming(
+-        message,
++        enhancedMessage, // Use enhanced message with AI Council advice if available
+         username,
+         userId,
+         statusCallback,
+@@ -84,7 +276,7 @@ export async function handleText(ctx: Context): Promise<void> {
+         ctx
+       );
+ 
+-      // 10. Audit log
++      // 13. Audit log
+       await auditLog(userId, username, "TEXT", message, response);
+       break; // Success - exit retry loop
+     } catch (error) {
+@@ -106,7 +298,9 @@ export async function handleText(ctx: Context): Promise<void> {
+           `Claude Code crashed, retrying (attempt ${attempt + 2}/${MAX_RETRIES + 1})...`
+         );
+         await session.kill(); // Clear corrupted session
+-        await ctx.reply(`⚠️ Claude crashed, retrying...`);
++        await ctx.reply(`⚠️ Claude crashed, retrying...`, {
++          disable_notification: true, // Silent notification for retry status
++        });
+         // Reset state for retry
+         state = new StreamingState();
+         statusCallback = createStatusCallback(ctx, state);
+@@ -130,7 +324,7 @@ export async function handleText(ctx: Context): Promise<void> {
+     }
+   }
+ 
+-  // 11. Cleanup
++  // 14. Cleanup
+   stopProcessing();
+   typing.stop();
+ }

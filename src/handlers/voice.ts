@@ -14,6 +14,8 @@ import {
   startTypingIndicator,
 } from "../utils";
 import { StreamingState, createStatusCallback } from "./streaming";
+import { controlTowerDB } from "../utils/control-tower-db";
+import { redactSensitiveData } from "../utils/redaction-filter";
 
 /**
  * Handle incoming voice messages.
@@ -105,7 +107,21 @@ export async function handleVoice(ctx: Context): Promise<void> {
     const state = new StreamingState();
     const statusCallback = createStatusCallback(ctx, state);
 
-    // 11. Send to Claude
+    // 11. Start action trace
+    const sessionId = `telegram_${chatId}_${Date.now()}`;
+    const startedAt = Date.now();
+    const actionName = transcript.slice(0, 50);
+    const inputsRedacted = redactSensitiveData(transcript).sanitized;
+
+    const traceId = controlTowerDB.startActionTrace({
+      session_id: sessionId,
+      action_type: 'voice_message',
+      action_name: actionName,
+      inputs_redacted: inputsRedacted,
+      metadata: { username, userId: String(userId) },
+    });
+
+    // 12. Send to Claude
     const claudeResponse = await session.sendMessageStreaming(
       transcript,
       username,
@@ -115,10 +131,42 @@ export async function handleVoice(ctx: Context): Promise<void> {
       ctx
     );
 
-    // 12. Audit log
+    // 13. Complete action trace (success)
+    const completedAt = Math.floor(Date.now() / 1000);
+    const durationMs = Date.now() - startedAt;
+    const outputsSummary = claudeResponse.slice(0, 200);
+
+    controlTowerDB.completeActionTrace({
+      id: traceId,
+      status: 'completed',
+      completed_at: completedAt,
+      duration_ms: durationMs,
+      outputs_summary: outputsSummary,
+    });
+
+    // 14. Audit log
     await auditLog(userId, username, "VOICE", transcript, claudeResponse);
   } catch (error) {
     console.error("Error processing voice:", error);
+
+    // Complete action trace (failed) - only if transcript was available
+    if (voicePath) {
+      const sessionId = `telegram_${chatId}_${Date.now()}`;
+      const completedAt = Math.floor(Date.now() / 1000);
+      const errorSummary = String(error).slice(0, 200);
+
+      // Find the latest trace for this session and mark as failed
+      const latestTrace = controlTowerDB.getLatestActionTrace(sessionId);
+      if (latestTrace && latestTrace.status === 'started') {
+        controlTowerDB.completeActionTrace({
+          id: latestTrace.id,
+          status: 'failed',
+          completed_at: completedAt,
+          duration_ms: Date.now() - (latestTrace.started_at * 1000),
+          error_summary: errorSummary,
+        });
+      }
+    }
 
     if (String(error).includes("abort") || String(error).includes("cancel")) {
       // Only show "Query stopped" if it was an explicit stop, not an interrupt from a new message

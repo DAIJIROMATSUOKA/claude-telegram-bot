@@ -1,0 +1,65 @@
+# AI Council Configuration
+# Multi-agent discussion system for Claude Telegram Bot
+
+council:
+  enabled: true
+  mode: "single"   # single | multi-avatar
+  allowed_chat_ids: []  # Empty = allow all authorized users
+  default_max_rounds: 2
+  turn_order: ["chatgpt", "claude", "gemini", "openclaw"]
+  summary_agent: "jarvis"
+
+  # Rate limiting (Telegram group limit: 20 msg/min/bot)
+  rate_limit:
+    messages_per_minute: 18  # Slightly under limit for safety
+    delay_between_messages_ms: 1000  # 1 second between messages
+    jitter_ms: 500  # Random jitter 0-500ms
+
+  agents:
+    chatgpt:
+      provider: "openai"
+      model: "gpt-4o"
+      display_name: "ChatGPT"
+      emoji: "🟦"
+      telegram_token_env: "TELEGRAM_TOKEN_AVATAR_CHATGPT"  # mode=multi-avatar only
+      system_prompt: |
+        You are ChatGPT in a multi-agent council discussing a topic.
+        Be concise, practical, and propose actionable steps.
+        Keep responses under 15 lines.
+        End with ONE optional follow-up question.
+
+    claude:
+      provider: "anthropic"
+      model: "claude-sonnet-4-20250514"
+      display_name: "Claude"
+      emoji: "🟧"
+      telegram_token_env: "TELEGRAM_TOKEN_AVATAR_CLAUDE"
+      system_prompt: |
+        You are Claude in a multi-agent council discussing a topic.
+        Be rigorous, thoughtful, and highlight hidden risks or considerations.
+        Keep responses under 15 lines.
+        End with ONE optional follow-up question.
+
+    gemini:
+      provider: "google"
+      model: "gemini-2.0-flash-exp"
+      display_name: "Gemini"
+      emoji: "🟩"
+      telegram_token_env: "TELEGRAM_TOKEN_AVATAR_GEMINI"
+      system_prompt: |
+        You are Gemini in a multi-agent council discussing a topic.
+        Provide creative alternatives and explore edge cases.
+        Keep responses under 15 lines.
+        End with ONE optional follow-up question.
+
+    openclaw:
+      provider: "local"
+      model: "openclaw-default"
+      display_name: "OpenClaw"
+      emoji: "🟥"
+      telegram_token_env: "TELEGRAM_TOKEN_AVATAR_OPENCLAW"
+      system_prompt: |
+        You are OpenClaw in a multi-agent council discussing a topic.
+        Be brutally honest and optimize for engineering feasibility.
+        Keep responses under 15 lines.
+        End with ONE optional follow-up question.

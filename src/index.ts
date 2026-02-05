@@ -8,6 +8,7 @@ import { Bot } from "grammy";
 import { run, sequentialize } from "@grammyjs/runner";
 import { TELEGRAM_TOKEN, WORKING_DIR, ALLOWED_USERS, RESTART_FILE } from "./config";
 import { unlinkSync, readFileSync, existsSync } from "fs";
+import { join } from "path";
 import {
   handleStart,
   handleNew,
@@ -21,7 +22,35 @@ import {
   handlePhoto,
   handleDocument,
   handleCallback,
+  handleWhy,
+  handleCroppyHelp,
+  handleCroppyEnable,
+  handleCroppyDisable,
+  handleCroppyStatus,
 } from "./handlers";
+
+// ============== Global Context ==============
+// Bot起動時にCLAUDE.mdを読み込んでグローバルに保持
+export let AGENTS_MD_CONTENT = "";
+
+function loadAgentsMarkdown(): void {
+  const agentsPath = "/Users/daijiromatsuokam1/claude-telegram-bot/CLAUDE.md";
+  try {
+    if (existsSync(agentsPath)) {
+      AGENTS_MD_CONTENT = readFileSync(agentsPath, "utf-8");
+      console.log(`✅ Loaded CLAUDE.md (${AGENTS_MD_CONTENT.length} chars)`);
+    } else {
+      console.warn("⚠️ CLAUDE.md not found at:", agentsPath);
+      AGENTS_MD_CONTENT = "";
+    }
+  } catch (error) {
+    console.error("Failed to load CLAUDE.md:", error);
+    AGENTS_MD_CONTENT = "";
+  }
+}
+
+// Load CLAUDE.md at startup
+loadAgentsMarkdown();
 
 // Create bot instance
 const bot = new Bot(TELEGRAM_TOKEN);
@@ -56,6 +85,23 @@ bot.command("status", handleStatus);
 bot.command("resume", handleResume);
 bot.command("restart", handleRestart);
 bot.command("retry", handleRetry);
+bot.command("why", handleWhy);
+
+// Croppy auto-approval commands
+bot.command("croppy", async (ctx) => {
+  const args = ctx.message?.text?.split(/\s+/).slice(1) || [];
+  const subcommand = args[0]?.toLowerCase();
+
+  if (subcommand === "enable") {
+    await handleCroppyEnable(ctx);
+  } else if (subcommand === "disable") {
+    await handleCroppyDisable(ctx);
+  } else if (subcommand === "status") {
+    await handleCroppyStatus(ctx);
+  } else {
+    await handleCroppyHelp(ctx);
+  }
+});
 
 // ============== Message Handlers ==============
 

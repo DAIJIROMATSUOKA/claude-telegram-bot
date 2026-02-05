@@ -11,6 +11,8 @@ import { isAuthorized, rateLimiter } from "../security";
 import { auditLog, auditLogRateLimit, startTypingIndicator } from "../utils";
 import { StreamingState, createStatusCallback } from "./streaming";
 import { createMediaGroupBuffer, handleProcessingError } from "./media-group";
+import { controlTowerDB } from "../utils/control-tower-db";
+import { redactSensitiveData } from "../utils/redaction-filter";
 
 // Create photo-specific media group buffer
 const photoBuffer = createMediaGroupBuffer({
@@ -87,6 +89,20 @@ async function processPhotos(
   const state = new StreamingState();
   const statusCallback = createStatusCallback(ctx, state);
 
+  // Start action trace
+  const sessionId = `telegram_${chatId}_${Date.now()}`;
+  const startedAt = Date.now();
+  const actionName = `${photoPaths.length} photo(s)`.slice(0, 50);
+  const inputsRedacted = redactSensitiveData(prompt).sanitized.slice(0, 500);
+
+  const traceId = controlTowerDB.startActionTrace({
+    session_id: sessionId,
+    action_type: 'photo_message',
+    action_name: actionName,
+    inputs_redacted: inputsRedacted,
+    metadata: { username, userId: String(userId), photoCount: photoPaths.length },
+  });
+
   try {
     const response = await session.sendMessageStreaming(
       prompt,
@@ -97,8 +113,34 @@ async function processPhotos(
       ctx
     );
 
+    // Complete action trace (success)
+    const completedAt = Math.floor(Date.now() / 1000);
+    const durationMs = Date.now() - startedAt;
+    const outputsSummary = response.slice(0, 200);
+
+    controlTowerDB.completeActionTrace({
+      id: traceId,
+      status: 'completed',
+      completed_at: completedAt,
+      duration_ms: durationMs,
+      outputs_summary: outputsSummary,
+    });
+
     await auditLog(userId, username, "PHOTO", prompt, response);
   } catch (error) {
+    // Complete action trace (failed)
+    const completedAt = Math.floor(Date.now() / 1000);
+    const durationMs = Date.now() - startedAt;
+    const errorSummary = String(error).slice(0, 200);
+
+    controlTowerDB.completeActionTrace({
+      id: traceId,
+      status: 'failed',
+      completed_at: completedAt,
+      duration_ms: durationMs,
+      error_summary: errorSummary,
+    });
+
     await handleProcessingError(ctx, error, state.toolMessages);
   } finally {
     stopProcessing();

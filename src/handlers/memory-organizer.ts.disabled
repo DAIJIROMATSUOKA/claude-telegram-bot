@@ -1,0 +1,249 @@
+/**
+ * AI_MEMORY自動整理スクリプト
+ *
+ * 毎日深夜2時に実行:
+ * 1. INBOXセクションを読み取り
+ * 2. 重複を削除
+ * 3. 重要な情報を上位セクションに昇格
+ * 4. INBOXを短く保つ
+ */
+
+import Anthropic from '@anthropic-ai/sdk';
+import { google } from 'googleapis';
+import { OAuth2Client } from 'google-auth-library';
+
+interface GoogleCredentials {
+  type: string;
+  project_id: string;
+  private_key_id: string;
+  private_key: string;
+  client_email: string;
+  client_id: string;
+  auth_uri: string;
+  token_uri: string;
+  auth_provider_x509_cert_url: string;
+  client_x509_cert_url: string;
+  universe_domain: string;
+}
+
+/**
+ * Google Docs APIクライアント取得
+ */
+async function getDocsClient(credentialsPath: string) {
+  const credentialsContent = await Bun.file(credentialsPath).text();
+  const credentials: GoogleCredentials = JSON.parse(credentialsContent);
+
+  const auth = new google.auth.GoogleAuth({
+    credentials,
+    scopes: ['https://www.googleapis.com/auth/documents'],
+  });
+
+  const authClient = await auth.getClient();
+  return google.docs({ version: 'v1', auth: authClient as OAuth2Client });
+}
+
+/**
+ * ドキュメント全体を取得
+ */
+async function getDocumentContent(docsClient: any, documentId: string): Promise<string> {
+  const doc = await docsClient.documents.get({ documentId });
+
+  let content = '';
+  for (const element of doc.data.body.content || []) {
+    if (element.paragraph) {
+      for (const textElement of element.paragraph.elements || []) {
+        if (textElement.textRun) {
+          content += textElement.textRun.content;
+        }
+      }
+    }
+  }
+
+  return content;
+}
+
+/**
+ * ドキュメント全体を置き換え
+ */
+async function replaceDocumentContent(
+  docsClient: any,
+  documentId: string,
+  newContent: string
+): Promise<void> {
+  // 1. ドキュメントの現在の長さを取得
+  const doc = await docsClient.documents.get({ documentId });
+  const endIndex = doc.data.body.content[doc.data.body.content.length - 1].endIndex - 1;
+
+  // 2. 全文削除してから新規挿入
+  await docsClient.documents.batchUpdate({
+    documentId,
+    requestBody: {
+      requests: [
+        {
+          deleteContentRange: {
+            range: {
+              startIndex: 1,
+              endIndex: endIndex,
+            },
+          },
+        },
+        {
+          insertText: {
+            text: newContent,
+            location: {
+              index: 1,
+            },
+          },
+        },
+      ],
+    },
+  });
+}
+
+/**
+ * Claudeを使ってAI_MEMORYを整理
+ */
+async function organizeMemoryWithClaude(
+  currentContent: string,
+  anthropicApiKey: string
+): Promise<string> {
+  const anthropic = new Anthropic({ apiKey: anthropicApiKey });
+
+  const systemPrompt = `あなたはAI共有メモリ（AI_MEMORY）の整理を担当するアシスタントです。
+
+**役割:**
+1. INBOXセクションの内容を分析
+2. 重複する情報を統合
+3. 重要な確定情報を適切なセクションに移動
+4. INBOXを最新50エントリ以内に保つ
+5. 全体の構造を維持しながら整理
+
+**整理基準:**
+- ✅ 確定した情報 → 適切なセクションへ昇格
+- ✅ 重複情報 → 統合または削除
+- ✅ 一時的なメモ → 7日以上経過したら削除
+- ✅ プロジェクト関連 → 「現在のプロジェクト」セクションへ
+- ✅ 自動化・環境設定 → 該当セクションへ
+
+**保持する構造:**
+- 基本情報
+- 環境
+- 現在のプロジェクト
+- 自動化済み
+- Jarvisの機能
+- 重要な発見
+- INBOX（最新50件まで）
+
+**出力:**
+整理後の完全なドキュメント内容（Markdown形式）を返してください。
+メタ情報（「整理しました」など）は含めず、ドキュメント本文のみを返してください。`;
+
+  const stream = await anthropic.messages.create({
+    model: 'claude-opus-4-20250514',
+    max_tokens: 16000,
+    system: systemPrompt,
+    messages: [
+      {
+        role: 'user',
+        content: `以下のAI_MEMORYを整理してください:\n\n${currentContent}`,
+      },
+    ],
+    stream: true,
+  });
+
+  let organizedContent = '';
+  for await (const event of stream) {
+    if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
+      organizedContent += event.delta.text;
+    }
+  }
+
+  return organizedContent || currentContent;
+}
+
+/**
+ * メイン処理: AI_MEMORY整理
+ */
+export async function organizeMemory(
+  credentialsPath: string,
+  documentId: string,
+  anthropicApiKey: string
+): Promise<{ success: boolean; changes: string }> {
+  try {
+    console.log('[Memory Organizer] 🧹 Starting AI_MEMORY organization...');
+
+    // 1. ドキュメント取得
+    const docsClient = await getDocsClient(credentialsPath);
+    const currentContent = await getDocumentContent(docsClient, documentId);
+
+    console.log(`[Memory Organizer] 📄 Current content length: ${currentContent.length} chars`);
+
+    // 2. Claudeで整理
+    console.log('[Memory Organizer] 🤖 Organizing with Claude Opus 4...');
+    const organizedContent = await organizeMemoryWithClaude(currentContent, anthropicApiKey);
+
+    console.log(`[Memory Organizer] 📝 Organized content length: ${organizedContent.length} chars`);
+
+    // 3. 変更がある場合のみ更新
+    if (organizedContent.trim() === currentContent.trim()) {
+      console.log('[Memory Organizer] ✨ No changes needed - memory is already organized');
+      return {
+        success: true,
+        changes: 'No changes - already organized',
+      };
+    }
+
+    // 4. ドキュメント更新
+    await replaceDocumentContent(docsClient, documentId, organizedContent);
+
+    const changesSummary = `Organized: ${currentContent.length} → ${organizedContent.length} chars`;
+    console.log(`[Memory Organizer] ✅ ${changesSummary}`);
+
+    return {
+      success: true,
+      changes: changesSummary,
+    };
+
+  } catch (error) {
+    console.error('[Memory Organizer] ❌ Error:', error);
+    return {
+      success: false,
+      changes: `Error: ${error}`,
+    };
+  }
+}
+
+/**
+ * CLI実行用
+ */
+if (import.meta.main) {
+  const credentialsPath = process.env.GOOGLE_CREDENTIALS_PATH ||
+    '/Users/daijiromatsuokam1/jarvis-docs-credentials.json';
+  const documentId = process.env.AI_MEMORY_DOC_ID || '';
+  const anthropicApiKey = process.env.ANTHROPIC_API_KEY || '';
+
+  if (!documentId) {
+    console.error('❌ AI_MEMORY_DOC_ID environment variable is required');
+    process.exit(1);
+  }
+
+  if (!anthropicApiKey) {
+    console.error('❌ ANTHROPIC_API_KEY environment variable is required');
+    process.exit(1);
+  }
+
+  console.log('🧹 Starting AI_MEMORY organization...');
+  organizeMemory(credentialsPath, documentId, anthropicApiKey)
+    .then((result) => {
+      if (result.success) {
+        console.log(`✅ Organization complete: ${result.changes}`);
+      } else {
+        console.error(`❌ Organization failed: ${result.changes}`);
+        process.exit(1);
+      }
+    })
+    .catch((error) => {
+      console.error('❌ Unexpected error:', error);
+      process.exit(1);
+    });
+}

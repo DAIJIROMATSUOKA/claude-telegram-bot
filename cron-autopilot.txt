@@ -1,0 +1,6 @@
+# Autopilot Engine Cron Jobs
+# Run at 03:05 JST (after morning briefing at 03:00)
+# Run at 20:05 JST (after evening review at 20:00)
+
+5 3 * * * cd /Users/daijiromatsuokam1/claude-telegram-bot && /Users/daijiromatsuokam1/.bun/bin/bun run src/jobs/autopilot-cron.ts >> /Users/daijiromatsuokam1/claude-telegram-bot/logs/autopilot-morning.log 2>&1
+5 20 * * * cd /Users/daijiromatsuokam1/claude-telegram-bot && /Users/daijiromatsuokam1/.bun/bin/bun run src/jobs/autopilot-cron.ts >> /Users/daijiromatsuokam1/claude-telegram-bot/logs/autopilot-evening.log 2>&1
