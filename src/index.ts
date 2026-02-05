@@ -32,6 +32,15 @@ import {
   handleTaskPause,
   handleFocus,
 } from "./handlers";
+import {
+  handleMeta,
+  handleMetaRun,
+  handleMetaAudit,
+  handleMetaReview,
+  handleMetaGaps,
+  handleMetaStop,
+  handleMetaStart,
+} from "./handlers/meta-commands";
 
 // ============== Global Context ==============
 // Bot起動時にCLAUDE.mdを読み込んでグローバルに保持
@@ -94,6 +103,15 @@ bot.command("task_start", handleTaskStart);
 bot.command("task_stop", handleTaskStop);
 bot.command("task_pause", handleTaskPause);
 bot.command("focus", handleFocus);
+
+// Meta-Agent commands
+bot.command("meta", handleMeta);
+bot.command("meta_run", handleMetaRun);
+bot.command("meta_audit", handleMetaAudit);
+bot.command("meta_review", handleMetaReview);
+bot.command("meta_gaps", handleMetaGaps);
+bot.command("meta_stop", handleMetaStop);
+bot.command("meta_start", handleMetaStart);
 
 // Croppy auto-approval commands
 bot.command("croppy", async (ctx) => {
