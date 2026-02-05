@@ -148,6 +148,7 @@ export async function handleText(ctx: Context): Promise<void> {
     await saveChatMessage(userId, 'assistant', response);
 
     // 12.5. Smart Router - suggest council for planning-mode questions
+    console.log(`[Smart Router Suggest] mode=${_modeDetection.mode}, confidence=${_modeDetection.confidence}, lm=${_lm.slice(0,30)}`);
     if (_modeDetection.mode === 'planning' &&
         _modeDetection.confidence >= 0.5 &&
         !_lm.startsWith('council') &&
@@ -155,8 +156,15 @@ export async function handleText(ctx: Context): Promise<void> {
       const cacheKey = `${userId}_planning`;
       if (!_routerSuggestedCache.has(cacheKey)) {
         _routerSuggestedCache.add(cacheKey);
-        await ctx.reply('💡 戦略的な相談は council: で聞いてみて');
+        try {
+          await ctx.reply('💡 戦略的な相談は council: で聞いてみて');
+          console.log('[Smart Router Suggest] ✅ Sent council suggestion');
+        } catch (e) {
+          console.error('[Smart Router Suggest] ❌ Failed to send:', e);
+        }
         setTimeout(() => _routerSuggestedCache.delete(cacheKey), 60 * 60 * 1000);
+      } else {
+        console.log('[Smart Router Suggest] Skipped (cached)');
       }
     }
 
