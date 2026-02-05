@@ -5,6 +5,7 @@
  */
 
 import { callMemoryGateway } from '../handlers/ai-router';
+import { detectWorkMode, getRecommendedAI } from './context-detector';
 
 export interface JarvisContext {
   user_id: string;
@@ -32,7 +33,8 @@ export async function getJarvisContext(
     const userIdStr = String(userId);
 
     const response = await callMemoryGateway('/v1/db/query', 'POST', {
-      sql: `SELECT user_id, current_task, current_phase, current_assumption, important_decisions, updated_at
+      sql: `SELECT user_id, current_task, current_phase, current_assumption, important_decisions,
+                   work_mode, focus_mode, recommended_ai, mode_confidence, updated_at
             FROM jarvis_context
             WHERE user_id = ?`,
       params: [userIdStr],
@@ -64,6 +66,10 @@ export async function updateJarvisContext(
     current_phase?: string | null;
     current_assumption?: string | null;
     important_decisions?: string | null;
+    work_mode?: string | null;
+    focus_mode?: number;
+    recommended_ai?: string | null;
+    mode_confidence?: number;
   }
 ): Promise<void> {
   try {
@@ -78,6 +84,10 @@ export async function updateJarvisContext(
       const newPhase = updates.current_phase !== undefined ? updates.current_phase : existing.current_phase;
       const newAssumption = updates.current_assumption !== undefined ? updates.current_assumption : existing.current_assumption;
       const newDecisions = updates.important_decisions !== undefined ? updates.important_decisions : existing.important_decisions;
+      const newWorkMode = updates.work_mode !== undefined ? updates.work_mode : existing.work_mode;
+      const newFocusMode = updates.focus_mode !== undefined ? updates.focus_mode : existing.focus_mode;
+      const newRecommendedAI = updates.recommended_ai !== undefined ? updates.recommended_ai : existing.recommended_ai;
+      const newModeConfidence = updates.mode_confidence !== undefined ? updates.mode_confidence : existing.mode_confidence;
 
       await callMemoryGateway('/v1/db/query', 'POST', {
         sql: `UPDATE jarvis_context
@@ -85,23 +95,32 @@ export async function updateJarvisContext(
                   current_phase = ?,
                   current_assumption = ?,
                   important_decisions = ?,
+                  work_mode = ?,
+                  focus_mode = ?,
+                  recommended_ai = ?,
+                  mode_confidence = ?,
                   updated_at = datetime('now')
               WHERE user_id = ?`,
-        params: [newTask, newPhase, newAssumption, newDecisions, userIdStr],
+        params: [newTask, newPhase, newAssumption, newDecisions, newWorkMode, newFocusMode, newRecommendedAI, newModeConfidence, userIdStr],
       });
 
       console.log('[Jarvis Context] 更新成功:', updates);
     } else {
       // 新規作成
       await callMemoryGateway('/v1/db/query', 'POST', {
-        sql: `INSERT INTO jarvis_context (user_id, current_task, current_phase, current_assumption, important_decisions)
-              VALUES (?, ?, ?, ?, ?)`,
+        sql: `INSERT INTO jarvis_context (user_id, current_task, current_phase, current_assumption, important_decisions,
+                                          work_mode, focus_mode, recommended_ai, mode_confidence)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         params: [
           userIdStr,
           updates.current_task || null,
           updates.current_phase || null,
           updates.current_assumption || null,
           updates.important_decisions || null,
+          updates.work_mode || 'chatting',
+          updates.focus_mode !== undefined ? updates.focus_mode : 0,
+          updates.recommended_ai || 'jarvis',
+          updates.mode_confidence !== undefined ? updates.mode_confidence : 0.0,
         ],
       });
 
@@ -301,4 +320,30 @@ export function formatContextForPrompt(context: JarvisContext | null): string {
   }
 
   return parts.length > 0 ? parts.join('\n') : '（コンテキストなし）';
+}
+
+/**
+ * Smart AI Router - メッセージから作業モードを自動判定してDBに保存
+ *
+ * @param userId Telegram user ID
+ * @param message ユーザーメッセージ
+ */
+export async function autoDetectAndUpdateWorkMode(
+  userId: string | number,
+  message: string
+): Promise<void> {
+  try {
+    const detection = detectWorkMode(message);
+    const recommendedAI = getRecommendedAI(detection.mode);
+
+    console.log(`[Smart AI Router] Detected: ${detection.mode} (confidence: ${detection.confidence})`);
+
+    await updateJarvisContext(userId, {
+      work_mode: detection.mode,
+      recommended_ai: recommendedAI,
+      mode_confidence: detection.confidence,
+    });
+  } catch (error) {
+    console.error('[Smart AI Router] Error:', error);
+  }
 }

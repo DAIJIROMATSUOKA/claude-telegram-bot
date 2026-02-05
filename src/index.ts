@@ -30,6 +30,7 @@ import {
   handleTaskStart,
   handleTaskStop,
   handleTaskPause,
+  handleFocus,
 } from "./handlers";
 
 // ============== Global Context ==============
@@ -92,6 +93,7 @@ bot.command("why", handleWhy);
 bot.command("task_start", handleTaskStart);
 bot.command("task_stop", handleTaskStop);
 bot.command("task_pause", handleTaskPause);
+bot.command("focus", handleFocus);
 
 // Croppy auto-approval commands
 bot.command("croppy", async (ctx) => {
