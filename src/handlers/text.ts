@@ -41,7 +41,8 @@ export async function handleText(ctx: Context): Promise<void> {
   }
 
   // 2. Check for darwin commands
-  if (message.trim().toLowerCase().startsWith('darwin')) {
+  const _lm = message.trim().toLowerCase();
+  if (_lm === 'darwin' || _lm.startsWith('darwin ')) {
     const args = message.trim().split(/\s+/).slice(1); // Remove 'darwin' prefix
     await routeDarwinCommand(ctx, args);
     return;
