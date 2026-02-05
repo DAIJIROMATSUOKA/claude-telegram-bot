@@ -10,6 +10,12 @@ import { WORKING_DIR, ALLOWED_USERS, RESTART_FILE } from "../config";
 import { isAuthorized } from "../security";
 import { execSync } from "child_process";
 import { join } from "path";
+import {
+  enableFocusMode,
+  disableFocusMode,
+  deliverBufferedNotifications,
+  isFocusModeEnabled,
+} from "../utils/focus-mode";
 
 /**
  * /start - Show welcome message and status.
@@ -375,5 +381,40 @@ export async function handleTaskPause(ctx: Context): Promise<void> {
   } catch (error: any) {
     console.error("[task_pause] Timer sync failed:", error.message);
     await ctx.reply(`⚠️ タイマー同期失敗: ${error.message}`);
+  }
+}
+
+/**
+ * /focus - Toggle focus mode or check status
+ */
+export async function handleFocus(ctx: Context): Promise<void> {
+  const userId = ctx.from?.id;
+
+  if (!isAuthorized(userId, ALLOWED_USERS)) {
+    await ctx.reply("Unauthorized.");
+    return;
+  }
+
+  const text = ctx.message?.text || "";
+  const args = text.split(/\s+/).slice(1); // Remove "/focus"
+
+  // No args → show status
+  if (args.length === 0) {
+    const isEnabled = await isFocusModeEnabled(userId!);
+    await ctx.reply(isEnabled ? '🔇 Focus Mode: ON' : '🔔 Focus Mode: OFF');
+    return;
+  }
+
+  const command = args[0].toLowerCase();
+
+  if (command === 'on') {
+    await enableFocusMode(userId!);
+    await ctx.reply('🔇 Focus Mode有効化\n通知はバッファに保存されます');
+  } else if (command === 'off') {
+    await disableFocusMode(userId!);
+    await ctx.reply('🔔 Focus Mode解除\nバッファされた通知を配信します...');
+    await deliverBufferedNotifications(ctx, userId!);
+  } else {
+    await ctx.reply('使い方:\n/focus → 状態確認\n/focus on → 有効化\n/focus off → 解除');
   }
 }

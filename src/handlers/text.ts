@@ -13,10 +13,13 @@ import { redactSensitiveData } from "../utils/redaction-filter";
 import { routeDarwinCommand } from "./darwin-commands";
 import { checkPhaseCompletionApproval } from "../utils/phase-detector";
 import { saveChatMessage, cleanupOldHistory } from "../utils/chat-history";
-import { autoUpdateContext, getJarvisContext } from "../utils/jarvis-context";
+import { autoUpdateContext, getJarvisContext, autoDetectAndUpdateWorkMode } from "../utils/jarvis-context";
 import { buildCroppyPrompt } from "../utils/croppy-context";
 import { detectInterruptableTask } from "../utils/implementation-detector";
 import { saveInterruptSnapshot, type SnapshotData } from "../utils/auto-resume";
+import { isFocusModeEnabled, bufferNotification } from "../utils/focus-mode";
+import { preloadToolContext, formatPreloadedContext } from "../utils/tool-preloader";
+import { WORKING_DIR } from "../config";
 
 /**
  * Handle incoming text messages.
@@ -100,12 +103,31 @@ export async function handleText(ctx: Context): Promise<void> {
       cleanupOldHistory().catch(err => console.error('Cleanup error:', err));
     }
 
+    // 10.5. Smart AI Router - Auto-detect work mode and update DB
+    await autoDetectAndUpdateWorkMode(userId, message);
+    const jarvisContext = await getJarvisContext(userId);
+
+    // 10.6. Tool Pre-Loading - Preload context based on work mode
+    let preloadedContext = '';
+    if (jarvisContext?.work_mode && jarvisContext.work_mode !== 'chatting') {
+      const preloaded = preloadToolContext(jarvisContext.work_mode as any, WORKING_DIR);
+      preloadedContext = formatPreloadedContext(preloaded);
+      if (preloadedContext) {
+        console.log(`[Tool Preloader] Loaded context for mode: ${jarvisContext.work_mode}`);
+      }
+    }
+
     // 11. Check for croppy: prefix and inject context
     if (message.trim().toLowerCase().startsWith('croppy:')) {
       console.log('[Text Handler] croppy: detected, injecting context...');
       const originalPrompt = message.slice(7).trim(); // Remove "croppy:" prefix
       message = 'croppy: ' + await buildCroppyPrompt(originalPrompt, userId);
       console.log('[Text Handler] Context injected, new message length:', message.length);
+    }
+
+    // 11.5. Inject preloaded tool context if available
+    if (preloadedContext && !message.includes('croppy:')) {
+      message = message + '\n' + preloadedContext;
     }
 
     // 12. Send to Claude with streaming
@@ -174,7 +196,16 @@ export async function handleText(ctx: Context): Promise<void> {
     });
 
     // 15. Check for phase completion and croppy approval
-    await checkPhaseCompletionApproval(ctx, response);
+    // (Skip in focus mode - will be buffered)
+    const inFocusMode = await isFocusModeEnabled(userId);
+    if (!inFocusMode) {
+      await checkPhaseCompletionApproval(ctx, response);
+    } else {
+      // Buffer phase completion notifications
+      if (response.toLowerCase().includes('phase') && response.toLowerCase().includes('完了')) {
+        await bufferNotification(userId, 'info', 'Phase完了検出（要承認確認）');
+      }
+    }
 
     // 16. Audit log
     await auditLog(userId, username, "TEXT", message, response);
