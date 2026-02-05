@@ -36,8 +36,8 @@ function createMockContext(options: {
 
   const ctx: any = {
     chat: { id: chatId },
-    telegram: {
-      editMessageText: mock(async (chat, msgId, _inlineId, text, opts) => {
+    api: {
+      editMessageText: mock(async (chatId, msgId, text, opts) => {
         editCallCount++;
         if (!editSuccess) {
           throw editError || new Error('Edit failed');
@@ -121,7 +121,7 @@ describe('Tower Manager', () => {
     };
     const result2 = await updateTower(ctx, identifier, state2);
     expect(result2.action).toBe('updated');
-    expect(ctx.telegram.editMessageText).toHaveBeenCalled();
+    expect(ctx.api.editMessageText).toHaveBeenCalled();
   });
 
   // ==========================================================================
@@ -312,7 +312,7 @@ describe('Tower Manager', () => {
     });
 
     // Mock editMessageText to fail first, succeed second
-    ctxWithError.telegram.editMessageText = mock(async () => {
+    ctxWithError.api.editMessageText = mock(async () => {
       attemptCount++;
       if (attemptCount === 1) {
         const error: any = new Error('429');
