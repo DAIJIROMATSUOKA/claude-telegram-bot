@@ -148,7 +148,7 @@ export async function handleText(ctx: Context): Promise<void> {
     await saveChatMessage(userId, 'assistant', response);
 
     // 12.5. Smart Router - suggest council for planning-mode questions
-    console.log(`[Smart Router Suggest] mode=${_modeDetection.mode}, confidence=${_modeDetection.confidence}, lm=${_lm.slice(0,30)}`);
+    console.log("[Smart Router Suggest] mode=" + _modeDetection.mode + ", confidence=" + _modeDetection.confidence + ", lm=" + _lm.slice(0,30));
     if (_modeDetection.mode === 'planning' &&
         _modeDetection.confidence >= 0.5 &&
         !_lm.startsWith('council') &&
