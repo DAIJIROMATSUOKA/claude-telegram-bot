@@ -3,7 +3,7 @@
 
 import { ulid } from 'ulid';
 import { getDb } from './db.js';
-import { callClaudeCLI } from '../handlers/ai-router.js';
+import { callMetaCLI } from './cli.js';
 import type { CodeReviewSuggestion, RefactorProposal, MetaAgentLog } from './types.js';
 
 const REFACTOR_PROMPT = `You are a refactoring architect. Based on the following code review suggestions, create a concrete refactoring proposal.
@@ -121,10 +121,7 @@ async function generateProposalForFile(
 
   try {
     // Call Claude CLI for refactor proposal
-    const response = await callClaudeCLI(prompt, {
-      conversationName: `refactor-proposal-${Date.now()}`,
-      maxTokens: 4096,
-    });
+    const response = await callMetaCLI(prompt);
 
     // Parse JSON response
     let proposalData: any = null;

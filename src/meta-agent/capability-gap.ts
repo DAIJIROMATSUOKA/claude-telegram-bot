@@ -3,7 +3,7 @@
 
 import { ulid } from 'ulid';
 import { getDb } from './db.js';
-import { callClaudeCLI } from '../handlers/ai-router.js';
+import { callMetaCLI } from './cli.js';
 import type { CapabilityGap, MetaAgentLog } from './types.js';
 
 const GAP_ANALYSIS_PROMPT = `You are an automation expert analyzing DJ's conversation history to detect repeated manual operations.
@@ -68,10 +68,7 @@ export async function analyzeCapabilityGaps(daysBack: number = 7): Promise<Capab
     const prompt = GAP_ANALYSIS_PROMPT.replace('{{HISTORY}}', history.join('\n\n'));
 
     // Call Claude CLI for gap analysis
-    const response = await callClaudeCLI(prompt, {
-      conversationName: `gap-analysis-${Date.now()}`,
-      maxTokens: 4096,
-    });
+    const response = await callMetaCLI(prompt);
 
     // Parse JSON response
     let gaps: any[] = [];
@@ -169,7 +166,7 @@ function getRecentConversationHistory(daysBack: number): string[] {
 
   const messages = db.prepare(`
     SELECT user_message, created_at
-    FROM jarvis_control_tower
+    FROM jarvis_chat_history
     WHERE created_at >= ?
     ORDER BY created_at DESC
     LIMIT 100
