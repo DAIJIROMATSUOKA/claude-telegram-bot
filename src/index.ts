@@ -190,6 +190,17 @@ if (existsSync(RESTART_FILE)) {
 // Start with concurrent runner (commands work immediately)
 const runner = run(bot);
 
+// Startup notification - DJに起動完了を通知
+try {
+  const djChatId = ALLOWED_USERS[0];
+  if (djChatId) {
+    await bot.api.sendMessage(djChatId, '🤖 Jarvis起動完了');
+    console.log('📨 Startup notification sent to DJ');
+  }
+} catch (e) {
+  console.warn('⚠️ Startup notification failed (non-fatal):', e);
+}
+
 // Graceful shutdown
 const stopRunner = () => {
   if (runner.isRunning()) {
