@@ -14,7 +14,6 @@ import { routeDarwinCommand } from "./darwin-commands";
 import { checkPhaseCompletionApproval } from "../utils/phase-detector";
 import { saveChatMessage, cleanupOldHistory } from "../utils/chat-history";
 import { autoUpdateContext, getJarvisContext, autoDetectAndUpdateWorkMode } from "../utils/jarvis-context";
-import { detectWorkMode } from "../utils/context-detector";
 import { buildCroppyPrompt } from "../utils/croppy-context";
 import { detectInterruptableTask } from "../utils/implementation-detector";
 import { saveInterruptSnapshot, type SnapshotData } from "../utils/auto-resume";
@@ -109,7 +108,6 @@ export async function handleText(ctx: Context): Promise<void> {
     }
 
     // 10.5. Smart AI Router - Auto-detect work mode and update DB
-    const _modeDetection = detectWorkMode(message);
     await autoDetectAndUpdateWorkMode(userId, message);
     const jarvisContext = await getJarvisContext(userId);
 
@@ -147,24 +145,19 @@ export async function handleText(ctx: Context): Promise<void> {
     // 12. Save assistant response to chat history
     await saveChatMessage(userId, 'assistant', response);
 
-    // 12.5. Smart Router - suggest council for planning-mode questions
-    console.log("[Smart Router Suggest] mode=" + _modeDetection.mode + ", confidence=" + _modeDetection.confidence + ", lm=" + _lm.slice(0,30));
-    if (_modeDetection.mode === 'planning' &&
-        _modeDetection.confidence >= 0.5 &&
-        !_lm.startsWith('council') &&
-        !_lm.startsWith('croppy:')) {
-      const cacheKey = `${userId}_planning`;
-      if (!_routerSuggestedCache.has(cacheKey)) {
-        _routerSuggestedCache.add(cacheKey);
+    // 12.5. Smart Router - suggest council for strategic questions
+    var _councilKeywords = /設計|design|アーキテクチャ|architecture|戦略|strategy|提案|proposal|方針|council/i;
+    if (_councilKeywords.test(message) && !_lm.startsWith('council') && !_lm.startsWith('croppy:')) {
+      var _ck = String(userId) + '_council';
+      if (!_routerSuggestedCache.has(_ck)) {
+        _routerSuggestedCache.add(_ck);
         try {
           await ctx.reply('💡 戦略的な相談は council: で聞いてみて');
-          console.log('[Smart Router Suggest] ✅ Sent council suggestion');
+          console.log('[Smart Router] council suggestion sent');
         } catch (e) {
-          console.error('[Smart Router Suggest] ❌ Failed to send:', e);
+          console.error('[Smart Router] send failed:', e);
         }
-        setTimeout(() => _routerSuggestedCache.delete(cacheKey), 60 * 60 * 1000);
-      } else {
-        console.log('[Smart Router Suggest] Skipped (cached)');
+        setTimeout(function() { _routerSuggestedCache.delete(_ck); }, 3600000);
       }
     }
 
