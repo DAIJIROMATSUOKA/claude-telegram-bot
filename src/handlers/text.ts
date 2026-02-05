@@ -14,6 +14,7 @@ import { routeDarwinCommand } from "./darwin-commands";
 import { checkPhaseCompletionApproval } from "../utils/phase-detector";
 import { saveChatMessage, cleanupOldHistory } from "../utils/chat-history";
 import { autoUpdateContext, getJarvisContext, autoDetectAndUpdateWorkMode } from "../utils/jarvis-context";
+import { detectWorkMode } from "../utils/context-detector";
 import { buildCroppyPrompt } from "../utils/croppy-context";
 import { detectInterruptableTask } from "../utils/implementation-detector";
 import { saveInterruptSnapshot, type SnapshotData } from "../utils/auto-resume";
@@ -108,6 +109,7 @@ export async function handleText(ctx: Context): Promise<void> {
     }
 
     // 10.5. Smart AI Router - Auto-detect work mode and update DB
+    const _modeDetection = detectWorkMode(message);
     await autoDetectAndUpdateWorkMode(userId, message);
     const jarvisContext = await getJarvisContext(userId);
 
@@ -146,8 +148,8 @@ export async function handleText(ctx: Context): Promise<void> {
     await saveChatMessage(userId, 'assistant', response);
 
     // 12.5. Smart Router - suggest council for planning-mode questions
-    if (jarvisContext?.work_mode === 'planning' &&
-        jarvisContext.mode_confidence >= 0.7 &&
+    if (_modeDetection.mode === 'planning' &&
+        _modeDetection.confidence >= 0.5 &&
         !_lm.startsWith('council') &&
         !_lm.startsWith('croppy:')) {
       const cacheKey = `${userId}_planning`;
