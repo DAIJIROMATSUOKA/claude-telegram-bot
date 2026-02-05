@@ -5,7 +5,7 @@ import { readFileSync, readdirSync, statSync } from 'fs';
 import { join, relative } from 'path';
 import { ulid } from 'ulid';
 import { getDb } from './db.js';
-import { callClaudeCLI } from '../handlers/ai-router.js';
+import { callMetaCLI } from './cli.js';
 import type { CodeReviewSuggestion, MetaAgentLog } from './types.js';
 
 const REVIEW_PROMPT = `You are a code reviewer analyzing a TypeScript file.
@@ -122,10 +122,7 @@ async function reviewFile(filePath: string, relativePath: string): Promise<CodeR
 
   try {
     // Call Claude CLI for code review
-    const response = await callClaudeCLI(prompt, {
-      conversationName: `code-review-${Date.now()}`,
-      maxTokens: 4096,
-    });
+    const response = await callMetaCLI(prompt);
 
     // Parse JSON response
     let issues: any[] = [];
