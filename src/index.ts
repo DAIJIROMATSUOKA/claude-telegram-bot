@@ -41,6 +41,12 @@ import {
   handleMetaStop,
   handleMetaStart,
 } from "./handlers/meta-commands";
+import {
+  handleDebate,
+  handleAskGPT,
+  handleAskGemini,
+} from "./handlers/council";
+import { handleAISession } from "./handlers/ai-session";
 
 // ============== Global Context ==============
 // Bot起動時にCLAUDE.mdを読み込んでグローバルに保持
@@ -132,6 +138,15 @@ bot.command("croppy", async (ctx) => {
 // ============== Message Handlers ==============
 
 // Text messages
+
+// Council Debate commands (3AI)
+bot.command("debate", handleDebate);
+bot.command("gpt", handleAskGPT);
+bot.command("gem", handleAskGemini);
+
+// AI Session Bridge
+bot.command("ai", handleAISession);
+
 bot.on("message:text", handleText);
 
 // Voice messages

@@ -57,6 +57,71 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ---
 
+## 📋 タスク管理（Todoist連携）
+
+### トリガー
+- 「今日のタスク教えて」「今週のTodoistタスク」等でタスク一覧を取得
+- 「【Todoist】タスク名 #プロジェクト @タグ 期限」でタスク追加
+
+### 認証情報
+- Todoist APIトークンは `~/.claude/jarvis_config.json` に保存
+- ファイルが存在しない場合はその旨をユーザーに報告
+
+### タスク取得
+```bash
+curl -s "https://api.todoist.com/rest/v2/tasks?filter=today" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+### タスク追加
+- プロジェクト指定: #プロジェクト名
+- タグ指定: @タグ名
+- 存在しないプロジェクト/タグは自動作成
+
+---
+
+## ⏱️ タスク時間計測
+
+### スクリプト情報
+- スクリプトパス: `/Users/daijiromatsuokam1/task-tracker.py`
+- 状態ファイル: `~/.task-tracker.json`（開始時刻を保持）
+
+### トリガー
+- メッセージ末尾が「**開始**」→ タスク開始
+- メッセージ末尾が「**終了**」→ タスク終了
+- 「開始」「終了」を除いた部分がタスク名
+
+### コマンド実行
+```bash
+# タスク開始
+python3 ~/task-tracker.py start "タスク名"
+
+# タスク終了
+python3 ~/task-tracker.py end "タスク名"
+```
+
+### 応答フォーマット
+- **開始時**: 「✅ {タスク名} 開始しました（HH:MM）」
+- **終了時**: 「✅ {タスク名} 終了 ⏱️ 経過時間: X時間X分 📅 LOGカレンダーに保存しました」
+
+### 機能詳細
+- 複数タスクの並行計測に対応
+- 24時間後に自動クリーンアップ
+- 終了時にGoogleカレンダーのLOGカレンダーにAppleScript経由でイベント作成
+
+### 例
+```
+ユーザー: ヤガイ2号機設計開始
+→ python3 ~/task-tracker.py start "ヤガイ2号機設計"
+→ 「✅ ヤガイ2号機設計 開始しました（08:30）」
+
+ユーザー: ヤガイ2号機設計終了
+→ python3 ~/task-tracker.py end "ヤガイ2号機設計"
+→ 「✅ ヤガイ2号機設計 終了 ⏱️ 経過時間: 2時間15分 📅 LOGカレンダーに保存しました」
+```
+
+---
+
 ## 🔄 標準ワークフロー
 
 ### 簡単なタスク
