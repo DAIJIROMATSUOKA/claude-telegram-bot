@@ -267,6 +267,7 @@ export async function sendToSession(
       // Claude CLI: --resume でセッション継続、--output-format json でセッションID取得
       // 履歴注入は不要（CLI側が全履歴を自動保持）
       const args: string[] = [
+        "--model", "claude-opus-4-6",
         "--dangerously-skip-permissions",
         "--output-format", "json",
       ];
