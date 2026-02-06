@@ -82,7 +82,7 @@ function spawnCLI(
  */
 export async function askClaude(prompt: string, timeoutMs = 120_000): Promise<AIResponse> {
   const start = Date.now();
-  const r = await spawnCLI("claude", ["-p", prompt], null, timeoutMs);
+  const r = await spawnCLI("claude", ["--model", "claude-opus-4-6", "-p", prompt], null, timeoutMs);
   return {
     output: (r.code === 0 || r.stdout) ? r.stdout : "",
     backend: "claude",

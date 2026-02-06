@@ -350,7 +350,7 @@ ${memoryPack}
 
       // Execute claude with file input
       const { stdout, stderr } = await execPromise(
-        `claude --print < ${tempFile}`,
+        `claude --model claude-opus-4-6 --print < ${tempFile}`,
         {
           timeout: 180000, // 180秒（3分）- クロッピー🦞のタイムアウト改善
           cwd: '/Users/daijiromatsuokam1',
