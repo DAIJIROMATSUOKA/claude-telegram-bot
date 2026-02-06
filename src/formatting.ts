@@ -41,11 +41,16 @@ export function convertMarkdownToHtml(text: string): string {
   // Escape HTML entities in the remaining text
   text = escapeHtml(text);
 
-  // Headers: ## Header -> <b>Header</b>
-  text = text.replace(/^#{1,6}\s+(.+)$/gm, "<b>$1</b>\n");
-
-  // Bold: **text** -> <b>text</b>
+  // Bold: **text** -> <b>text</b> (process BEFORE headers)
   text = text.replace(/\*\*(.+?)\*\*/g, "<b>$1</b>");
+
+  // Headers: ## Header -> <b>Header</b>
+  // Strip any existing <b> tags from headers to avoid double nesting
+  text = text.replace(/^#{1,6}\s+(.+)$/gm, (_, content) => {
+    // Remove <b> tags if already present (from ** conversion above)
+    const stripped = content.replace(/<\/?b>/g, "");
+    return `<b>${stripped}</b>\n`;
+  });
 
   // Also handle *text* as bold (single asterisk)
   text = text.replace(/(?<!\*)\*(.+?)\*(?!\*)/g, "<b>$1</b>");

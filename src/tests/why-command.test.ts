@@ -80,9 +80,20 @@ describe('/why Command Tests', () => {
   });
 
   test('Successful /why command with full trace data', async () => {
+    // Use unique session ID for this test to avoid conflicts
+    const uniqueSessionId = `${TEST_CHAT_ID}_${Date.now() + 2000}`;
+
+    // First create the control tower entry
+    controlTowerDB.updateControlTower({
+      session_id: uniqueSessionId,
+      status: 'executing',
+      phase: 'Phase E: Testing',
+      current_action: 'Running test',
+    });
+
     // Create a full action trace
     const traceId = controlTowerDB.startActionTrace({
-      session_id: TEST_SESSION_ID,
+      session_id: uniqueSessionId,
       action_type: 'tool',
       action_name: 'Edit',
       trace_id: 'trace_001',

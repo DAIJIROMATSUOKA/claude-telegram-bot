@@ -14,6 +14,11 @@ import { routeDarwinCommand } from "./darwin-commands";
 import { checkPhaseCompletionApproval } from "../utils/phase-detector";
 import { saveChatMessage, cleanupOldHistory } from "../utils/chat-history";
 import { autoUpdateContext, getJarvisContext, autoDetectAndUpdateWorkMode } from "../utils/jarvis-context";
+import {
+  hasActiveSession,
+  sendToSession,
+  splitTelegramMessage,
+} from "../utils/session-bridge";
 import { buildCroppyPrompt } from "../utils/croppy-context";
 import { detectInterruptableTask } from "../utils/implementation-detector";
 import { saveInterruptSnapshot, type SnapshotData } from "../utils/auto-resume";
@@ -77,6 +82,25 @@ export async function handleText(ctx: Context): Promise<void> {
   const stopProcessing = session.startProcessing();
 
   // 6. Start typing indicator
+  // === AI Session Bridge ===
+  // When a session is active, bypass normal Jarvis and send directly to the selected AI
+  if (hasActiveSession(userId)) {
+    const _sbTyping = startTypingIndicator(ctx);
+    try {
+      const aiResponse = await sendToSession(userId, message);
+      _sbTyping.stop();
+      const chunks = splitTelegramMessage(aiResponse);
+      for (const chunk of chunks) {
+        await ctx.reply(chunk);
+      }
+    } catch (e) {
+      _sbTyping.stop();
+      const errMsg = e instanceof Error ? e.message : String(e);
+      await ctx.reply("\u274C AI Session Error: " + errMsg);
+    }
+    return;
+  }
+
   const typing = startTypingIndicator(ctx);
 
   // 7. Create streaming state and callback
