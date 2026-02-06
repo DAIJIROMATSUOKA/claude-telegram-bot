@@ -87,7 +87,17 @@ export function parseTasksFromMemory(memoryContent: string): {
     }
   }
 
-  return { todayTasks, tomorrowTasks };
+  // 重複排除（同じcontentのタスクは最初の1件のみ残す）
+  const dedup = (tasks: Task[]): Task[] => {
+    const seen = new Set<string>();
+    return tasks.filter(t => {
+      if (seen.has(t.content)) return false;
+      seen.add(t.content);
+      return true;
+    });
+  };
+
+  return { todayTasks: dedup(todayTasks), tomorrowTasks: dedup(tomorrowTasks) };
 }
 
 /**
