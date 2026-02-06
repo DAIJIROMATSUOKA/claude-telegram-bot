@@ -257,7 +257,7 @@ async function runCouncilDebate(
   );
 
   const r2Prompt = (role: CouncilRole): string =>
-    ROLES[role].prompt + R2_PROMPT_TEMPLATE.replace("{topic}", topic).replace("{r1Summary}", r1Summary);
+    ROLES[role].prompt + R2_PROMPT_TEMPLATE.replace("{topic}", topic).replace("{r1Summary}", () => r1Summary);
 
   const r2Results = await Promise.allSettled(
     r1Success.map((entry) => ROLES[entry.role].askFn(r2Prompt(entry.role), 120_000)),
@@ -299,7 +299,7 @@ async function runCouncilDebate(
 
   const synthPrompt = SYNTHESIS_PROMPT_TEMPLATE
     .replace("{topic}", topic)
-    .replace("{allRoundsText}", allRoundsText.join("\n"));
+    .replace("{allRoundsText}", () => allRoundsText.join("\n"));
 
   const synthesis = await askClaude(synthPrompt, 150_000);
 
