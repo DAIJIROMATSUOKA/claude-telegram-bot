@@ -1,7 +1,8 @@
 /**
  * AI Session Bridge - 3AI CLIとのインタラクティブセッション管理
  *
- * Claude/Gemini: -p 呼び出し + 会話履歴自動注入
+ * Claude: --resume でCLI側セッション維持（履歴自動保持、トークン節約）
+ * Gemini: -p 呼び出し + 会話履歴注入（--resume未検証のため従来方式）
  * ChatGPT: Shortcuts経由 + 会話履歴注入
  *
  * DJの大原則: Telegramへの最初の投稿以外は何もしない
@@ -31,6 +32,8 @@ export interface AISession {
   startedAt: number;
   messageCount: number;
   history: HistoryEntry[];
+  /** Claude CLI session ID for --resume (Claude only) */
+  cliSessionId?: string;
 }
 
 interface SpawnResult {
@@ -92,6 +95,7 @@ export function startSession(userId: number, ai: AIBackend): AISession {
     startedAt: Date.now(),
     messageCount: 0,
     history: [],
+    cliSessionId: undefined,
   };
 
   activeSessions.set(userId, session);
@@ -170,12 +174,12 @@ function spawnCLI(
 }
 
 // ========================================
-// History Management
+// History Management (Gemini/GPT用、Claudeは--resumeで不要)
 // ========================================
 
 /**
  * 会話履歴をプロンプト用テキストに変換
- * 直近N往復分を含める。古い履歴は要約。
+ * Gemini/GPT向け。Claudeは--resumeでCLI側が履歴を保持するため使わない。
  */
 function buildHistoryPrompt(history: HistoryEntry[]): string {
   if (history.length === 0) return "";
@@ -202,14 +206,49 @@ function buildHistoryPrompt(history: HistoryEntry[]): string {
 }
 
 // ========================================
+// Claude --resume JSON parser
+// ========================================
+
+interface ClaudeJsonResult {
+  sessionId: string | null;
+  text: string;
+}
+
+/**
+ * Claude CLI の --output-format json 出力をパース
+ * 
+ * 期待する構造:
+ * {
+ *   "session_id": "uuid",
+ *   "result": "応答テキスト",
+ *   ...
+ * }
+ * 
+ * パース失敗時は生テキストをそのまま返す
+ */
+function parseClaudeJson(raw: string): ClaudeJsonResult {
+  try {
+    const parsed = JSON.parse(raw);
+    return {
+      sessionId: parsed.session_id || null,
+      text: parsed.result || parsed.content || raw,
+    };
+  } catch {
+    // JSON以外の出力（エラーメッセージ等）はそのまま返す
+    return { sessionId: null, text: raw };
+  }
+}
+
+// ========================================
 // Core: Send Message to AI Session
 // ========================================
 
 /**
  * セッション中のAIにメッセージを送信
- * 
- * Claude/Gemini: -p で呼び出し。CLAUDE.md/GEMINI.md を自動読み込み。
+ *
+ * Claude: --resume でCLIセッション維持。履歴注入不要。
  *   → M1上で直接ファイル操作・コマンド実行が可能
+ * Gemini: -p + 履歴注入。M1上で直接操作可能。
  * ChatGPT: Shortcuts経由。相談のみ。
  */
 export async function sendToSession(
@@ -221,27 +260,51 @@ export async function sendToSession(
 
   session.messageCount++;
 
-  // 会話履歴を組み立て
-  const historyPrompt = buildHistoryPrompt(session.history);
-  const fullPrompt = historyPrompt + "User: " + message;
-
   let result: SpawnResult;
 
   switch (session.ai) {
-    case "claude":
-      // Claude CLI: CLAUDE.md自動読み込み、ファイル操作・コマンド実行可能
-      // --dangerously-skip-permissions: 承認プロンプトなし（DJはTelegram以外触らない原則）
-      result = await spawnCLI(
-        "claude",
-        ["--dangerously-skip-permissions", "-p", fullPrompt],
-        null,
-        300_000, // 5分
-      );
-      break;
+    case "claude": {
+      // Claude CLI: --resume でセッション継続、--output-format json でセッションID取得
+      // 履歴注入は不要（CLI側が全履歴を自動保持）
+      const args: string[] = [
+        "--dangerously-skip-permissions",
+        "--output-format", "json",
+      ];
 
-    case "gemini":
-      // Gemini CLI: GEMINI.md自動読み込み、ファイル操作可能
-      // --yolo: 承認プロンプトなし
+      if (session.cliSessionId) {
+        // 2回目以降: 既存セッションを再開
+        args.push("--resume", session.cliSessionId);
+      }
+
+      // メッセージのみ（履歴プレフィックスなし）
+      args.push("-p", message);
+
+      result = await spawnCLI("claude", args, null, 300_000);
+
+      // JSON出力からセッションIDと応答テキストを抽出
+      if (result.stdout) {
+        const parsed = parseClaudeJson(result.stdout);
+
+        // 初回: セッションIDを保存
+        if (parsed.sessionId && !session.cliSessionId) {
+          session.cliSessionId = parsed.sessionId;
+          console.log("[Session Bridge] Claude CLI session ID saved:", parsed.sessionId);
+        }
+
+        // stdoutを応答テキストに置換（JSON全体ではなく）
+        result.stdout = parsed.text;
+
+        // --resume 失敗時のフォールバック: セッションIDが取れなかった場合
+        // 次回も新規セッションとして扱う（cliSessionIdがundefinedのまま）
+      }
+      break;
+    }
+
+    case "gemini": {
+      // Gemini CLI: --resume未検証のため従来方式（履歴注入）
+      const historyPrompt = buildHistoryPrompt(session.history);
+      const fullPrompt = historyPrompt + "User: " + message;
+
       result = await spawnCLI(
         "gemini",
         ["--yolo", "-p", fullPrompt],
@@ -249,17 +312,21 @@ export async function sendToSession(
         300_000,
       );
       break;
+    }
 
-    case "gpt":
+    case "gpt": {
       // ChatGPT: Shortcuts経由、stdin でプロンプト渡し
-      // ファイル操作不可、相談のみ
+      const historyPrompt = buildHistoryPrompt(session.history);
+      const fullPrompt = historyPrompt + "User: " + message;
+
       result = await spawnCLI(
         "shortcuts",
         ["run", "Ask ChatGPT"],
         fullPrompt,
-        180_000, // 3分
+        180_000,
       );
       break;
+    }
 
     default:
       throw new Error("Unknown AI backend: " + session.ai);
@@ -281,12 +348,12 @@ export async function sendToSession(
     output = "\u274C \u5FDC\u7B54\u306A\u3057 (exit " + result.code + ")";
   }
 
-  // 履歴に追加
+  // 履歴に追加（/ai status 表示用。Claudeの場合プロンプト注入には使わない）
   const now = Date.now();
   session.history.push({ role: "user", content: message, timestamp: now });
   session.history.push({ role: "assistant", content: output, timestamp: now });
 
-  // 履歴が20往復超えたら古いのを削除
+  // 履歴が20往復超えたら古いのを削除（メモリ節約）
   if (session.history.length > 40) {
     session.history = session.history.slice(-30);
   }
