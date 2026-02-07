@@ -31,6 +31,7 @@ import {
   handleTaskStop,
   handleTaskPause,
   handleFocus,
+  handleTodoist,
 } from "./handlers";
 import {
   handleMeta,
@@ -47,6 +48,7 @@ import {
   handleAskGemini,
 } from "./handlers/council";
 import { handleAISession } from "./handlers/ai-session";
+import { registerMediaCommands } from "./handlers/media-commands";
 
 // ============== Global Context ==============
 // Bot起動時にCLAUDE.mdを読み込んでグローバルに保持
@@ -109,6 +111,7 @@ bot.command("task_start", handleTaskStart);
 bot.command("task_stop", handleTaskStop);
 bot.command("task_pause", handleTaskPause);
 bot.command("focus", handleFocus);
+bot.command("todoist", handleTodoist);
 
 // Meta-Agent commands
 bot.command("meta", handleMeta);
@@ -203,6 +206,7 @@ if (existsSync(RESTART_FILE)) {
 }
 
 // Start with concurrent runner (commands work immediately)
+registerMediaCommands(bot);
 const runner = run(bot);
 
 // Startup notification - DJに起動完了を通知
