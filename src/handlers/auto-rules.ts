@@ -193,8 +193,14 @@ async function handleAlarmSetting(
  *   アラーム 7時15分 テスト → { time: "07:15", label: "テスト" }
  */
 function parseAlarmMessage(message: string): { time: string; label: string } | null {
-  // Remove "アラーム" prefix and trim any leading/trailing spaces
-  const content = message.slice(4).trim();
+  // Remove "アラーム" prefix if present, and trim
+  let content = message.startsWith("アラーム") ? message.slice(4) : message;
+  // Normalize fullwidth digits/colon/space to halfwidth
+  content = content
+    .replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xFEE0))
+    .replace(/：/g, ":")
+    .replace(/\u3000/g, " ")
+    .trim();
 
   // 🔧 Pattern 1: X時Y分 ラベル (e.g., 7時15分テスト, 7時15分 テスト)
   // Most specific pattern - must come first
