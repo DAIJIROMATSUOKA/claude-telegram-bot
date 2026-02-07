@@ -150,6 +150,7 @@ bot.command("gem", handleAskGemini);
 // AI Session Bridge
 bot.command("ai", handleAISession);
 
+registerMediaCommands(bot);
 bot.on("message:text", handleText);
 
 // Voice messages
@@ -206,7 +207,6 @@ if (existsSync(RESTART_FILE)) {
 }
 
 // Start with concurrent runner (commands work immediately)
-registerMediaCommands(bot);
 const runner = run(bot);
 
 // Startup notification - DJに起動完了を通知
