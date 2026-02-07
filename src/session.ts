@@ -15,6 +15,7 @@ import type { Context } from "grammy";
 import {
   ALLOWED_PATHS,
   MCP_SERVERS,
+  QUERY_TIMEOUT_MS,
   SAFETY_PROMPT,
   SESSION_FILE,
   STREAMING_THROTTLE_MS,
@@ -26,6 +27,8 @@ import {
 import { formatToolStatus } from "./formatting";
 import { checkPendingAskUserRequests } from "./handlers/streaming";
 import { checkCommandSafety, isPathAllowed } from "./security";
+import { getLearnedMemories, formatLearnedMemoryForPrompt } from "./utils/learned-memory";
+import { getRecentSessionSummaries, formatSessionSummariesForPrompt } from "./utils/session-summary";
 import type {
   SavedSession,
   SessionHistory,
@@ -128,7 +131,7 @@ async function fetchChatHistory(): Promise<string> {
               FROM jarvis_chat_history
               ORDER BY timestamp DESC
               LIMIT ?`,
-        params: [10],
+        params: [50],
       }),
       signal: AbortSignal.timeout(3000) // 3秒タイムアウト
     });
@@ -148,13 +151,19 @@ async function fetchChatHistory(): Promise<string> {
       return "";
     }
 
-    // Format: "user: message" or "assistant: message"
-    // Reverse order to show oldest first
-    const lines = data.results
-      .reverse()
-      .map((item) => `${item.role}: ${item.content.slice(0, 200)}${item.content.length > 200 ? '...' : ''}`);
+    // Reverse to chronological order (oldest first)
+    const reversed = data.results.reverse();
 
-    console.log(`[fetchChatHistory] Fetched ${lines.length} messages from Memory Gateway DB`);
+    // Smart truncation: recent 15 messages get full content, older ones get 1000 chars
+    const lines = reversed.map((item, idx) => {
+      const isRecent = idx >= reversed.length - 15;
+      const maxLen = isRecent ? 2000 : 1000;
+      const truncated = item.content.slice(0, maxLen);
+      const suffix = item.content.length > maxLen ? '...' : '';
+      return `${item.role}: ${truncated}${suffix}`;
+    });
+
+    console.log(`[fetchChatHistory] Fetched ${lines.length} messages (${reversed.length - Math.min(reversed.length, 15)} summarized + ${Math.min(reversed.length, 15)} full)`);
     return lines.join("\n");
   } catch (error) {
     console.warn(`Failed to fetch chat_history from Memory Gateway: ${error}`);
@@ -331,20 +340,38 @@ class ClaudeSession {
       }
     )}]\n\n`;
 
-    // Fetch context from memory-gateway (always inject, not just on new session)
-    const [jarvisContext, chatHistory] = await Promise.all([
+    // Fetch all context from memory-gateway in parallel
+    const [jarvisContext, chatHistory, learnedMemories, sessionSummaries] = await Promise.all([
       fetchJarvisContext(),
       fetchChatHistory(),
+      getLearnedMemories(userId, 30).catch(() => []),
+      getRecentSessionSummaries(userId, 5).catch(() => []),
     ]);
 
     console.log("[Context Injection] jarvisContext:", jarvisContext || "(none)");
-    console.log("[Context Injection] chatHistory:", chatHistory || "(none)");
+    console.log("[Context Injection] chatHistory:", chatHistory ? `${chatHistory.split('\n').length} lines` : "(none)");
+    console.log("[Context Injection] learnedMemories:", learnedMemories.length, "items");
+    console.log("[Context Injection] sessionSummaries:", sessionSummaries.length, "items");
 
     // Build context block - always include SYSTEM CONTEXT
     const contextParts: string[] = ["[SYSTEM CONTEXT]"];
     contextParts.push("プロジェクト: /Users/daijiromatsuokam1/claude-telegram-bot");
     contextParts.push("制約: 従量課金API使用禁止");
     contextParts.push("");
+
+    // Learned preferences (highest priority - DJが過去に教えたルール)
+    const learnedBlock = formatLearnedMemoryForPrompt(learnedMemories);
+    if (learnedBlock) {
+      contextParts.push(learnedBlock);
+      contextParts.push("");
+    }
+
+    // Session summaries (過去のセッション要約)
+    const summaryBlock = formatSessionSummariesForPrompt(sessionSummaries);
+    if (summaryBlock) {
+      contextParts.push(summaryBlock);
+      contextParts.push("");
+    }
 
     if (jarvisContext) {
       contextParts.push(jarvisContext);
@@ -415,6 +442,17 @@ class ClaudeSession {
     let queryCompleted = false;
     let askUserTriggered = false;
 
+    // Activity-based timeout: abort if no event received for QUERY_TIMEOUT_MS
+    let lastEventTime = Date.now();
+    const activityTimer = setInterval(() => {
+      const elapsed = Date.now() - lastEventTime;
+      if (elapsed >= QUERY_TIMEOUT_MS) {
+        console.warn(`[Session] Activity timeout: no event for ${Math.round(elapsed / 1000)}s, aborting`);
+        this.abortController?.abort();
+        clearInterval(activityTimer);
+      }
+    }, 10_000); // Check every 10 seconds
+
     try {
       // Use V1 query() API - supports all options including cwd, mcpServers, etc.
       const queryInstance = query({
@@ -427,6 +465,8 @@ class ClaudeSession {
 
       // Process streaming response
       for await (const event of queryInstance) {
+        lastEventTime = Date.now(); // Reset activity timer on each event
+
         // Check for abort
         if (this.stopRequested) {
           console.log("Query aborted by user");
@@ -588,6 +628,11 @@ class ClaudeSession {
         (queryCompleted || askUserTriggered || this.stopRequested)
       ) {
         console.warn(`Suppressed post-completion error: ${error}`);
+      } else if (isCleanupError && responseParts.length > 0) {
+        // Activity timeout with partial response - return what we have
+        console.warn(`[Session] Timeout with partial response (${responseParts.join("").length} chars), returning partial`);
+        this.lastError = "timeout (partial response returned)";
+        this.lastErrorTime = new Date();
       } else {
         console.error(`Error in query: ${error}`);
         this.lastError = String(error).slice(0, 100);
@@ -595,6 +640,7 @@ class ClaudeSession {
         throw error;
       }
     } finally {
+      clearInterval(activityTimer);
       this.isQueryRunning = false;
       this.abortController = null;
       this.queryStarted = null;

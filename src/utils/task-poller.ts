@@ -62,6 +62,7 @@ async function pollAndExecute(): Promise<void> {
         stderr: result.stderr,
       }),
     });
+
   } catch (error) {
     console.error('[Task Poller] Error:', error instanceof Error ? error.message : error);
   } finally {

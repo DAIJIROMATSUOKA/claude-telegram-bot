@@ -1,26 +1,44 @@
 /**
  * Phase 4 Notification Budget Test
  *
- * 通知スパム防止テスト - 最大2通ルール
+ * 通知スパム防止テスト - フェーズ完了時のみ1通ルール
+ *
+ * Current source behavior:
+ * - startPhase: does NOT call ctx.reply(), only logs to console
+ * - endPhase: sends exactly 1 notification via ctx.reply()
+ * - Total per phase: 1 notification (end only)
  */
 
-import { describe, test, expect, beforeEach } from 'bun:test';
-import { notificationBuffer } from '../utils/notification-buffer';
+import { describe, test, expect, beforeEach, mock } from 'bun:test';
 import type { Context } from 'grammy';
+
+// Mock control-tower-helper before importing notification-buffer
+mock.module('../utils/control-tower-helper', () => ({
+  startPhase: async () => {},
+  completePhase: async () => {},
+}));
+
+// Mock session-helper
+mock.module('../utils/session-helper', () => ({
+  getSessionIdFromContext: () => null,
+  generateSessionId: (chatId: number, messageId: number) => `chat_${chatId}_msg_${messageId}`,
+}));
+
+import { notificationBuffer } from '../utils/notification-buffer';
 
 // Mock Context
 function createMockContext(): {
   ctx: Context;
-  notifications: string[];
+  notifications: Array<{ text: string; options?: any }>;
 } {
-  const notifications: string[] = [];
+  const notifications: Array<{ text: string; options?: any }> = [];
 
   const ctx = {
     chat: { id: 12345 },
     message: { message_id: 67890 },
     reply: async (text: string, options?: any) => {
-      notifications.push(text);
-      console.log(`[Mock Reply ${notifications.length}] ${text.substring(0, 50)}...`);
+      notifications.push({ text, options });
+      console.log(`[Mock Reply ${notifications.length}] ${text.substring(0, 80)}...`);
       return {} as any;
     },
   } as any;
@@ -35,149 +53,173 @@ describe('Phase 4 Notification Budget Tests', () => {
     (notificationBuffer as any).activities = [];
     (notificationBuffer as any).textResponses = [];
     (notificationBuffer as any).phaseStartTime = 0;
+    (notificationBuffer as any).traceId = null;
   });
 
-  test('Phase start + end = exactly 2 notifications', async () => {
+  test('Phase start sends 0 notifications, end sends exactly 1', async () => {
     const { ctx, notifications } = createMockContext();
 
     await notificationBuffer.startPhase(ctx, '実装開始');
-    expect(notifications.length).toBe(1);
-    expect(notifications[0]).toContain('🔄 実装開始');
+    // startPhase does NOT send any notification
+    expect(notifications.length).toBe(0);
 
     await notificationBuffer.endPhase(ctx, true);
-    expect(notifications.length).toBe(2);
-    expect(notifications[1]).toContain('✅');
+    // endPhase sends exactly 1 notification
+    expect(notifications.length).toBe(1);
+    expect(notifications[0].text).toContain('✅');
+    expect(notifications[0].text).toContain('実装開始');
+    expect(notifications[0].options).toEqual({ disable_notification: false });
   });
 
-  test('Activities are buffered, not sent', async () => {
+  test('End notification uses ━━━━━━━━━━━━━━━ separator format', async () => {
+    const { ctx, notifications } = createMockContext();
+
+    await notificationBuffer.startPhase(ctx, 'Separator Test');
+    await notificationBuffer.endPhase(ctx, true);
+
+    expect(notifications.length).toBe(1);
+    expect(notifications[0].text).toContain('━━━━━━━━━━━━━━━');
+    // The message is wrapped: ━━━━━━━━━━━━━━━\n{summary}\n━━━━━━━━━━━━━━━
+    const separatorCount = (notifications[0].text.match(/━━━━━━━━━━━━━━━/g) || []).length;
+    expect(separatorCount).toBeGreaterThanOrEqual(2);
+  });
+
+  test('Activities are buffered, not sent individually', async () => {
     const { ctx, notifications } = createMockContext();
 
     await notificationBuffer.startPhase(ctx, 'Phase 4 Test');
-    expect(notifications.length).toBe(1);
+    expect(notifications.length).toBe(0);
 
     // Add multiple activities
     notificationBuffer.addActivity('tool', 'Read file.ts');
     notificationBuffer.addActivity('tool', 'Edit file.ts');
     notificationBuffer.addActivity('thinking', 'Analyzing code');
-    notificationBuffer.addActivity('text', 'Response segment 1');
+    notificationBuffer.addTextResponse('Response segment 1');
 
-    // Still only 1 notification
-    expect(notifications.length).toBe(1);
+    // Still 0 notifications
+    expect(notifications.length).toBe(0);
 
     await notificationBuffer.endPhase(ctx, true);
-    expect(notifications.length).toBe(2);
+    expect(notifications.length).toBe(1);
 
-    // Summary should include activity counts
-    expect(notifications[1]).toContain('ツール実行: 2回');
-    expect(notifications[1]).toContain('思考: 1回');
+    // Summary shows tool activities under 📋 やったこと: with bullet descriptions
+    expect(notifications[0].text).toContain('📋 やったこと:');
+    expect(notifications[0].text).toContain('• Read file.ts');
+    expect(notifications[0].text).toContain('• Edit file.ts');
+    expect(notifications[0].text).toContain('🧠 思考: 1回');
   });
 
-  test('Text responses are buffered and sent in phase completion', async () => {
+  test('Text responses are buffered and included in phase completion', async () => {
     const { ctx, notifications } = createMockContext();
 
     await notificationBuffer.startPhase(ctx, 'Implementation');
-    expect(notifications.length).toBe(1);
+    expect(notifications.length).toBe(0);
 
     // Add text responses
     notificationBuffer.addTextResponse('First response paragraph.');
     notificationBuffer.addTextResponse('Second response paragraph.');
     notificationBuffer.addTextResponse('Third response paragraph.');
 
-    // Still only 1 notification
-    expect(notifications.length).toBe(1);
+    // Still 0 notifications
+    expect(notifications.length).toBe(0);
 
     await notificationBuffer.endPhase(ctx, true);
-    expect(notifications.length).toBe(2);
+    expect(notifications.length).toBe(1);
 
-    // Text should be in the final notification
-    expect(notifications[1]).toContain('First response paragraph');
-    expect(notifications[1]).toContain('Second response paragraph');
-    expect(notifications[1]).toContain('Third response paragraph');
+    // Text should be in the final notification, joined by ---
+    expect(notifications[0].text).toContain('First response paragraph');
+    expect(notifications[0].text).toContain('Second response paragraph');
+    expect(notifications[0].text).toContain('Third response paragraph');
+    expect(notifications[0].text).toContain('---');
   });
 
-  test('Error phase = exactly 2 notifications', async () => {
+  test('Error phase = exactly 1 notification', async () => {
     const { ctx, notifications } = createMockContext();
 
     await notificationBuffer.startPhase(ctx, 'Error Test');
-    expect(notifications.length).toBe(1);
+    expect(notifications.length).toBe(0);
 
     notificationBuffer.addActivity('error', 'Failed to read file');
     notificationBuffer.addActivity('error', 'Network timeout');
 
     await notificationBuffer.endPhase(ctx, false);
-    expect(notifications.length).toBe(2);
+    expect(notifications.length).toBe(1);
 
-    expect(notifications[1]).toContain('❌');
-    expect(notifications[1]).toContain('エラー: 2回');
+    expect(notifications[0].text).toContain('❌');
+    expect(notifications[0].text).toContain('⚠️ エラー: 2回');
+    expect(notifications[0].text).toContain('• Failed to read file');
+    expect(notifications[0].text).toContain('• Network timeout');
   });
 
-  test('Multiple phases in sequence = 2 notifications per phase', async () => {
+  test('Multiple phases in sequence = 1 notification per phase', async () => {
     const { ctx, notifications } = createMockContext();
 
     // Phase 1
     await notificationBuffer.startPhase(ctx, 'Phase 1');
     notificationBuffer.addActivity('tool', 'Action 1');
     await notificationBuffer.endPhase(ctx, true);
-    expect(notifications.length).toBe(2);
+    expect(notifications.length).toBe(1);
 
     // Phase 2
     await notificationBuffer.startPhase(ctx, 'Phase 2');
     notificationBuffer.addActivity('tool', 'Action 2');
     await notificationBuffer.endPhase(ctx, true);
-    expect(notifications.length).toBe(4);
+    expect(notifications.length).toBe(2);
 
-    // Each phase has exactly 2 notifications
-    expect(notifications[0]).toContain('Phase 1');
-    expect(notifications[1]).toContain('✅');
-    expect(notifications[2]).toContain('Phase 2');
-    expect(notifications[3]).toContain('✅');
+    // Phase 1 end notification
+    expect(notifications[0].text).toContain('Phase 1');
+    expect(notifications[0].text).toContain('✅');
+
+    // Phase 2 end notification
+    expect(notifications[1].text).toContain('Phase 2');
+    expect(notifications[1].text).toContain('✅');
   });
 
-  test('isActive() returns correct state', () => {
+  test('isActive() returns correct state', async () => {
     expect(notificationBuffer.isActive()).toBe(false);
 
     const { ctx } = createMockContext();
-    notificationBuffer.startPhase(ctx, 'Test Phase');
+    await notificationBuffer.startPhase(ctx, 'Test Phase');
     expect(notificationBuffer.isActive()).toBe(true);
 
-    notificationBuffer.endPhase(ctx, true);
-    // After async endPhase, it will be false (but we can't await here in sync test)
+    await notificationBuffer.endPhase(ctx, true);
+    expect(notificationBuffer.isActive()).toBe(false);
   });
 
   test('Duplicate phase start is prevented', async () => {
     const { ctx, notifications } = createMockContext();
 
     await notificationBuffer.startPhase(ctx, 'Same Phase');
-    expect(notifications.length).toBe(1);
+    expect(notifications.length).toBe(0);
 
-    // Try to start same phase again
+    // Try to start same phase again - should be skipped
     await notificationBuffer.startPhase(ctx, 'Same Phase');
-    expect(notifications.length).toBe(1); // Still 1, duplicate prevented
+    expect(notifications.length).toBe(0); // Still 0, duplicate prevented
 
     await notificationBuffer.endPhase(ctx, true);
-    expect(notifications.length).toBe(2);
+    expect(notifications.length).toBe(1);
   });
 
-  test('Empty phase = exactly 2 notifications', async () => {
+  test('Empty phase = exactly 1 notification', async () => {
     const { ctx, notifications } = createMockContext();
 
     await notificationBuffer.startPhase(ctx, 'Empty Phase');
-    expect(notifications.length).toBe(1);
+    expect(notifications.length).toBe(0);
 
     // No activities added
 
     await notificationBuffer.endPhase(ctx, true);
-    expect(notifications.length).toBe(2);
+    expect(notifications.length).toBe(1);
 
-    // Summary should show 0 activities
-    expect(notifications[1]).toContain('✅');
+    expect(notifications[0].text).toContain('✅');
+    expect(notifications[0].text).toContain('Empty Phase');
   });
 
   test('Text responses with activities = single combined notification', async () => {
     const { ctx, notifications } = createMockContext();
 
     await notificationBuffer.startPhase(ctx, 'Combined Test');
-    expect(notifications.length).toBe(1);
+    expect(notifications.length).toBe(0);
 
     // Mix of activities and text
     notificationBuffer.addActivity('thinking', 'Planning');
@@ -186,31 +228,35 @@ describe('Phase 4 Notification Budget Tests', () => {
     notificationBuffer.addTextResponse('Another paragraph.');
     notificationBuffer.addActivity('tool', 'Write file');
 
-    // Still only 1 notification
-    expect(notifications.length).toBe(1);
+    // Still 0 notifications
+    expect(notifications.length).toBe(0);
 
     await notificationBuffer.endPhase(ctx, true);
-    expect(notifications.length).toBe(2);
+    expect(notifications.length).toBe(1);
 
     // Final notification contains both text and summary
-    expect(notifications[1]).toContain('Here is my response');
-    expect(notifications[1]).toContain('Another paragraph');
-    expect(notifications[1]).toContain('ツール実行: 2回');
+    expect(notifications[0].text).toContain('Here is my response');
+    expect(notifications[0].text).toContain('Another paragraph');
+    // Tool activities listed individually, not as count
+    expect(notifications[0].text).toContain('📋 やったこと:');
+    expect(notifications[0].text).toContain('• Read file');
+    expect(notifications[0].text).toContain('• Write file');
+    expect(notifications[0].text).toContain('🧠 思考: 1回');
   });
 
-  test('getCurrentPhase() returns correct phase name', () => {
+  test('getCurrentPhase() returns correct phase name', async () => {
     expect(notificationBuffer.getCurrentPhase()).toBeNull();
 
     const { ctx } = createMockContext();
-    notificationBuffer.startPhase(ctx, 'Test Phase Name');
+    await notificationBuffer.startPhase(ctx, 'Test Phase Name');
     expect(notificationBuffer.getCurrentPhase()).toBe('Test Phase Name');
   });
 
-  test('getActivityCount() returns correct count', () => {
+  test('getActivityCount() returns correct count', async () => {
     expect(notificationBuffer.getActivityCount()).toBe(0);
 
     const { ctx } = createMockContext();
-    notificationBuffer.startPhase(ctx, 'Count Test');
+    await notificationBuffer.startPhase(ctx, 'Count Test');
 
     notificationBuffer.addActivity('tool', 'Action 1');
     expect(notificationBuffer.getActivityCount()).toBe(1);
@@ -220,5 +266,47 @@ describe('Phase 4 Notification Budget Tests', () => {
 
     notificationBuffer.addActivity('tool', 'Action 2');
     expect(notificationBuffer.getActivityCount()).toBe(3);
+  });
+
+  test('End notification contains duration info', async () => {
+    const { ctx, notifications } = createMockContext();
+
+    await notificationBuffer.startPhase(ctx, 'Duration Test');
+    await notificationBuffer.endPhase(ctx, true);
+
+    expect(notifications.length).toBe(1);
+    expect(notifications[0].text).toContain('⏱ 所要時間:');
+    expect(notifications[0].text).toContain('秒');
+  });
+
+  test('endPhase without active phase does nothing', async () => {
+    const { ctx, notifications } = createMockContext();
+
+    // No phase started
+    await notificationBuffer.endPhase(ctx, true);
+    expect(notifications.length).toBe(0);
+  });
+
+  test('Duplicate tool descriptions are deduplicated', async () => {
+    const { ctx, notifications } = createMockContext();
+
+    await notificationBuffer.startPhase(ctx, 'Dedup Test');
+
+    // Same description multiple times
+    notificationBuffer.addActivity('tool', 'Read config.ts');
+    notificationBuffer.addActivity('tool', 'Read config.ts');
+    notificationBuffer.addActivity('tool', 'Read config.ts');
+    notificationBuffer.addActivity('tool', 'Write config.ts');
+
+    await notificationBuffer.endPhase(ctx, true);
+
+    expect(notifications.length).toBe(1);
+    expect(notifications[0].text).toContain('📋 やったこと:');
+    expect(notifications[0].text).toContain('• Read config.ts');
+    expect(notifications[0].text).toContain('• Write config.ts');
+
+    // Count occurrences of "Read config.ts" - should appear only once (deduplicated)
+    const readCount = (notifications[0].text.match(/• Read config\.ts/g) || []).length;
+    expect(readCount).toBe(1);
   });
 });

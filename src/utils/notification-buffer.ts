@@ -60,10 +60,8 @@ export class NotificationBuffer {
       await startPhaseDB(sessionId, phaseName, ctx);
     }
 
-    // Send start notification (silent per Phase D)
-    await ctx.reply(`🔄 ${phaseName}`, {
-      disable_notification: true, // Silent - Phase D requirement
-    });
+    // 開始通知は送らない（完了時のみ通知する仕様）
+    console.log(`[NotificationBuffer] Phase started (no notification): ${phaseName}`);
   }
 
   /**
@@ -117,22 +115,26 @@ export class NotificationBuffer {
     // Group activities by type
     const grouped = this.groupActivitiesByType();
 
-    // Add grouped summary
+    // 📋 やったこと（具体的なツール実行内容を表示）
     if (grouped.tool.length > 0) {
-      summary += `🛠 ツール実行: ${grouped.tool.length}回\n`;
+      summary += `📋 やったこと:\n`;
+      // ユニークな操作を最大10件表示
+      const uniqueOps = [...new Set(grouped.tool.map(a => a.description))].slice(0, 10);
+      uniqueOps.forEach(desc => {
+        summary += `  • ${desc}\n`;
+      });
+      if (grouped.tool.length > uniqueOps.length) {
+        summary += `  ... 他${grouped.tool.length - uniqueOps.length}件\n`;
+      }
+      summary += '\n';
     }
     if (grouped.thinking.length > 0) {
       summary += `🧠 思考: ${grouped.thinking.length}回\n`;
     }
-    if (grouped.text.length > 0) {
-      summary += `📝 テキスト生成: ${grouped.text.length}回\n`;
-    }
     if (grouped.error.length > 0) {
       summary += `⚠️ エラー: ${grouped.error.length}回\n`;
-      // Show error details
-      summary += `\n**エラー詳細:**\n`;
       grouped.error.forEach((activity) => {
-        summary += `- ${activity.description}\n`;
+        summary += `  • ${activity.description}\n`;
       });
     }
 
@@ -154,8 +156,8 @@ export class NotificationBuffer {
       finalMessage += `\n🔍 Trace ID: ${this.traceId}`;
     }
 
-    // Send single notification with everything
-    await ctx.reply(finalMessage, {
+    // Send single notification with separator for visual clarity
+    await ctx.reply(`━━━━━━━━━━━━━━━\n${finalMessage}\n━━━━━━━━━━━━━━━`, {
       disable_notification: false, // Always notify on phase end (loud - Phase D)
     });
 

@@ -170,6 +170,18 @@ async function createNewTower(
   chatId: number
 ): Promise<{ success: boolean; messageId?: string; error?: any }> {
   try {
+    // Unpin old message before creating new one
+    const oldMessageId = getTowerMessageId(String(chatId));
+    if (oldMessageId) {
+      try {
+        await bot.api.unpinChatMessage(chatId, parseInt(oldMessageId, 10));
+        console.log(`[TowerWatchdog] Old message unpinned: ${oldMessageId}`);
+      } catch (unpinError) {
+        console.warn(`[TowerWatchdog] Failed to unpin old message:`, unpinError);
+        // Continue anyway
+      }
+    }
+
     const timestamp = new Date().toLocaleTimeString('ja-JP', {
       timeZone: 'Asia/Tokyo',
       hour: '2-digit',

@@ -31,15 +31,31 @@ export interface AutoFixResult {
 }
 
 function tryBuild(): { success: boolean; error?: string; output?: string } {
+  // bunのモジュール解決のみ検証（Bot起動はしない）。
+  // TELEGRAM_BOT_TOKEN=dummyでBot初期化を失敗させて即終了させる。
+  // import/exportエラーはモジュール解決時に出るので、これで検出可能。
   const result = spawnSync('bun', ['run', 'src/index.ts'], {
     cwd: PROJECT_ROOT,
     timeout: BUILD_TIMEOUT_MS,
     encoding: 'utf-8',
-    env: { ...process.env },
+    env: {
+      ...process.env,
+      TELEGRAM_BOT_TOKEN: 'dummy:validation',  // Bot起動を防止
+      VALIDATE_ONLY: '1',
+    },
   });
   const output = ((result.stdout || '') + '\n' + (result.stderr || '')).trim();
-  if (result.signal === 'SIGTERM') return { success: true, output };
-  if (result.status !== 0) return { success: false, error: output };
+  // import解決エラーはstatus !== 0で即死する
+  // SIGTERM = タイムアウト（モジュール読み込みに時間がかかった）
+  if (result.signal === 'SIGTERM') {
+    return { success: false, error: `Build timeout (${BUILD_TIMEOUT_MS}ms)`, output };
+  }
+  // dummy tokenでBot APIエラーが出るのは期待動作（モジュール解決は成功した）
+  const isModuleError = output.includes('Export named') || output.includes('Cannot find module') || output.includes('Could not resolve');
+  if (result.status !== 0 && isModuleError) {
+    return { success: false, error: output };
+  }
+  // status !== 0 でもモジュールエラー以外（dummy tokenによるAPI失敗等）はOK
   return { success: true, output };
 }
 
@@ -95,9 +111,6 @@ function fixWrongExport(exportName: string, wrongModuleFullPath: string): AutoFi
 
 export async function runBuildValidation(): Promise<BuildValidationResult> {
   const fixes: AutoFixResult[] = [];
-  console.log('[BuildValidator] 🛑 既存Botを停止中...');
-  spawnSync('pkill', ['-f', 'bun.*index.ts']);
-  spawnSync('sleep', ['1']);
 
   for (let attempt = 1; attempt <= MAX_FIX_ATTEMPTS; attempt++) {
     console.log(`[BuildValidator] 🔍 ビルドテスト (${attempt}/${MAX_FIX_ATTEMPTS})...`);
@@ -105,7 +118,6 @@ export async function runBuildValidation(): Promise<BuildValidationResult> {
 
     if (buildResult.success) {
       console.log(`[BuildValidator] ✅ ビルドOK (${attempt}回目)`);
-      spawnSync('pkill', ['-f', 'bun.*index.ts']);
       return { success: true, fixes_applied: fixes, attempts: attempt };
     }
 

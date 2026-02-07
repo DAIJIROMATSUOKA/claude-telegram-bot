@@ -138,7 +138,7 @@ export async function getMemoryPack(
     const doc = await docsClient.documents.get({ documentId });
 
     let content = '';
-    for (const element of doc.data.body.content || []) {
+    for (const element of doc.data.body?.content || []) {
       if (element.paragraph) {
         for (const textElement of element.paragraph.elements || []) {
           if (textElement.textRun) {
@@ -270,7 +270,7 @@ export async function callClaudeCLI(
       const { getChatHistory } = await import('../utils/chat-history');
 
       jarvisContext = await getJarvisContext(userId);
-      chatHistory = await getChatHistory(userId, 10); // 直近10件
+      chatHistory = await getChatHistory(userId, 50); // 直近50件
 
       console.log('[AI Router] 🦞 Context loaded:', {
         hasContext: !!jarvisContext,
@@ -422,8 +422,11 @@ export async function callGeminiAPI(
     const genAI = new GoogleGenerativeAI(apiKey);
     console.log('[AI Router DEBUG] GoogleGenerativeAI instance created');
 
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
-    console.log('[AI Router DEBUG] Model created (gemini-2.5-flash)');
+    const model = genAI.getGenerativeModel({
+      model: 'gemini-2.5-flash',
+      tools: [{ googleSearchRetrieval: {} } as any],
+    });
+    console.log('[AI Router DEBUG] Model created (gemini-2.5-flash + Google Search)');
 
     const systemPrompt = `あなたはジェミー💎（Gemmy）です。
 
@@ -807,7 +810,7 @@ export async function extractAndSaveMemory(
     return; // MEMORYタグなし
   }
 
-  const memoryContent = memoryMatch[1].trim();
+  const memoryContent = memoryMatch[1]!.trim();
 
   if (!memoryContent) {
     return;
@@ -818,7 +821,8 @@ export async function extractAndSaveMemory(
     const docsClient = await getDocsClient(credentialsPath);
 
     const doc = await docsClient.documents.get({ documentId });
-    const endIndex = doc.data.body.content[doc.data.body.content.length - 1].endIndex;
+    const bodyContent = doc.data.body?.content;
+    const endIndex = bodyContent?.[bodyContent.length - 1]?.endIndex;
 
     const timestamp = new Date().toISOString().split('T')[0];
     const source = response.provider === 'croppy' ? 'クロッピー🦞' :
@@ -834,7 +838,7 @@ export async function extractAndSaveMemory(
           {
             insertText: {
               text: appendText,
-              location: { index: endIndex - 1 },
+              location: { index: (endIndex ?? 1) - 1 },
             },
           },
         ],

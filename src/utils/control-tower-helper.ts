@@ -136,10 +136,8 @@ export async function updateStatus(
   const cached = getTowerStatus(identifier);
 
   const state: TowerState = {
-    status: 'running',
-    taskTitle: cached ? 'Task in progress' : 'Processing...',
+    status: statusType === 'done' ? 'completed' : 'running',
     currentStep: detail || undefined,
-    startedAt: Date.now() - 5000, // Assume started 5s ago for demo
   };
 
   await updateTower(ctx, identifier, state);
@@ -164,36 +162,40 @@ export async function updateStatus(
 // ============================================================================
 
 /**
- * Send start notification (silent - disable_notification: true)
+ * Send start notification — 無効化（完了時のみ通知する仕様）
+ * DB記録のみ行い、Telegram通知は送らない
  */
 export async function sendStartNotification(
   ctx: Context,
   taskTitle: string
 ): Promise<void> {
-  await ctx.reply(`🚀 開始: ${taskTitle}`, {
-    disable_notification: true, // Silent
-  });
-  console.log(`[ControlTowerHelper] Start notification sent (silent): ${taskTitle}`);
+  // 開始通知は送らない（完了時のみ通知する仕様）
+  console.log(`[ControlTowerHelper] Start logged (no notification): ${taskTitle}`);
 }
 
 /**
  * Send end notification (loud - disable_notification: false)
- * Includes trace_id for debugging
+ * Includes work summary and optional trace_id
  */
 export async function sendEndNotification(
   ctx: Context,
   taskTitle: string,
   success: boolean,
-  traceId?: string
+  traceId?: string,
+  workSummary?: string
 ): Promise<void> {
   const status = success ? '✅ 完了' : '❌ エラー';
   let message = `${status}: ${taskTitle}`;
+
+  if (workSummary) {
+    message += `\n\n📋 やったこと:\n${workSummary}`;
+  }
 
   if (traceId) {
     message += `\n\n🔍 Trace ID: ${traceId}`;
   }
 
-  await ctx.reply(message, {
+  await ctx.reply(`━━━━━━━━━━━━━━━\n${message}\n━━━━━━━━━━━━━━━`, {
     disable_notification: false, // Loud
   });
   console.log(`[ControlTowerHelper] End notification sent (loud): ${taskTitle} [${traceId || 'no-trace'}]`);

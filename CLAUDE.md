@@ -47,6 +47,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - 長文禁止。要点だけ伝えろ
 - 「どれを進めますか？」のような選択肢を出すな。自分で判断して実行しろ
 - council:の議論も同じルール。丁寧語は不要
+- 専門用語を使う場合、会話中の初回のみ括弧で簡潔な説明を付けろ。2回目以降は不要
+  - 例: 「WebSocket（サーバーとリアルタイム双方向通信する仕組み）で接続する」
+  - 2回目: 「WebSocketで再接続する」（説明不要）
 
 ### 9. 応答の方向性
 - ユーザーのメッセージに素直に答えろ

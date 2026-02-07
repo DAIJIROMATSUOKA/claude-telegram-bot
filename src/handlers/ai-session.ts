@@ -18,9 +18,12 @@ import {
   endSession,
   getSession,
   hasActiveSession,
+  sendToSession,
+  splitTelegramMessage,
   AI_INFO,
   type AIBackend,
 } from "../utils/session-bridge";
+import { startTypingIndicator } from "../utils";
 
 export async function handleAISession(ctx: Context): Promise<void> {
   const userId = ctx.from?.id;
@@ -86,62 +89,51 @@ export async function handleAISession(ctx: Context): Promise<void> {
       const ai = subcommand as AIBackend;
       const info = AI_INFO[ai];
 
-      // 既存セッションチェック
+      // 既存セッションがあれば自動終了してから新規開始
       if (hasActiveSession(userId!)) {
-        const current = getSession(userId!)!;
-        const currentInfo = AI_INFO[current.ai];
-
-        if (current.ai === ai) {
-          await ctx.reply(
-            currentInfo.emoji +
-              " " +
-              currentInfo.name +
-              "\u306E\u30BB\u30C3\u30B7\u30E7\u30F3\u304C\u65E2\u306B\u30A2\u30AF\u30C6\u30A3\u30D6\u3067\u3059\u3002\n" +
-              "\u305D\u306E\u307E\u307E\u30E1\u30C3\u30BB\u30FC\u30B8\u3092\u9001\u3063\u3066\u304F\u3060\u3055\u3044\u3002",
-          );
-        } else {
-          await ctx.reply(
-            "\u26A0\uFE0F " +
-              currentInfo.emoji +
-              " " +
-              currentInfo.name +
-              "\u306E\u30BB\u30C3\u30B7\u30E7\u30F3\u304C\u30A2\u30AF\u30C6\u30A3\u30D6\u3067\u3059\u3002\n" +
-              "\u5148\u306B /ai end \u3057\u3066\u304B\u3089\u5207\u308A\u66FF\u3048\u3066\u304F\u3060\u3055\u3044\u3002",
-          );
-        }
-        return;
+        const prev = endSession(userId!)!;
+        const prevInfo = AI_INFO[prev.ai];
+        const duration = Math.round(
+          (Date.now() - prev.startedAt) / 1000 / 60,
+        );
+        await ctx.reply(
+          prevInfo.emoji +
+            " " +
+            prevInfo.name +
+            " \u30BB\u30C3\u30B7\u30E7\u30F3\u81EA\u52D5\u7D42\u4E86 (" +
+            prev.messageCount +
+            "\u30E1\u30C3\u30BB\u30FC\u30B8 / " +
+            duration +
+            "\u5206)",
+        );
       }
 
-      const session = startSession(userId!, ai);
+      const newSession = startSession(userId!, ai);
 
-      let capNote = "";
-      if (ai === "claude" || ai === "gemini") {
-        capNote =
-          "\n\n\u{1F527} <b>\u3067\u304D\u308B\u3053\u3068:</b>\n" +
-          "\u30FB\u30D5\u30A1\u30A4\u30EB\u306E\u8AAD\u307F\u66F8\u304D\u30FB\u4FEE\u6B63\n" +
-          "\u30FBbun test \u7B49\u306E\u30B3\u30DE\u30F3\u30C9\u5B9F\u884C\n" +
-          "\u30FBgit commit / diff / status\n" +
-          "\u30FB\u30D7\u30ED\u30B8\u30A7\u30AF\u30C8\u5168\u4F53\u306E\u7406\u89E3\uFF08" +
-          (ai === "claude" ? "CLAUDE.md" : "GEMINI.md") +
-          "\u81EA\u52D5\u8AAD\u307F\u8FBC\u307F\uFF09";
-      } else {
-        capNote =
-          "\n\n\u{1F4AC} \u76F8\u8AC7\u30FB\u30EC\u30D3\u30E5\u30FC\u30FB\u30A2\u30A4\u30C7\u30A2\u51FA\u3057\u5C02\u7528\n" +
-          "\uFF08\u30D5\u30A1\u30A4\u30EB\u64CD\u4F5C\u306F\u3067\u304D\u307E\u305B\u3093\uFF09";
-      }
+      // インラインメッセージ: /ai claude 本文 → セッション開始+即処理
+      const inlineMessage = args.slice(1).join(" ").trim();
 
       await ctx.reply(
-        info.emoji +
-          " <b>" +
-          info.name +
-          " \u30BB\u30C3\u30B7\u30E7\u30F3\u958B\u59CB</b>" +
-          capNote +
-          "\n\n\u{1F4DD} \u3053\u308C\u4EE5\u964D\u306E\u30E1\u30C3\u30BB\u30FC\u30B8\u306F\u76F4\u63A5" +
-          info.name +
-          "\u306B\u9001\u3089\u308C\u307E\u3059\u3002\n" +
-          "\u7D42\u4E86: /ai end",
+        info.emoji + " <b>" + info.name + " \u30BB\u30C3\u30B7\u30E7\u30F3\u958B\u59CB</b>",
         { parse_mode: "HTML" },
       );
+
+      // インラインメッセージがあれば即座に処理
+      if (inlineMessage) {
+        const _typing = startTypingIndicator(ctx);
+        try {
+          const aiResponse = await sendToSession(userId!, inlineMessage);
+          _typing.stop();
+          const chunks = splitTelegramMessage(aiResponse);
+          for (const chunk of chunks) {
+            await ctx.reply(chunk);
+          }
+        } catch (e) {
+          _typing.stop();
+          const errMsg = e instanceof Error ? e.message : String(e);
+          await ctx.reply("\u274C AI Session Error: " + errMsg);
+        }
+      }
       return;
     }
 

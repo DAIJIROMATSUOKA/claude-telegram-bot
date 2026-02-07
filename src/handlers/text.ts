@@ -24,10 +24,15 @@ import { detectInterruptableTask } from "../utils/implementation-detector";
 import { saveInterruptSnapshot, type SnapshotData } from "../utils/auto-resume";
 import { isFocusModeEnabled, bufferNotification } from "../utils/focus-mode";
 import { preloadToolContext, formatPreloadedContext } from "../utils/tool-preloader";
+import { processAndLearn } from "../utils/learned-memory";
+import { saveSessionSummary } from "../utils/session-summary";
+import { getChatHistory } from "../utils/chat-history";
 import { WORKING_DIR } from "../config";
+import { autoReviewWithGemini } from "../utils/auto-review";
+import { maybeEnrichWithWebSearch } from "../utils/web-search";
 
-// Smart Router: 同じモードで連続提案しないようキャッシュ（1時間TTL）
-const _routerSuggestedCache = new Set<string>();
+// Session Summary: メッセージカウンター（20メッセージ毎に要約保存）
+let _sessionMsgCount = 0;
 
 /**
  * Handle incoming text messages.
@@ -86,17 +91,21 @@ export async function handleText(ctx: Context): Promise<void> {
   // When a session is active, bypass normal Jarvis and send directly to the selected AI
   if (hasActiveSession(userId)) {
     const _sbTyping = startTypingIndicator(ctx);
+    const _replyParams = ctx.message?.message_id
+      ? { reply_parameters: { message_id: ctx.message.message_id } }
+      : {};
     try {
-      const aiResponse = await sendToSession(userId, message);
+      const enrichedMessage = await maybeEnrichWithWebSearch(message);
+      const aiResponse = await sendToSession(userId, enrichedMessage);
       _sbTyping.stop();
       const chunks = splitTelegramMessage(aiResponse);
-      for (const chunk of chunks) {
-        await ctx.reply(chunk);
+      for (let i = 0; i < chunks.length; i++) {
+        await ctx.reply(chunks[i]!, i === 0 ? _replyParams : {});
       }
     } catch (e) {
       _sbTyping.stop();
       const errMsg = e instanceof Error ? e.message : String(e);
-      await ctx.reply("\u274C AI Session Error: " + errMsg);
+      await ctx.reply("\u274C AI Session Error: " + errMsg, _replyParams);
     }
     return;
   }
@@ -105,6 +114,7 @@ export async function handleText(ctx: Context): Promise<void> {
 
   // 7. Create streaming state and callback
   const state = new StreamingState();
+  state.replyToMessageId = ctx.message?.message_id;
   const statusCallback = createStatusCallback(ctx, state);
 
   // 8. Start action trace
@@ -143,6 +153,9 @@ export async function handleText(ctx: Context): Promise<void> {
       console.log(`[Tool Preloader] Loaded ${preloaded.length} context(s): ${preloaded.map(p => p.type).join(', ')}`);
     }
 
+    // 10.7. Web Search Enrichment - ジェミー💎先行Web検索（事実・最新情報系のみ）
+    message = await maybeEnrichWithWebSearch(message);
+
     // 11. Check for croppy: prefix and inject context
     if (message.trim().toLowerCase().startsWith('croppy:')) {
       console.log('[Text Handler] croppy: detected, injecting context...');
@@ -169,24 +182,55 @@ export async function handleText(ctx: Context): Promise<void> {
     // 12. Save assistant response to chat history
     await saveChatMessage(userId, 'assistant', response);
 
-    // 12.5. Smart Router - suggest council for strategic questions
-    var _councilKeywords = /設計|design|アーキテクチャ|architecture|戦略|strategy|提案|proposal|方針|council/i;
-    if (_councilKeywords.test(message) && !_lm.startsWith('council') && !_lm.startsWith('croppy:')) {
-      var _ck = String(userId) + '_council';
-      if (!_routerSuggestedCache.has(_ck)) {
-        _routerSuggestedCache.add(_ck);
-        try {
-          await ctx.reply('💡 戦略的な相談は council: で聞いてみて');
-          console.log('[Smart Router] council suggestion sent');
-        } catch (e) {
-          console.error('[Smart Router] send failed:', e);
-        }
-        setTimeout(function() { _routerSuggestedCache.delete(_ck); }, 3600000);
+    // 12.2. Work Summary - 実装系タスクの場合、完了時にやったことをサマリー送信
+    const workSummary = extractWorkSummary(response);
+    if (workSummary) {
+      try {
+        await ctx.reply(
+          `━━━━━━━━━━━━━━━\n✅ 作業完了\n\n📋 やったこと:\n${workSummary}\n━━━━━━━━━━━━━━━`,
+          {
+            disable_notification: false,
+            ...(state.replyToMessageId ? { reply_parameters: { message_id: state.replyToMessageId } } : {}),
+          }
+        );
+      } catch (e) {
+        console.error('[Work Summary] Failed to send:', e);
       }
     }
 
+    // 12.3. Auto Review - コード変更をジェミー💎が自動レビュー（バックグラウンド）
+    const _reviewReplyId = state.replyToMessageId;
+    autoReviewWithGemini(response).then(async (review) => {
+      if (review) {
+        try {
+          await ctx.reply(`━━━━━━━━━━━━━━━\n${review}\n━━━━━━━━━━━━━━━`, {
+            ...(_reviewReplyId ? { reply_parameters: { message_id: _reviewReplyId } } : {}),
+          });
+        } catch (e) {
+          console.error('[Auto Review] Failed to send review:', e);
+        }
+      }
+    }).catch(err => console.error('[Auto Review] Background error:', err));
+
     // 13. Auto-update jarvis_context (task, phase, assumptions, decisions)
     await autoUpdateContext(userId, response);
+
+    // 13.5. Learned Memory - DJの指示・好み・修正を自動学習して永続保存
+    processAndLearn(userId, message, response).catch(err =>
+      console.error('[Learned Memory] Background error:', err)
+    );
+
+    // 13.6. Session Summary - 20メッセージ毎にセッション要約を保存
+    _sessionMsgCount++;
+    if (_sessionMsgCount % 20 === 0) {
+      getChatHistory(userId, 50).then(history => {
+        if (history.length >= 10) {
+          saveSessionSummary(userId, sessionId, history).catch(err =>
+            console.error('[Session Summary] Background error:', err)
+          );
+        }
+      }).catch(() => {});
+    }
 
     // 14. Auto-Resume Detection: Check if this is an interruptable task
     const detectionResult = detectInterruptableTask(response, 'bot');
@@ -276,14 +320,67 @@ export async function handleText(ctx: Context): Promise<void> {
       }
     }
 
-    // Check if it was a cancellation
-    if (String(error).includes("abort") || String(error).includes("cancel")) {
-      await ctx.reply("🛑 Query stopped.");
+    // Classify error type
+    const _errReplyOpts = state.replyToMessageId
+      ? { reply_parameters: { message_id: state.replyToMessageId } }
+      : {};
+    const errStr = String(error).toLowerCase();
+    if (errStr.includes("abort") || errStr.includes("cancel")) {
+      await ctx.reply("🛑 Query stopped.", _errReplyOpts);
+    } else if (errStr.includes("timeout") || errStr.includes("timed out") || errStr.includes("タイムアウト")) {
+      // タイムアウトはログのみ。部分レスポンスがあればそのまま残す
+      console.warn("[Text Handler] Timeout (suppressed from user):", String(error).slice(0, 200));
     } else {
-      await ctx.reply(`❌ Error: ${String(error).slice(0, 200)}`);
+      await ctx.reply(`❌ Error: ${String(error).slice(0, 200)}`, _errReplyOpts);
     }
   } finally {
     stopProcessing();
     typing.stop();
   }
+}
+
+/**
+ * Claudeの応答からファイル操作・コマンド実行を抽出してサマリーを生成
+ * 実装系タスク（ファイル変更があった場合）のみサマリーを返す
+ */
+function extractWorkSummary(response: string): string | null {
+  const actions: string[] = [];
+
+  // ファイル編集の検出
+  const editMatches = response.matchAll(/(?:✏️|Edit|Edited)\s+(.+?\.\w+)/gi);
+  for (const m of editMatches) {
+    const file = m[1]?.split('/').pop() || m[1];
+    if (file && !actions.includes(`編集: ${file}`)) {
+      actions.push(`編集: ${file}`);
+    }
+  }
+
+  // ファイル作成の検出
+  const writeMatches = response.matchAll(/(?:📝|Write|Created|Wrote)\s+(.+?\.\w+)/gi);
+  for (const m of writeMatches) {
+    const file = m[1]?.split('/').pop() || m[1];
+    if (file && !actions.includes(`作成: ${file}`)) {
+      actions.push(`作成: ${file}`);
+    }
+  }
+
+  // Bash実行の検出
+  const bashMatches = response.matchAll(/(?:🔨|Bash|Running|Executed)[:：]?\s*`?(.+?)`?$/gim);
+  for (const m of bashMatches) {
+    const cmd = m[1]?.trim().slice(0, 60);
+    if (cmd && !actions.includes(`実行: ${cmd}`)) {
+      actions.push(`実行: ${cmd}`);
+    }
+  }
+
+  // ファイル変更がなければサマリー不要（会話のみ）
+  if (actions.length === 0) return null;
+
+  // 最大8件に制限
+  const limited = actions.slice(0, 8);
+  if (actions.length > 8) {
+    limited.push(`... 他${actions.length - 8}件`);
+  }
+
+  return limited.map(a => `  • ${a}`).join('\n');
 }

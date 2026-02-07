@@ -223,7 +223,7 @@ export async function updateTower(
       result = await editTowerMessage(ctx, cached.messageId, rendered, cached);
     } else {
       // Create new pinned message
-      result = await createTowerMessage(ctx, chatId, rendered);
+      result = await createTowerMessage(ctx, chatId, rendered, null);
     }
 
     // 8. Update cache on success
@@ -285,7 +285,7 @@ async function editTowerMessage(
     if (editError.code === 'not_found') {
       // Message deleted - recover by creating new one
       console.log(`[TowerManager] Message not found - recovering...`);
-      return await recoverTower(ctx, content);
+      return await recoverTower(ctx, content, messageId);
     }
 
     if (editError.code === 'rate_limit') {
@@ -351,9 +351,21 @@ async function editTowerMessage(
 async function createTowerMessage(
   ctx: Context,
   chatId: string,
-  content: string
+  content: string,
+  oldMessageId: string | null
 ): Promise<TowerUpdateResult> {
   try {
+    // Unpin old message before creating new one
+    if (oldMessageId) {
+      try {
+        await ctx.api.unpinChatMessage(chatId, parseInt(oldMessageId, 10));
+        console.log(`[TowerManager] Old message unpinned: ${oldMessageId}`);
+      } catch (unpinError) {
+        console.warn(`[TowerManager] Failed to unpin old message:`, unpinError);
+        // Continue anyway
+      }
+    }
+
     const message = await ctx.api.sendMessage(chatId, content, {
       parse_mode: undefined,
     });
@@ -391,7 +403,8 @@ async function createTowerMessage(
 
 async function recoverTower(
   ctx: Context,
-  content: string
+  content: string,
+  oldMessageId: string | null = null
 ): Promise<TowerUpdateResult> {
   const now = new Date().toLocaleTimeString('ja-JP', {
     timeZone: 'Asia/Tokyo',
@@ -404,7 +417,8 @@ async function recoverTower(
   const result = await createTowerMessage(
     ctx,
     String(ctx.chat!.id),
-    recoveryContent
+    recoveryContent,
+    oldMessageId
   );
 
   if (result.success) {

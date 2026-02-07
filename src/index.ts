@@ -19,7 +19,6 @@ import {
   handleRetry,
   handleText,
   handleVoice,
-  handlePhoto,
   handleDocument,
   handleCallback,
   handleWhy,
@@ -32,8 +31,7 @@ import {
   handleTaskPause,
   handleFocus,
   handleTodoist,
-  handleAlarm,
-} from "./handlers";
+  handleAlarm } from "./handlers";
 import {
   handleMeta,
   handleMetaRun,
@@ -49,9 +47,11 @@ import {
   handleAskGemini,
 } from "./handlers/council";
 import { handleAISession } from "./handlers/ai-session";
-import { handleImagine, handleEdit } from "./handlers/imagine";
 import { registerMediaCommands } from "./handlers/media-commands";
 import { startTaskPoller } from './utils/task-poller';
+import { ensureLearnedMemoryTable } from './utils/learned-memory';
+import { ensureSessionSummaryTable } from './utils/session-summary';
+import { startMemoryGCScheduler } from './utils/memory-gc';
 
 // ============== Global Context ==============
 // Bot起動時にCLAUDE.mdを読み込んでグローバルに保持
@@ -153,8 +153,6 @@ bot.command("gem", handleAskGemini);
 
 // AI Session Bridge
 bot.command("ai", handleAISession);
-bot.command("imagine", handleImagine);
-bot.command("edit", handleEdit);
 
 registerMediaCommands(bot);
 bot.on("message:text", handleText);
@@ -162,8 +160,6 @@ bot.on("message:text", handleText);
 // Voice messages
 bot.on("message:voice", handleVoice);
 
-// Photo messages
-bot.on("message:photo", handlePhoto);
 
 // Document messages
 bot.on("message:document", handleDocument);
@@ -217,6 +213,18 @@ const runner = run(bot);
 
 // Start task poller for remote execution
   startTaskPoller();
+
+  // Initialize memory tables (non-blocking)
+  Promise.all([
+    ensureLearnedMemoryTable(),
+    ensureSessionSummaryTable(),
+  ]).then(() => {
+    console.log('✅ Memory tables initialized');
+    // テーブル初期化後にMemory GCスケジューラーを起動
+    startMemoryGCScheduler();
+  }).catch(err => {
+    console.warn('⚠️ Memory table init failed (non-fatal):', err);
+  });
 
   // Startup notification - DJに起動完了を通知
 try {

@@ -1,6 +1,10 @@
 /**
  * Tower Manager Test Suite
  * Phase C: S2 - Tower Manager
+ *
+ * NOTE: computeRenderHash uses state.status, state.currentStep, state.errors
+ *       (NOT taskTitle, progress, startedAt, etc.)
+ *       To trigger diff detection, change currentStep between updates.
  */
 
 import { describe, test, expect, beforeEach, mock } from 'bun:test';
@@ -37,21 +41,21 @@ function createMockContext(options: {
   const ctx: any = {
     chat: { id: chatId },
     api: {
-      editMessageText: mock(async (chatId, msgId, text, opts) => {
+      editMessageText: mock(async (chatId: any, msgId: any, text: any, opts: any) => {
         editCallCount++;
         if (!editSuccess) {
           throw editError || new Error('Edit failed');
         }
         return { message_id: msgId };
       }),
-      sendMessage: mock(async (chat, text, opts) => {
+      sendMessage: mock(async (chat: any, text: any, opts: any) => {
         sendCallCount++;
         if (!sendSuccess) {
           throw new Error('Send failed');
         }
         return { message_id: 999 };
       }),
-      pinChatMessage: mock(async (chat, msgId, opts) => {
+      pinChatMessage: mock(async (chat: any, msgId: any, opts: any) => {
         if (!pinSuccess) {
           throw new Error('Pin failed');
         }
@@ -77,7 +81,6 @@ describe('Tower Manager', () => {
   };
 
   beforeEach(() => {
-    // Clear cache before each test
     clearTowerCache(identifier);
   });
 
@@ -89,7 +92,7 @@ describe('Tower Manager', () => {
     const ctx = createMockContext();
     const state: TowerState = {
       status: 'running',
-      taskTitle: 'Test task',
+      currentStep: 'Step A',
     };
 
     const result = await updateTower(ctx, identifier, state);
@@ -103,10 +106,9 @@ describe('Tower Manager', () => {
   test('should edit existing tower message on subsequent update', async () => {
     const ctx = createMockContext();
 
-    // First update - create
     const state1: TowerState = {
       status: 'running',
-      taskTitle: 'Test task',
+      currentStep: 'Step A',
     };
     const result1 = await updateTower(ctx, identifier, state1);
     expect(result1.action).toBe('created');
@@ -114,10 +116,10 @@ describe('Tower Manager', () => {
     // Wait for min interval (3s)
     await new Promise((resolve) => setTimeout(resolve, 3100));
 
-    // Second update - edit
+    // Second update with different currentStep (triggers hash change)
     const state2: TowerState = {
       status: 'running',
-      taskTitle: 'Updated task',
+      currentStep: 'Step B',
     };
     const result2 = await updateTower(ctx, identifier, state2);
     expect(result2.action).toBe('updated');
@@ -132,34 +134,31 @@ describe('Tower Manager', () => {
     const ctx = createMockContext();
     const state: TowerState = {
       status: 'running',
-      taskTitle: 'Test task',
+      currentStep: 'Step A',
     };
 
     // First update
     await updateTower(ctx, identifier, state);
 
-    // Second update with same content
+    // Second update with same content → hash match → skip
     const result2 = await updateTower(ctx, identifier, state);
     expect(result2.action).toBe('skipped');
-    expect(ctx._editCallCount()).toBe(0); // No edit attempt
+    expect(ctx._editCallCount()).toBe(0);
   });
 
   test('should update if content changed', async () => {
     const ctx = createMockContext();
 
-    // First update
     await updateTower(ctx, identifier, {
       status: 'running',
-      taskTitle: 'Task A',
+      currentStep: 'Step A',
     });
 
-    // Wait for min interval
     await new Promise((resolve) => setTimeout(resolve, 3100));
 
-    // Second update with different content
     const result2 = await updateTower(ctx, identifier, {
       status: 'running',
-      taskTitle: 'Task B',
+      currentStep: 'Step B',
     });
 
     expect(result2.action).toBe('updated');
@@ -172,16 +171,15 @@ describe('Tower Manager', () => {
   test('should rate limit rapid updates', async () => {
     const ctx = createMockContext();
 
-    // First update
     await updateTower(ctx, identifier, {
       status: 'running',
-      taskTitle: 'Task 1',
+      currentStep: 'Step 1',
     });
 
-    // Immediate second update (within 3s)
+    // Immediate second update (within 3s) — rate limited
     const result2 = await updateTower(ctx, identifier, {
       status: 'running',
-      taskTitle: 'Task 2', // Different content
+      currentStep: 'Step 2',
     });
 
     expect(result2.action).toBe('skipped');
@@ -190,19 +188,16 @@ describe('Tower Manager', () => {
   test('should allow update after min interval', async () => {
     const ctx = createMockContext();
 
-    // First update
     await updateTower(ctx, identifier, {
       status: 'running',
-      taskTitle: 'Task 1',
+      currentStep: 'Step 1',
     });
 
-    // Wait 3+ seconds
     await new Promise((resolve) => setTimeout(resolve, 3100));
 
-    // Second update after interval
     const result2 = await updateTower(ctx, identifier, {
       status: 'running',
-      taskTitle: 'Task 2',
+      currentStep: 'Step 2',
     });
 
     expect(result2.action).toBe('updated');
@@ -216,16 +211,14 @@ describe('Tower Manager', () => {
     const ctx = createMockContext();
     const state: TowerState = {
       status: 'running',
-      taskTitle: 'Concurrent test',
+      currentStep: 'Concurrent',
     };
 
-    // Start two updates concurrently
     const [result1, result2] = await Promise.all([
       updateTower(ctx, identifier, state),
       updateTower(ctx, identifier, state),
     ]);
 
-    // One should succeed, one should be skipped
     const actions = [result1.action, result2.action].sort();
     expect(actions).toEqual(['created', 'skipped']);
   });
@@ -237,24 +230,25 @@ describe('Tower Manager', () => {
   test('should treat "not modified" error as success', async () => {
     const ctx = createMockContext();
 
-    // First update - create
     await updateTower(ctx, identifier, {
       status: 'running',
-      taskTitle: 'Test',
+      currentStep: 'Original',
     });
 
-    // Second update - simulate "not modified" error
     const ctxWithError = createMockContext({
       editSuccess: false,
       editError: new Error('message is not modified'),
     });
 
+    // Need different currentStep to bypass hash check, then trigger edit error
+    await new Promise((resolve) => setTimeout(resolve, 3100));
+
     const result = await updateTower(ctxWithError, identifier, {
       status: 'running',
-      taskTitle: 'Different', // Different content to bypass hash check
+      currentStep: 'Changed',
     });
 
-    expect(result.action).toBe('skipped');
+    expect(result.action).toBe('skipped'); // "not modified" → treated as skipped
   });
 
   // ==========================================================================
@@ -264,16 +258,13 @@ describe('Tower Manager', () => {
   test('should recover when message not found', async () => {
     const ctx = createMockContext();
 
-    // First update - create
     await updateTower(ctx, identifier, {
       status: 'running',
-      taskTitle: 'Test',
+      currentStep: 'Original',
     });
 
-    // Wait for min interval
     await new Promise((resolve) => setTimeout(resolve, 3100));
 
-    // Second update - simulate "not found" error, then create
     const ctxWithError = createMockContext({
       editSuccess: false,
       editError: new Error('message to edit not found'),
@@ -282,7 +273,7 @@ describe('Tower Manager', () => {
 
     const result = await updateTower(ctxWithError, identifier, {
       status: 'running',
-      taskTitle: 'Different',
+      currentStep: 'Different',
     });
 
     expect(result.action).toBe('recovered');
@@ -296,22 +287,16 @@ describe('Tower Manager', () => {
   test('should handle rate limit with retry', async () => {
     const ctx = createMockContext();
 
-    // First update - create
     await updateTower(ctx, identifier, {
       status: 'running',
-      taskTitle: 'Test',
+      currentStep: 'Original',
     });
 
-    // Wait for min interval
     await new Promise((resolve) => setTimeout(resolve, 3100));
 
-    // Second update - simulate 429 error
     let attemptCount = 0;
-    const ctxWithError = createMockContext({
-      chatId: '12345',
-    });
+    const ctxWithError = createMockContext({ chatId: '12345' });
 
-    // Mock editMessageText to fail first, succeed second
     ctxWithError.api.editMessageText = mock(async () => {
       attemptCount++;
       if (attemptCount === 1) {
@@ -324,11 +309,11 @@ describe('Tower Manager', () => {
 
     const result = await updateTower(ctxWithError, identifier, {
       status: 'running',
-      taskTitle: 'Different',
+      currentStep: 'Different',
     });
 
     expect(result.action).toBe('updated');
-    expect(attemptCount).toBe(2); // First attempt + retry
+    expect(attemptCount).toBe(2);
   });
 
   // ==========================================================================
@@ -338,16 +323,13 @@ describe('Tower Manager', () => {
   test('should fail on forbidden error', async () => {
     const ctx = createMockContext();
 
-    // First update - create
     await updateTower(ctx, identifier, {
       status: 'running',
-      taskTitle: 'Test',
+      currentStep: 'Original',
     });
 
-    // Wait for min interval
     await new Promise((resolve) => setTimeout(resolve, 3100));
 
-    // Second update - simulate 403 error
     const ctxWithError = createMockContext({
       editSuccess: false,
       editError: new Error('403 Forbidden'),
@@ -355,7 +337,7 @@ describe('Tower Manager', () => {
 
     const result = await updateTower(ctxWithError, identifier, {
       status: 'running',
-      taskTitle: 'Different',
+      currentStep: 'Different',
     });
 
     expect(result.success).toBe(false);
@@ -371,7 +353,7 @@ describe('Tower Manager', () => {
 
     await updateTower(ctx, identifier, {
       status: 'running',
-      taskTitle: 'Test',
+      currentStep: 'Test',
     });
 
     const status = getTowerStatus(identifier);
@@ -385,7 +367,7 @@ describe('Tower Manager', () => {
 
     await updateTower(ctx, identifier, {
       status: 'running',
-      taskTitle: 'Test',
+      currentStep: 'Test',
     });
 
     clearTowerCache(identifier);
@@ -397,21 +379,11 @@ describe('Tower Manager', () => {
 
 describe('Tower Manager - Summary', () => {
   test('Phase C acceptance criteria', () => {
-    // ✅ editMessageText implementation
     console.log('✅ editMessageText で更新実装');
-
-    // ✅ render_hash diff detection
     console.log('✅ render_hash で差分検出実装');
-
-    // ✅ single-flight lock (5秒)
     console.log('✅ single-flight lock（5秒）実装');
-
-    // ✅ 800文字制限（Tower Rendererで実装済み）
     console.log('✅ 800文字制限実装済み');
-
-    // ✅ editエラー分類
     console.log('✅ editエラー分類実装（not_modified/not_found/429/403/401）');
-
     console.log('✅ Phase C: Tower Manager - All tests passed');
   });
 });
