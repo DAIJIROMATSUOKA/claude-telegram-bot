@@ -18,6 +18,11 @@ import { existsSync, mkdirSync, unlinkSync, writeFileSync } from "fs";
 import { join } from "path";
 import { InputFile } from "grammy";
 
+// HTML escape for Telegram messages
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
 // Config
 const AI_MEDIA_SCRIPT = join(process.env.HOME || "~", "claude-telegram-bot", "scripts", "ai-media.py");
 const MFLUX_VENV_PYTHON = join(process.env.HOME || "~", "ai-tools", "mflux-env", "bin", "python3");
@@ -41,10 +46,15 @@ interface MediaResult {
   elapsed?: number;
 }
 
-async function runAiMedia(args: string[], timeout: number): Promise<MediaResult> {
+interface RunOptions {
+  timeout: number;
+  onStderr?: (line: string) => void;
+}
+
+async function runAiMedia(args: string[], opts: RunOptions): Promise<MediaResult> {
+  const { timeout, onStderr } = opts;
   return new Promise((resolve) => {
     const proc = spawn(PYTHON, [AI_MEDIA_SCRIPT, ...args], {
-      timeout,
       env: {
         ...process.env,
         AI_MEDIA_WORKDIR: WORKING_DIR,
@@ -60,12 +70,38 @@ async function runAiMedia(args: string[], timeout: number): Promise<MediaResult>
 
     proc.stderr.on("data", (data: Buffer) => {
       stderr += data.toString();
-      // Log progress to console
       const line = data.toString().trim();
-      if (line) console.log(`[media] ${line}`);
+      if (line) {
+        console.log(`[media] ${line}`);
+        if (onStderr) onStderr(line);
+      }
     });
 
-    proc.on("close", (code: number | null) => {
+    // 2-stage kill: SIGTERM first, SIGKILL 5s later (ML processes often ignore SIGTERM)
+    let timedOut = false;
+    const softTimer = setTimeout(() => {
+      timedOut = true;
+      console.log("[media] ⚠️ TIMEOUT – sending SIGTERM");
+      try { proc.kill("SIGTERM"); } catch {}
+    }, timeout);
+    const hardTimer = setTimeout(() => {
+      console.log("[media] ⚠️ SIGTERM ignored – sending SIGKILL");
+      try { proc.kill("SIGKILL"); } catch {}
+    }, timeout + 5_000);
+
+    proc.on("close", (code: number | null, signal: string | null) => {
+      clearTimeout(softTimer);
+      clearTimeout(hardTimer);
+      console.log(`[media-debug] exit=${code} signal=${signal} timedOut=${timedOut} stdout=${stdout.length}B stderr=${stderr.length}B`);
+      console.log(`[media-debug] stdout-tail: ${stdout.slice(-300)}`);
+      console.log(`[media-debug] stderr-tail: ${stderr.slice(-300)}`);
+      if (timedOut) {
+        resolve({
+          ok: false,
+          error: `タイムアウト (${Math.round(timeout / 60000)}分)`,
+        });
+        return;
+      }
       if (code !== 0 && !stdout.trim()) {
         resolve({
           ok: false,
@@ -150,14 +186,14 @@ export async function handleImagine(ctx: Context): Promise<void> {
   try {
     const result = await runAiMedia(
       ["generate", "--prompt", prompt],
-      TIMEOUT_IMAGE
+      { timeout: TIMEOUT_IMAGE }
     );
 
     if (!result.ok || !result.path) {
       await ctx.api.editMessageText(
         ctx.chat!.id,
         statusMsg.message_id,
-        `❌ 生成失敗: ${result.error?.slice(0, 200) || "unknown error"}`
+        `❌ 生成失敗: ${result.error?.slice(-500) || "unknown error"}`
       );
       return;
     }
@@ -200,29 +236,46 @@ export async function handleEdit(ctx: Context): Promise<void> {
   }
 
   const statusMsg = await ctx.reply("✏️ 画像編集中... (FLUX Kontext, ~5-10分)");
+  const chatId = ctx.chat!.id;
 
   try {
     // Download the photo
     const imagePath = await downloadPhoto(ctx);
     if (!imagePath) {
       await ctx.api.editMessageText(
-        ctx.chat!.id,
+        chatId,
         statusMsg.message_id,
         "❌ 写真のダウンロードに失敗しました"
       );
       return;
     }
 
+    // Debug: throttled stderr → Telegram status update
+    let lastUpdate = 0;
+    const UPDATE_INTERVAL = 4_000; // 4s min between edits (Telegram rate limit)
+    const debugUpdate = (line: string) => {
+      const now = Date.now();
+      if (now - lastUpdate < UPDATE_INTERVAL) return;
+      lastUpdate = now;
+      const short = line.length > 120 ? line.slice(0, 120) + "…" : line;
+      ctx.api.editMessageText(
+        chatId,
+        statusMsg.message_id,
+        `✏️ 編集中...\n<code>${escapeHtml(short)}</code>`,
+        { parse_mode: "HTML" }
+      ).catch(() => {});
+    };
+
     const result = await runAiMedia(
       ["edit", "--image", imagePath, "--prompt", prompt],
-      TIMEOUT_IMAGE
+      { timeout: TIMEOUT_IMAGE, onStderr: debugUpdate }
     );
 
     if (!result.ok || !result.path) {
       await ctx.api.editMessageText(
         ctx.chat!.id,
         statusMsg.message_id,
-        `❌ 編集失敗: ${result.error?.slice(0, 200) || "unknown error"}`
+        `❌ 編集失敗: ${result.error?.slice(-500) || "unknown error"}`
       );
       cleanupFile(imagePath);
       return;
@@ -284,13 +337,13 @@ export async function handleAnimate(ctx: Context): Promise<void> {
       }
     }
 
-    const result = await runAiMedia(args, TIMEOUT_VIDEO);
+    const result = await runAiMedia(args, { timeout: TIMEOUT_VIDEO });
 
     if (!result.ok || !result.path) {
       await ctx.api.editMessageText(
         ctx.chat!.id,
         statusMsg.message_id,
-        `❌ 動画生成失敗: ${result.error?.slice(0, 200) || "unknown error"}`
+        `❌ 動画生成失敗: ${result.error?.slice(-500) || "unknown error"}`
       );
       return;
     }
