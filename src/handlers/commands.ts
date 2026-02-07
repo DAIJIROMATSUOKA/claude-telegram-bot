@@ -10,6 +10,9 @@ import { WORKING_DIR, ALLOWED_USERS, RESTART_FILE } from "../config";
 import { isAuthorized } from "../security";
 import { execSync } from "child_process";
 import { join } from "path";
+
+// Project root directory (resolve from this file's location, not WORKING_DIR)
+const PROJECT_ROOT = join(import.meta.dir, "..", "..");
 import {
   enableFocusMode,
   disableFocusMode,
@@ -325,7 +328,7 @@ export async function handleTaskStart(ctx: Context): Promise<void> {
   const taskName = text.replace(/^\/task_start\s*/, "").trim() || "Unnamed Task";
 
   try {
-    const scriptPath = join(WORKING_DIR, "scripts", "timer-sync.sh");
+    const scriptPath = join(PROJECT_ROOT, "scripts", "timer-sync.sh");
     execSync(`"${scriptPath}" START "${taskName}"`, { encoding: "utf-8" });
     await ctx.reply(`⏱ タスク開始: ${taskName}`);
   } catch (error: any) {
@@ -350,7 +353,7 @@ export async function handleTaskStop(ctx: Context): Promise<void> {
   const taskName = text.replace(/^\/task_stop\s*/, "").trim() || "Unnamed Task";
 
   try {
-    const scriptPath = join(WORKING_DIR, "scripts", "timer-sync.sh");
+    const scriptPath = join(PROJECT_ROOT, "scripts", "timer-sync.sh");
     execSync(`"${scriptPath}" STOP "${taskName}"`, { encoding: "utf-8" });
     await ctx.reply(`⏹ タスク停止: ${taskName}`);
   } catch (error: any) {
@@ -375,12 +378,133 @@ export async function handleTaskPause(ctx: Context): Promise<void> {
   const taskName = text.replace(/^\/task_pause\s*/, "").trim() || "Unnamed Task";
 
   try {
-    const scriptPath = join(WORKING_DIR, "scripts", "timer-sync.sh");
+    const scriptPath = join(PROJECT_ROOT, "scripts", "timer-sync.sh");
     execSync(`"${scriptPath}" PAUSE "${taskName}"`, { encoding: "utf-8" });
     await ctx.reply(`⏸ タスク一時停止: ${taskName}`);
   } catch (error: any) {
     console.error("[task_pause] Timer sync failed:", error.message);
     await ctx.reply(`⚠️ タイマー同期失敗: ${error.message}`);
+  }
+}
+
+/**
+ * /todoist - Todoist task management
+ * Usage:
+ *   /todoist              → Show today's tasks
+ *   /todoist add タスク名  → Add a new task (due today)
+ *   /todoist done タスクID → Complete a task
+ */
+export async function handleTodoist(ctx: Context): Promise<void> {
+  const userId = ctx.from?.id;
+
+  if (!isAuthorized(userId, ALLOWED_USERS)) {
+    await ctx.reply("Unauthorized.");
+    return;
+  }
+
+  // Load API token from jarvis_config.json
+  const os = await import("os");
+  const fs = await import("fs");
+  const configPath = join(os.homedir(), ".claude", "jarvis_config.json");
+
+  let apiToken: string;
+  try {
+    const config = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+    apiToken = config.rules?.todoist?.api_token;
+    if (!apiToken) throw new Error("Token not found");
+  } catch {
+    await ctx.reply("❌ Todoist APIトークンが見つからない (~/.claude/jarvis_config.json)");
+    return;
+  }
+
+  const text = ctx.message?.text || "";
+  const args = text.replace(/^\/todoist\s*/, "").trim();
+  const subcommand = args.split(/\s+/)[0]?.toLowerCase() || "";
+
+  if (subcommand === "add") {
+    // Add task
+    const taskContent = args.replace(/^add\s+/, "").trim();
+    if (!taskContent) {
+      await ctx.reply("使い方: /todoist add タスク名");
+      return;
+    }
+
+    try {
+      const res = await fetch("https://api.todoist.com/rest/v2/tasks", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${apiToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          content: taskContent,
+          due_string: "today",
+        }),
+      });
+
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const task = await res.json() as { id: string; content: string };
+      await ctx.reply(`✅ タスク追加: ${task.content}\nID: ${task.id}`);
+    } catch (e: any) {
+      await ctx.reply(`❌ タスク追加失敗: ${e.message}`);
+    }
+
+  } else if (subcommand === "done") {
+    // Complete task
+    const taskId = args.replace(/^done\s+/, "").trim();
+    if (!taskId) {
+      await ctx.reply("使い方: /todoist done タスクID");
+      return;
+    }
+
+    try {
+      const res = await fetch(`https://api.todoist.com/rest/v2/tasks/${taskId}/close`, {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${apiToken}` },
+      });
+
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      await ctx.reply(`✅ タスク完了 (ID: ${taskId})`);
+    } catch (e: any) {
+      await ctx.reply(`❌ タスク完了失敗: ${e.message}`);
+    }
+
+  } else {
+    // List today's tasks (default)
+    try {
+      const res = await fetch("https://api.todoist.com/rest/v2/tasks?filter=today", {
+        headers: { "Authorization": `Bearer ${apiToken}` },
+      });
+
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const tasks = await res.json() as Array<{ id: string; content: string; priority: number; due?: { datetime?: string } }>;
+
+      if (tasks.length === 0) {
+        await ctx.reply("📋 今日のタスクはない");
+        return;
+      }
+
+      // Sort: priority high first, then by time
+      tasks.sort((a, b) => b.priority - a.priority);
+
+      const lines = [`📋 <b>今日のタスク</b> (${tasks.length}件)\n`];
+      for (const t of tasks.slice(0, 30)) {
+        const p = t.priority === 4 ? "🔴" : t.priority === 3 ? "🟠" : t.priority === 2 ? "🟡" : "⚪";
+        const time = t.due?.datetime
+          ? new Date(t.due.datetime).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Tokyo" })
+          : "";
+        lines.push(`${p} ${time ? time + " " : ""}${t.content}`);
+        lines.push(`   <code>${t.id}</code>`);
+      }
+
+      if (tasks.length > 30) {
+        lines.push(`\n... 他${tasks.length - 30}件`);
+      }
+
+      await ctx.reply(lines.join("\n"), { parse_mode: "HTML" });
+    } catch (e: any) {
+      await ctx.reply(`❌ タスク取得失敗: ${e.message}`);
+    }
   }
 }
 

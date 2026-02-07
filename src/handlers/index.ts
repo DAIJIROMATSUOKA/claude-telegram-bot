@@ -14,6 +14,7 @@ export {
   handleTaskStop,
   handleTaskPause,
   handleFocus,
+  handleTodoist,
 } from "./commands";
 export { handleText } from "./text";
 export { handleVoice } from "./voice";
