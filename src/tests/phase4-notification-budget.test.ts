@@ -9,20 +9,14 @@
  * - Total per phase: 1 notification (end only)
  */
 
-import { describe, test, expect, beforeEach, mock } from 'bun:test';
+import { describe, test, expect, beforeEach } from 'bun:test';
 import type { Context } from 'grammy';
 
-// Mock control-tower-helper before importing notification-buffer
-mock.module('../utils/control-tower-helper', () => ({
-  startPhase: async () => {},
-  completePhase: async () => {},
-}));
-
-// Mock session-helper
-mock.module('../utils/session-helper', () => ({
-  getSessionIdFromContext: () => null,
-  generateSessionId: (chatId: number, messageId: number) => `chat_${chatId}_msg_${messageId}`,
-}));
+// No mocks needed — notification-buffer skips D1 writes when
+// getSessionIdFromContext returns null (mock ctx has no real message).
+// Previously mock.module was used here for control-tower-helper and
+// session-helper, but that polluted the module cache and broke
+// phase2-integration tests running in parallel.
 
 import { notificationBuffer } from '../utils/notification-buffer';
 

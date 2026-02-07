@@ -29,6 +29,7 @@ mcp-config.ts
 .eslintcache
 .cache
 *.tsbuildinfo
+__pycache__/
 
 # IntelliJ based IDEs
 .idea
