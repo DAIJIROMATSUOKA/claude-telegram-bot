@@ -17,6 +17,7 @@ import {
   askChatGPT,
   type AIResponse,
 } from "../utils/multi-ai";
+import { maybeEnrichWithWebSearch } from "../utils/web-search";
 
 // ========================================
 // Telegram Formatting Utilities
@@ -195,6 +196,9 @@ async function runCouncilDebate(
 ): Promise<DebateResult> {
   const debateStart = Date.now();
 
+  // Web検索で補強（最新情報が必要なテーマの場合）
+  const enrichedTopic = await maybeEnrichWithWebSearch(topic);
+
   // ──────────────────────────────
   // Round 1: Generate（3AI並列）
   // ──────────────────────────────
@@ -204,11 +208,11 @@ async function runCouncilDebate(
     MSG_R1_PROGRESS
   );
 
-  const r1Prompt = (role: CouncilRole, topic: string): string =>
-    ROLES[role].prompt + R1_PROMPT_TEMPLATE.replace("{topic}", topic);
+  const r1Prompt = (role: CouncilRole, t: string): string =>
+    ROLES[role].prompt + R1_PROMPT_TEMPLATE.replace("{topic}", t);
 
   const r1Results = await Promise.allSettled(
-    ROLE_ORDER.map((role) => ROLES[role].askFn(r1Prompt(role, topic), 120_000)),
+    ROLE_ORDER.map((role) => ROLES[role].askFn(r1Prompt(role, enrichedTopic), 120_000)),
   );
 
   const round1: RoundEntry[] = [];
@@ -473,7 +477,8 @@ async function handleDirectAI(
   const msg = await ctx.reply(MSG_THINKING);
 
   try {
-    const r = await askFn(prompt, 180_000);
+    const enrichedPrompt = await maybeEnrichWithWebSearch(prompt);
+    const r = await askFn(enrichedPrompt, 180_000);
 
     let output: string;
     if (r.error) {

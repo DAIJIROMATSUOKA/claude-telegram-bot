@@ -88,6 +88,8 @@ export class StreamingState {
   lastEditTimes = new Map<number, number>(); // segment_id -> last edit time
   lastContent = new Map<number, string>(); // segment_id -> last sent content
   actionTraceIds = new Map<string, number>(); // action_key -> trace_id for tracking
+  headerSent = false; // クロッピーヘッダーを送信済みか
+  replyToMessageId?: number; // 元メッセージへのreply用
 }
 
 /**
@@ -145,19 +147,33 @@ export function createStatusCallback(ctx: Context, state: StreamingState): Statu
 
         if (!state.textMessages.has(segmentId)) {
           // New segment - create message
-          const display =
+          let display =
             content.length > TELEGRAM_SAFE_LIMIT
               ? content.slice(0, TELEGRAM_SAFE_LIMIT) + "..."
               : content;
-          const formatted = convertMarkdownToHtml(display);
+          // 最初のセグメントにクロッピーヘッダーを付けて投稿の境界を明確にする
+          let formatted = convertMarkdownToHtml(display);
+          if (!state.headerSent) {
+            formatted = `<b>🦞 Croppy</b>\n${formatted}`;
+            state.headerSent = true;
+          }
+          // 最初のセグメントは元メッセージへのreplyとして送信
+          const replyOpts: any = { parse_mode: "HTML" };
+          if (segmentId === 0 && state.replyToMessageId) {
+            replyOpts.reply_parameters = { message_id: state.replyToMessageId };
+          }
           try {
-            const msg = await ctx.reply(formatted, { parse_mode: "HTML" });
+            const msg = await ctx.reply(formatted, replyOpts);
             state.textMessages.set(segmentId, msg);
             state.lastContent.set(segmentId, formatted);
           } catch (htmlError) {
             // HTML parse failed, fall back to plain text
             console.debug("HTML reply failed, using plain text:", htmlError);
-            const msg = await ctx.reply(formatted);
+            const plainOpts: any = {};
+            if (segmentId === 0 && state.replyToMessageId) {
+              plainOpts.reply_parameters = { message_id: state.replyToMessageId };
+            }
+            const msg = await ctx.reply(formatted, plainOpts);
             state.textMessages.set(segmentId, msg);
             state.lastContent.set(segmentId, formatted);
           }
@@ -193,7 +209,10 @@ export function createStatusCallback(ctx: Context, state: StreamingState): Statu
       } else if (statusType === "segment_end" && segmentId !== undefined) {
         if (state.textMessages.has(segmentId) && content) {
           const msg = state.textMessages.get(segmentId)!;
-          const formatted = convertMarkdownToHtml(content);
+          // 最初のセグメントの最終テキストにもヘッダーを維持
+          const formatted = segmentId === 0
+            ? `<b>🦞 Croppy</b>\n${convertMarkdownToHtml(content)}`
+            : convertMarkdownToHtml(content);
 
           // Skip if content unchanged
           if (formatted === state.lastContent.get(segmentId)) {
@@ -259,6 +278,24 @@ export function createStatusCallback(ctx: Context, state: StreamingState): Statu
             await ctx.api.deleteMessage(toolMsg.chat.id, toolMsg.message_id);
           } catch (error) {
             console.debug("Failed to delete tool message:", error);
+          }
+        }
+
+        // Append footer separator to last text segment
+        if (state.textMessages.size > 0) {
+          const lastSegmentId = Math.max(...state.textMessages.keys());
+          const lastMsg = state.textMessages.get(lastSegmentId)!;
+          const lastContent = state.lastContent.get(lastSegmentId) || "";
+          const footer = "\n━━━━━━━━━━━━━━━";
+          const updated = lastContent + footer;
+          if (updated.length <= TELEGRAM_MESSAGE_LIMIT) {
+            try {
+              await ctx.api.editMessageText(lastMsg.chat.id, lastMsg.message_id, updated, {
+                parse_mode: "HTML",
+              });
+            } catch (error) {
+              console.debug("Failed to append footer separator:", error);
+            }
           }
         }
       }

@@ -3,11 +3,12 @@
  * Phase D: S2 - Notification Budget
  *
  * Requirements:
- * 1. Start notification: disable_notification: true (silent)
+ * 1. Start phase: NO notification sent (console log + D1 record only)
  * 2. End notification: disable_notification: false (loud)
  * 3. Intermediate progress: Tower edit only (no messages)
  * 4. streaming.ts: No ctx.reply() for text segments
  * 5. End notification includes trace_id
+ * 6. Total notifications per phase: 1 (end only)
  */
 
 import { describe, test, expect, beforeEach, mock } from 'bun:test';
@@ -54,18 +55,16 @@ describe('Notification Budget - Phase D', () => {
   });
 
   // ==========================================================================
-  // Requirement 1: Start notification is silent
+  // Requirement 1: Start phase sends NO notification
   // ==========================================================================
 
-  test('should send start notification with disable_notification: true', async () => {
+  test('should NOT send notification on startPhase (log + D1 only)', async () => {
     const ctx = createMockContext();
 
     await buffer.startPhase(ctx, 'Phase 1: Analysis');
 
     const history = ctx._replyHistory();
-    expect(history.length).toBe(1);
-    expect(history[0]!.text).toContain('🔄 Phase 1: Analysis');
-    expect(history[0]!.options?.disable_notification).toBe(true); // Silent
+    expect(history.length).toBe(0); // No notification on start
   });
 
   // ==========================================================================
@@ -81,19 +80,19 @@ describe('Notification Budget - Phase D', () => {
     await buffer.endPhase(ctx, true);
 
     const history = ctx._replyHistory();
-    expect(history.length).toBe(2); // Start + End
+    expect(history.length).toBe(1); // End only
 
     // Check end notification
-    const endNotification = history[1]!;
+    const endNotification = history[0]!;
     expect(endNotification.text).toContain('✅');
     expect(endNotification.options?.disable_notification).toBe(false); // Loud
   });
 
   // ==========================================================================
-  // Requirement 3: Only 2 notifications per phase (start + end)
+  // Requirement 3: Only 1 notification per phase (end only)
   // ==========================================================================
 
-  test('should send exactly 2 notifications per phase', async () => {
+  test('should send exactly 1 notification per phase (end only)', async () => {
     const ctx = createMockContext();
 
     await buffer.startPhase(ctx, 'Phase 1: Implementation');
@@ -109,7 +108,7 @@ describe('Notification Budget - Phase D', () => {
     await buffer.endPhase(ctx, true);
 
     const history = ctx._replyHistory();
-    expect(history.length).toBe(2); // Only start + end
+    expect(history.length).toBe(1); // Only end notification
   });
 
   // ==========================================================================
@@ -127,7 +126,7 @@ describe('Notification Budget - Phase D', () => {
     }
 
     const history = ctx._replyHistory();
-    expect(history.length).toBe(1); // Only start notification
+    expect(history.length).toBe(0); // No notifications during phase
   });
 
   // ==========================================================================
@@ -143,7 +142,7 @@ describe('Notification Budget - Phase D', () => {
     await buffer.endPhase(ctx, true);
 
     const history = ctx._replyHistory();
-    const endNotification = history[1]!;
+    const endNotification = history[0]!;
 
     expect(endNotification.text).toContain('🔍 Trace ID:');
     expect(endNotification.text).toContain(traceId);
@@ -156,7 +155,7 @@ describe('Notification Budget - Phase D', () => {
     await buffer.endPhase(ctx, true);
 
     const history = ctx._replyHistory();
-    const endNotification = history[1]!;
+    const endNotification = history[0]!;
 
     expect(endNotification.text).not.toContain('Trace ID');
   });
@@ -175,9 +174,9 @@ describe('Notification Budget - Phase D', () => {
     await buffer.endPhase(ctx, true);
 
     const history = ctx._replyHistory();
-    expect(history.length).toBe(2); // Start + End only
+    expect(history.length).toBe(1); // End only
 
-    const endNotification = history[1]!;
+    const endNotification = history[0]!;
     expect(endNotification.text).toContain('First response');
     expect(endNotification.text).toContain('Second response');
     expect(endNotification.text).toContain('Third response');
@@ -198,10 +197,10 @@ describe('Notification Budget - Phase D', () => {
     buffer.addActivity('tool', 'Testing');
     await buffer.endPhase(ctx, true);
 
-    const endNotification = ctx._replyHistory()[1]!;
+    const endNotification = ctx._replyHistory()[0]!;
 
     expect(endNotification.text).toContain('思考: 2回'); // 2 thinking
-    expect(endNotification.text).toContain('ツール実行: 3回'); // 3 tools
+    expect(endNotification.text).toContain('やったこと'); // Tool activities listed individually
   });
 
   // ==========================================================================
@@ -216,7 +215,7 @@ describe('Notification Budget - Phase D', () => {
     await buffer.endPhase(ctx, false); // Failure
 
     const history = ctx._replyHistory();
-    const endNotification = history[1]!;
+    const endNotification = history[0]!;
 
     expect(endNotification.text).toContain('❌'); // Error icon
     expect(endNotification.text).toContain('エラー');
@@ -242,14 +241,12 @@ describe('Notification Budget - Phase D', () => {
     await buffer.endPhase(ctx, true);
 
     const history = ctx._replyHistory();
-    expect(history.length).toBe(4); // 2 phases × 2 notifications each
+    expect(history.length).toBe(2); // 2 phases × 1 notification each (end only)
 
-    // Check notification flags
+    // Check notification flags - all end notifications are loud
     const flags = ctx._getNotificationFlags();
-    expect(flags[0]).toBe(true); // Phase 1 start: silent
-    expect(flags[1]).toBe(false); // Phase 1 end: loud
-    expect(flags[2]).toBe(true); // Phase 2 start: silent
-    expect(flags[3]).toBe(false); // Phase 2 end: loud
+    expect(flags[0]).toBe(false); // Phase 1 end: loud
+    expect(flags[1]).toBe(false); // Phase 2 end: loud
   });
 
   // ==========================================================================
@@ -294,12 +291,52 @@ describe('Notification Budget - Phase D', () => {
 
     expect(buffer.getActivityCount()).toBe(0); // Reset after phase
   });
+
+  // ==========================================================================
+  // Duplicate Phase Prevention
+  // ==========================================================================
+
+  test('should skip duplicate startPhase for same phase name', async () => {
+    const ctx = createMockContext();
+
+    await buffer.startPhase(ctx, 'Phase 1: Test');
+    buffer.addActivity('tool', 'First action');
+
+    // Attempt to start the same phase again
+    await buffer.startPhase(ctx, 'Phase 1: Test');
+
+    // Should still be in the original phase with the activity
+    expect(buffer.isActive()).toBe(true);
+    expect(buffer.getCurrentPhase()).toBe('Phase 1: Test');
+    expect(buffer.getActivityCount()).toBe(1); // Original activity preserved
+
+    const history = ctx._replyHistory();
+    expect(history.length).toBe(0); // No notifications sent (no start, no forced end)
+  });
+
+  // ==========================================================================
+  // End Notification Format
+  // ==========================================================================
+
+  test('should wrap end notification with separator lines', async () => {
+    const ctx = createMockContext();
+
+    await buffer.startPhase(ctx, 'Phase 1: Format Test');
+    await buffer.endPhase(ctx, true);
+
+    const history = ctx._replyHistory();
+    const endNotification = history[0]!;
+
+    // Check separator lines
+    expect(endNotification.text.startsWith('━━━━━━━━━━━━━━━')).toBe(true);
+    expect(endNotification.text.endsWith('━━━━━━━━━━━━━━━')).toBe(true);
+  });
 });
 
 describe('Notification Budget - Summary', () => {
   test('Phase D acceptance criteria', () => {
-    // ✅ Start notification: disable_notification: true
-    console.log('✅ 開始通知: disable_notification: true（静音）');
+    // ✅ Start phase: no notification (console log + D1 only)
+    console.log('✅ 開始通知: なし（console.log + D1記録のみ）');
 
     // ✅ End notification: disable_notification: false
     console.log('✅ 終了通知: disable_notification: false（音あり）');
@@ -312,6 +349,9 @@ describe('Notification Budget - Summary', () => {
 
     // ✅ End notification includes trace_id
     console.log('✅ 終了通知に trace_id 添付');
+
+    // ✅ Total notifications per phase: 1 (end only)
+    console.log('✅ 1フェーズあたり通知1回（終了時のみ）');
 
     console.log('✅ Phase D: Notification Budget - All tests passed');
   });

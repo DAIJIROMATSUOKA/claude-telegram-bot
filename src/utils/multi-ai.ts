@@ -78,11 +78,11 @@ function spawnCLI(
 
 /**
  * Claude CLI (Max subscription)
- * spawn("claude", ["-p", prompt]) — shell不使用で安全
+ * spawn("claude", ["-p", "-"]) + stdin — shell不使用で安全、"-"始まりのプロンプトも問題なし
  */
 export async function askClaude(prompt: string, timeoutMs = 120_000): Promise<AIResponse> {
   const start = Date.now();
-  const r = await spawnCLI("claude", ["--model", "claude-opus-4-6", "-p", prompt], null, timeoutMs);
+  const r = await spawnCLI("claude", ["--model", "claude-opus-4-6", "-p", "-"], prompt, timeoutMs);
   return {
     output: (r.code === 0 || r.stdout) ? r.stdout : "",
     backend: "claude",

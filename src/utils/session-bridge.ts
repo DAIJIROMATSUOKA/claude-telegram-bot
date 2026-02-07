@@ -277,10 +277,11 @@ export async function sendToSession(
         args.push("--resume", session.cliSessionId);
       }
 
-      // メッセージのみ（履歴プレフィックスなし）
-      args.push("-p", message);
+      // メッセージはstdin経由で渡す（"-p -"でstdinから読み取り）
+      // 直接 "-p message" だとmessage内の"-"がCLIオプションとして誤解析される
+      args.push("-p", "-");
 
-      result = await spawnCLI("claude", args, null, 300_000);
+      result = await spawnCLI("claude", args, message, 600_000);
 
       // JSON出力からセッションIDと応答テキストを抽出
       if (result.stdout) {
@@ -308,8 +309,8 @@ export async function sendToSession(
 
       result = await spawnCLI(
         "gemini",
-        ["--yolo", "-p", fullPrompt],
-        null,
+        ["--yolo", "-p", "-"],
+        fullPrompt,
         300_000,
       );
       break;
@@ -338,7 +339,7 @@ export async function sendToSession(
   if (result.stdout) {
     output = result.stdout;
   } else if (result.timedOut) {
-    output = "\u274C \u30BF\u30A4\u30E0\u30A2\u30A6\u30C8\uFF085\u5206\uFF09";
+    output = "\u274C \u30BF\u30A4\u30E0\u30A2\u30A6\u30C8\uFF0810\u5206\uFF09";
   } else if (result.stderr) {
     output =
       "\u274C \u30A8\u30E9\u30FC (exit " +

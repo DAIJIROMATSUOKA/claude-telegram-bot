@@ -23,13 +23,13 @@ if (!fs.existsSync(DOWNLOAD_DIR)) {
 
 function parseEditInstruction(text: string): { target: string; prompt: string; invert: boolean } {
   const bgP = [/背景[をに](.+)/, /background\s+(?:to\s+)?(.+)/i, /バック[をに](.+)/];
-  for (const p of bgP) { const m = text.match(p); if (m) return { target: "person", prompt: m[1].trim(), invert: true }; }
+  for (const p of bgP) { const m = text.match(p); if (m) return { target: "person", prompt: m[1]!.trim(), invert: true }; }
   const hairP = [/髪[をに](.+)/, /hair\s+(?:to\s+)?(.+)/i, /ヘア[をに](.+)/];
-  for (const p of hairP) { const m = text.match(p); if (m) return { target: "hair", prompt: m[1].trim(), invert: false }; }
+  for (const p of hairP) { const m = text.match(p); if (m) return { target: "hair", prompt: m[1]!.trim(), invert: false }; }
   const clothP = [/服[をに](.+)/, /clothes?\s+(?:to\s+)?(.+)/i, /衣�[をに](.+)/, /着替え[てに](.+)/];
-  for (const p of clothP) { const m = text.match(p); if (m) return { target: "clothes", prompt: m[1].trim(), invert: false }; }
+  for (const p of clothP) { const m = text.match(p); if (m) return { target: "clothes", prompt: m[1]!.trim(), invert: false }; }
   const skyP = [/空[をに](.+)/, /sky\s+(?:to\s+)?(.+)/i];
-  for (const p of skyP) { const m = text.match(p); if (m) return { target: "sky", prompt: m[1].trim(), invert: false }; }
+  for (const p of skyP) { const m = text.match(p); if (m) return { target: "sky", prompt: m[1]!.trim(), invert: false }; }
   return { target: "object", prompt: text, invert: false };
 }
 
@@ -52,14 +52,16 @@ export async function handleImagine(ctx: Context): Promise<void> {
   const text = ctx.message?.text || "";
   const prompt = text.replace(/^\/imagine\s*/i, "").trim();
   if (!prompt) { await ctx.reply("使い方: /imagine 赤いドラゴン"); return; }
-  let model = "schnell", steps = 4, clean = prompt;
-  if (prompt.includes("--dev")) { model = "dev"; steps = 20; clean = prompt.replace("--dev", "").trim(); }
+  let model = "schnell", steps = 4, quantize = 8, clean = prompt;
+  if (prompt.includes("--dev")) { model = "dev"; steps = 12; clean = prompt.replace("--dev", "").trim(); }
   const sm = prompt.match(/--steps\s+(\d+)/);
-  if (sm) { steps = parseInt(sm[1]); clean = clean.replace(/--steps\s+\d+/, "").trim(); }
-  const status = await ctx.reply(`🎨 画像生成中...\nモデル: FLUX ${model} (${steps} steps)\nプロンプト: ${clean}`);
+  if (sm) { steps = parseInt(sm[1]!); clean = clean.replace(/--steps\s+\d+/, "").trim(); }
+  const qm = prompt.match(/--quantize\s+(\d+)/);
+  if (qm) { quantize = parseInt(qm[1]!); clean = clean.replace(/--quantize\s+\d+/, "").trim(); }
+  const status = await ctx.reply(`🎨 画像生成中...\nモデル: FLUX ${model} (${steps} steps, q${quantize})\nプロンプト: ${clean}`);
   try {
     const esc = clean.replace(/'/g, "'\\''");
-    const { stdout } = await execAsync(`python3 ${AI_IMAGE_SCRIPT} generate '${esc}' ${model} ${steps}`, { timeout: 600000, maxBuffer: 10 * 1024 * 1024 });
+    const { stdout } = await execAsync(`python3 ${AI_IMAGE_SCRIPT} generate '${esc}' ${model} ${steps} ${quantize}`, { timeout: 600000, maxBuffer: 10 * 1024 * 1024 });
     const result = JSON.parse(stdout.trim().split("\n").pop() || "{}");
     if (result.error) { await ctx.api.editMessageText(ctx.chat!.id, status.message_id, `❌ ${result.error.substring(0, 200)}`); return; }
     await sendPhoto(ctx, result.output, `🎨 ${clean}`);
@@ -71,6 +73,7 @@ export async function handleImagine(ctx: Context): Promise<void> {
 }
 
 export async function handleEdit(ctx: Context): Promise<void> {
+  console.log("[handleEdit] CALLED, text:", ctx.message?.text);
   const text = ctx.message?.text || "";
   const editText = text.replace(/^\/edit\s*/i, "").trim();
   if (!editText) { await ctx.reply("使い方: 写真に返信して /edit 髪を金髪にして"); return; }
@@ -82,7 +85,7 @@ export async function handleEdit(ctx: Context): Promise<void> {
   const status = await ctx.reply(`✂️ 画像編集中...\nターゲット: ${target}${invert ? " (反転)" : ""}\nプロンプト: ${prompt}`);
   try {
     const photo = reply!.photo;
-    const fileId = photo ? photo[photo.length - 1].file_id : reply!.document!.file_id;
+    const fileId = photo ? photo[photo.length - 1]!.file_id : reply!.document!.file_id;
     const input = await downloadTelegramPhoto(ctx, fileId);
     const eT = target.replace(/'/g, "'\\''");
     const eP = prompt.replace(/'/g, "'\\''");

@@ -46,7 +46,7 @@ export async function saveChatMessage(
  */
 export async function getChatHistory(
   userId: string | number,
-  limit: number = 10
+  limit: number = 50
 ): Promise<Array<{ role: string; content: string; timestamp: string }>> {
   try {
     const userIdStr = String(userId);
@@ -117,9 +117,11 @@ export function formatChatHistoryForPrompt(
   return history
     .map((msg, idx) => {
       const roleLabel = msg.role === 'user' ? 'DJ' : 'Jarvis';
-      // 長すぎる内容は省略
-      const content = msg.content.length > 500
-        ? msg.content.slice(0, 500) + '...'
+      // 長すぎる内容は省略（直近15件は2000文字、古いものは1000文字）
+      const isRecent = idx >= history.length - 15;
+      const maxLen = isRecent ? 2000 : 1000;
+      const content = msg.content.length > maxLen
+        ? msg.content.slice(0, maxLen) + '...'
         : msg.content;
 
       return `${idx + 1}. [${roleLabel}] ${content}`;

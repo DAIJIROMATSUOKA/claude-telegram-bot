@@ -71,7 +71,9 @@ describe('/why Command Tests', () => {
   });
 
   test('No action trace found', async () => {
-    const { ctx, replies } = createMockContext(TEST_USER_ID, 555555); // Different chat
+    // Use a chatId that never appears in any session_id
+    const unusedChatId = 111222333;
+    const { ctx, replies } = createMockContext(TEST_USER_ID, unusedChatId);
 
     await handleWhy(ctx);
 

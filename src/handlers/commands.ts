@@ -8,6 +8,8 @@ import type { Context } from "grammy";
 import { session } from "../session";
 import { WORKING_DIR, ALLOWED_USERS, RESTART_FILE } from "../config";
 import { isAuthorized } from "../security";
+import { getChatHistory } from "../utils/chat-history";
+import { saveSessionSummary } from "../utils/session-summary";
 import { exec, execSync } from "child_process";
 import { promisify } from "util";
 
@@ -60,6 +62,7 @@ export async function handleStart(ctx: Context): Promise<void> {
 
 /**
  * /new - Start a fresh session.
+ * セッション終了前にGeminiで会話要約を生成・保存。
  */
 export async function handleNew(ctx: Context): Promise<void> {
   const userId = ctx.from?.id;
@@ -76,6 +79,20 @@ export async function handleNew(ctx: Context): Promise<void> {
       await Bun.sleep(100);
       session.clearStopRequested();
     }
+  }
+
+  // セッション終了前に会話要約を生成・保存（非同期、ブロックしない）
+  if (session.isActive && userId) {
+    const sessionId = session.sessionId || 'unknown';
+    // バックグラウンドで要約保存（ユーザーを待たせない）
+    getChatHistory(userId, 50).then(async (history) => {
+      if (history.length >= 3) {
+        await saveSessionSummary(userId, sessionId, history);
+        console.log('[/new] Session summary saved in background');
+      }
+    }).catch((err) => {
+      console.error('[/new] Failed to save session summary:', err);
+    });
   }
 
   // Clear session
@@ -533,7 +550,7 @@ export async function handleFocus(ctx: Context): Promise<void> {
     return;
   }
 
-  const command = args[0].toLowerCase();
+  const command = args[0]!.toLowerCase();
 
   if (command === 'on') {
     await enableFocusMode(userId!);

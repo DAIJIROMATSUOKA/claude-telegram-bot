@@ -9,6 +9,11 @@ import json
 import subprocess
 import os
 import time
+try:
+    from pillow_heif import register_heif_opener
+    register_heif_opener()
+except ImportError:
+    pass
 
 MODEL_DIR = os.path.expanduser("~/ai-models")
 OUTPUT_DIR = "/tmp/ai-images"
@@ -16,17 +21,17 @@ OUTPUT_DIR = "/tmp/ai-images"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 
-def generate_image(prompt, model="schnell", steps=4, width=1024, height=1024):
+def generate_image(prompt, model="schnell", steps=4, width=1024, height=1024, quantize=8):
     """Text-to-image with mflux/FLUX"""
     output = os.path.join(OUTPUT_DIR, f"gen_{int(time.time())}.png")
-    
+
     model_path = os.path.join(MODEL_DIR, f"flux-{model}")
     if not os.path.exists(model_path):
         if model == "schnell":
             model_path = "/tmp/flux-model"
         else:
             model_path = "/tmp/flux-dev-model"
-    
+
     cmd = [
         "mflux-generate",
         "--model", model_path,
@@ -35,6 +40,7 @@ def generate_image(prompt, model="schnell", steps=4, width=1024, height=1024):
         "--width", str(width),
         "--height", str(height),
         "--output", output,
+        "--quantize", str(quantize),
     ]
     
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
@@ -59,7 +65,7 @@ def segment_edit(input_image, target, prompt, invert=False, debug=False):
     import numpy as np
     from PIL import Image, ImageFilter
     from transformers import CLIPSegProcessor, CLIPSegForImageSegmentation
-    from diffusers import StableDiffusionInpaintPipeline
+    from diffusers import StableDiffusionXLInpaintPipeline
     
     timestamp = int(time.time())
     output = os.path.join(OUTPUT_DIR, f"edit_{timestamp}.png")
@@ -68,13 +74,8 @@ def segment_edit(input_image, target, prompt, invert=False, debug=False):
     # Load image
     try:
         img = Image.open(input_image).convert("RGB")
-    except:
-        try:
-            import pillow_heif
-            pillow_heif.register_heif_opener()
-            img = Image.open(input_image).convert("RGB")
-        except Exception as e:
-            return {"error": f"Failed to open image: {e}"}
+    except Exception as e:
+        return {"error": f"Failed to open image: {e}"}
     
     img = img.resize((1024, 1024))
     
@@ -117,7 +118,7 @@ def segment_edit(input_image, target, prompt, invert=False, debug=False):
     if not os.path.exists(model_path):
         model_path = "/tmp/sdxl-inpaint-model"
     
-    pipe = StableDiffusionInpaintPipeline.from_pretrained(
+    pipe = StableDiffusionXLInpaintPipeline.from_pretrained(
         model_path,
         torch_dtype=torch.float32,
     )
@@ -127,10 +128,18 @@ def segment_edit(input_image, target, prompt, invert=False, debug=False):
         image=img,
         mask_image=mask_pil.convert("RGB"),
         num_inference_steps=30,
-        guidance_scale=7.5,
+        guidance_scale=12.0,
+        strength=0.95,
     ).images[0]
     
     result_img.save(output)
+    # Convert PNG to JPEG for Telegram
+    try:
+        jpg_out = output.replace(".png", ".jpg")
+        Image.open(output).convert("RGB").save(jpg_out, "JPEG", quality=92)
+        os.remove(output)
+        output = jpg_out
+    except: pass
     print(f"[Done] Saved: {output}")
     
     result = {"output": output}
@@ -154,8 +163,9 @@ def main():
         prompt = sys.argv[2]
         model = sys.argv[3] if len(sys.argv) > 3 else "schnell"
         steps = int(sys.argv[4]) if len(sys.argv) > 4 else 4
-        
-        result = generate_image(prompt, model, steps)
+        quantize = int(sys.argv[5]) if len(sys.argv) > 5 else 8
+
+        result = generate_image(prompt, model, steps, quantize=quantize)
         print(json.dumps(result))
     
     elif mode == "segment-edit":

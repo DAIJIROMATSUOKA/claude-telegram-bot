@@ -12,7 +12,8 @@ const PROJECT_ROOT = join(import.meta.dir, '..', '..');
  * Bot文脈（AGENTS.md, jarvis_context等）を注入しない軽量版
  */
 export async function callMetaCLI(prompt: string, timeoutMs: number = 60000): Promise<string> {
-  const result = spawnSync('claude', ['-p', prompt], {
+  const result = spawnSync('claude', ['-p', '-'], {
+    input: prompt,
     timeout: timeoutMs,
     encoding: 'utf-8',
     cwd: PROJECT_ROOT,

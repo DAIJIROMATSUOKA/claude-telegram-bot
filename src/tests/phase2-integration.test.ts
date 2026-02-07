@@ -13,46 +13,37 @@ import { createStatusCallback, StreamingState } from '../handlers/streaming';
 import { generateSessionId } from '../utils/session-helper';
 import type { Context } from 'grammy';
 
-// Mock Context for testing
+// Mock Context for testing — needs ctx.api (used by tower-manager) and ctx.reply
 function createMockContext(chatId: number, messageId: number): Context {
   return {
     chat: { id: chatId },
+    from: { id: chatId },
     message: { message_id: messageId },
-    reply: async (text: string) => {
-      console.log(`[Mock Reply] ${text}`);
-      return {} as any;
+    reply: async (text: string, options?: any) => {
+      console.log(`[Mock Reply] ${text.substring(0, 60)}`);
+      return {
+        message_id: Math.floor(Math.random() * 100000),
+        chat: { id: chatId },
+        date: Math.floor(Date.now() / 1000),
+        text,
+      } as any;
     },
-    telegram: {
-      sendMessage: async (chatId: string | number, text: string, options?: any) => {
-        console.log(`[Mock sendMessage] Chat: ${chatId}, Text: ${text}`);
+    api: {
+      sendMessage: async (chat: string | number, text: string, options?: any) => {
+        console.log(`[Mock sendMessage] Chat: ${chat}`);
         return {
           message_id: Math.floor(Math.random() * 100000),
-          chat: { id: Number(chatId) },
+          chat: { id: Number(chat) },
           date: Math.floor(Date.now() / 1000),
-          text: text,
+          text,
         } as any;
       },
-      editMessageText: async (chatId: string | number, messageId: number, text: string, options?: any) => {
-        console.log(`[Mock editMessageText] Chat: ${chatId}, Message: ${messageId}, Text: ${text}`);
-        return {
-          message_id: messageId,
-          chat: { id: Number(chatId) },
-          date: Math.floor(Date.now() / 1000),
-          text: text,
-        } as any;
+      editMessageText: async (chat: string | number, msgId: number, text: string, options?: any) => {
+        return { message_id: msgId, chat: { id: Number(chat) }, text } as any;
       },
-      deleteMessage: async (chatId: string | number, messageId: number) => {
-        console.log(`[Mock deleteMessage] Chat: ${chatId}, Message: ${messageId}`);
-        return true;
-      },
-      pinChatMessage: async (chatId: string | number, messageId: number, options?: any) => {
-        console.log(`[Mock pinChatMessage] Chat: ${chatId}, Message: ${messageId}`);
-        return true;
-      },
-      unpinChatMessage: async (chatId: string | number, messageId?: number) => {
-        console.log(`[Mock unpinChatMessage] Chat: ${chatId}, Message: ${messageId}`);
-        return true;
-      },
+      deleteMessage: async (chat: string | number, msgId: number) => true,
+      pinChatMessage: async (chat: string | number, msgId: number, options?: any) => true,
+      unpinChatMessage: async (chat: string | number, msgId?: number) => true,
     },
   } as any;
 }
@@ -69,6 +60,13 @@ describe('Phase 2 Integration Tests', () => {
     const deleteTrace = db.prepare('DELETE FROM jarvis_action_trace WHERE session_id = ?');
     deleteControl.run(sessionId);
     deleteTrace.run(sessionId);
+
+    // Reset notification buffer state
+    (notificationBuffer as any).currentPhase = null;
+    (notificationBuffer as any).activities = [];
+    (notificationBuffer as any).textResponses = [];
+    (notificationBuffer as any).phaseStartTime = 0;
+    (notificationBuffer as any).traceId = null;
   });
 
   test('NotificationBuffer records phase start to D1', async () => {
@@ -134,7 +132,7 @@ describe('Phase 2 Integration Tests', () => {
 
     const row = controlTowerDB.getControlTower(sessionId);
     expect(row).not.toBeNull();
-    expect(row?.status).toBe('executing'); // tool maps to 'executing'
+    expect(row?.status).toBe('executing');
     expect(row?.current_action).toContain('Reading');
   });
 
@@ -147,7 +145,7 @@ describe('Phase 2 Integration Tests', () => {
 
     const row = controlTowerDB.getControlTower(sessionId);
     expect(row).not.toBeNull();
-    expect(row?.status).toBe('executing'); // text maps to 'executing'
+    expect(row?.status).toBe('executing');
     expect(row?.current_action).toBe('Segment 0');
   });
 
@@ -160,7 +158,7 @@ describe('Phase 2 Integration Tests', () => {
 
     const row = controlTowerDB.getControlTower(sessionId);
     expect(row).not.toBeNull();
-    expect(row?.status).toBe('completed'); // done maps to 'completed'
+    expect(row?.status).toBe('completed');
   });
 
   test('Multiple status updates create timeline in D1', async () => {
@@ -168,7 +166,6 @@ describe('Phase 2 Integration Tests', () => {
     const state = new StreamingState();
     const callback = createStatusCallback(ctx, state);
 
-    // Simulate workflow with delays to ensure different timestamps (using seconds)
     await callback('thinking', 'Planning approach...', undefined);
     await new Promise(resolve => setTimeout(resolve, 1100));
     await callback('tool', '📖 Reading file', undefined);
@@ -177,9 +174,7 @@ describe('Phase 2 Integration Tests', () => {
 
     const row = controlTowerDB.getControlTower(sessionId);
     expect(row).not.toBeNull();
-    expect(row?.status).toBe('completed'); // Final status
-
-    // Verify timeline of updates (timestamps are in seconds)
+    expect(row?.status).toBe('completed');
     expect(row?.updated_at).toBeGreaterThanOrEqual(row!.started_at);
   });
 
@@ -189,15 +184,12 @@ describe('Phase 2 Integration Tests', () => {
     const callback = createStatusCallback(ctx, state);
     const phaseName = 'Phase 2: Full Integration';
 
-    // Start phase
     await notificationBuffer.startPhase(ctx, phaseName);
 
-    // Simulate streaming updates
     await callback('thinking', 'Analyzing...', undefined);
     await callback('tool', '📖 Reading code', undefined);
     await callback('text', 'Implementation complete', 0);
 
-    // End phase
     await notificationBuffer.endPhase(ctx, true);
 
     const row = controlTowerDB.getControlTower(sessionId);

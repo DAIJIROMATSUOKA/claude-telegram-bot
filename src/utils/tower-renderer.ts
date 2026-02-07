@@ -1,10 +1,12 @@
 /**
- * Tower Renderer v1.0
- * Purpose: Safe plain-text rendering for Control Tower
- * Philosophy: "Plain text only, emoji decoration only"
+ * Tower Renderer v2.0 — TaskShoot Dashboard
+ *
+ * Control Towerのピン留めメッセージをタスクシュート風ダッシュボードとして描画。
+ * task-tracker.jsonの進行中タスク + Croppyの作業状態を表示する。
  */
 
-import { redactSensitiveData } from './redaction-filter.js';
+import { readFileSync, existsSync } from 'fs';
+import { homedir } from 'os';
 
 // ============================================================================
 // Types
@@ -34,16 +36,67 @@ export interface RenderOptions {
 // Constants
 // ============================================================================
 
-const MAX_TOWER_LENGTH = 800; // Telegram message limit consideration
-const TRUNCATION_SUFFIX = '...and N more';
+const MAX_TOWER_LENGTH = 800;
+const TASK_TRACKER_PATH = `${homedir()}/.task-tracker.json`;
 
-// Status emoji (safe decoration)
-const STATUS_EMOJI = {
-  idle: '⏸️',
-  running: '▶️',
-  completed: '✅',
-  failed: '❌',
-};
+// ============================================================================
+// Task Tracker Reader
+// ============================================================================
+
+interface ActiveTask {
+  name: string;
+  startedAt: Date;
+  elapsed: string;
+}
+
+function readActiveTasks(): ActiveTask[] {
+  try {
+    if (!existsSync(TASK_TRACKER_PATH)) return [];
+    const raw = readFileSync(TASK_TRACKER_PATH, 'utf-8');
+    const data = JSON.parse(raw) as Record<string, string>;
+
+    const tasks: ActiveTask[] = [];
+    const now = new Date();
+
+    for (const [name, startTimeStr] of Object.entries(data)) {
+      const startTime = new Date(startTimeStr);
+      const diffMs = now.getTime() - startTime.getTime();
+
+      // 24時間以上前のは無視（task-tracker側でcleanupされるはず）
+      if (diffMs > 86400000) continue;
+
+      const hours = Math.floor(diffMs / 3600000);
+      const minutes = Math.floor((diffMs % 3600000) / 60000);
+      const elapsed = hours > 0 ? `${hours}h${minutes}m` : `${minutes}m`;
+
+      tasks.push({ name, startedAt: startTime, elapsed });
+    }
+
+    return tasks;
+  } catch {
+    return [];
+  }
+}
+
+// ============================================================================
+// Croppy Status Formatter
+// ============================================================================
+
+function formatCroppyStatus(state: TowerState): string {
+  if (state.status === 'idle') return '⏸ 待機中';
+  if (state.status === 'completed') return '✅ 完了';
+  if (state.status === 'failed') return '❌ エラー';
+
+  // running — currentStep に詳細がある
+  if (state.currentStep) {
+    // 長すぎる場合は切り詰め
+    const step = state.currentStep.length > 40
+      ? state.currentStep.slice(0, 40) + '…'
+      : state.currentStep;
+    return `▶ ${step}`;
+  }
+  return '▶ 処理中';
+}
 
 // ============================================================================
 // Main Render Function
@@ -53,99 +106,32 @@ export function renderTower(
   state: TowerState,
   options: RenderOptions = {}
 ): string {
-  const {
-    maxLength = MAX_TOWER_LENGTH,
-    includeTimestamp = true,
-    includeMetadata = false,
-  } = options;
+  const { maxLength = MAX_TOWER_LENGTH } = options;
 
-  const lines: string[] = [];
+  // 1行表示: 進行中タスクのみ
+  const activeTasks = readActiveTasks();
 
-  // Header
-  const statusEmoji = STATUS_EMOJI[state.status] || '📌';
-  lines.push(`${statusEmoji} Control Tower`);
-  lines.push('');
-
-  // Task title
-  if (state.taskTitle) {
-    const sanitizedTitle = redactSensitiveData(state.taskTitle).sanitized;
-    lines.push(`Task: ${sanitizedTitle}`);
+  if (activeTasks.length === 0) {
+    return '📌 タスクなし';
   }
 
-  // Status
-  lines.push(`Status: ${state.status}`);
-
-  // Current step
-  if (state.currentStep) {
-    const sanitizedStep = redactSensitiveData(state.currentStep).sanitized;
-    lines.push(`Step: ${sanitizedStep}`);
+  if (activeTasks.length === 1) {
+    const t = activeTasks[0];
+    return `⏱ ${t.name}（${t.elapsed}）`;
   }
 
-  // Progress
-  if (state.progress) {
-    const { current, total } = state.progress;
-    const percentage = total > 0 ? Math.round((current / total) * 100) : 0;
-    lines.push(`Progress: ${current}/${total} (${percentage}%)`);
+  // 複数タスク: 1行にまとめる
+  const summary = activeTasks
+    .map(t => `${t.name}(${t.elapsed})`)
+    .join(' | ');
+  const line = `⏱ ${summary}`;
+
+  // 長すぎる場合は切り詰め
+  if (line.length > maxLength) {
+    return line.slice(0, maxLength - 1) + '…';
   }
 
-  // Timing
-  if (includeTimestamp) {
-    if (state.startedAt) {
-      const startTime = new Date(state.startedAt).toLocaleTimeString('ja-JP', {
-        timeZone: 'Asia/Tokyo',
-        hour: '2-digit',
-        minute: '2-digit',
-      });
-      lines.push(`Started: ${startTime}`);
-    }
-
-    if (state.completedAt) {
-      const endTime = new Date(state.completedAt).toLocaleTimeString('ja-JP', {
-        timeZone: 'Asia/Tokyo',
-        hour: '2-digit',
-        minute: '2-digit',
-      });
-      const duration = state.startedAt
-        ? Math.round((state.completedAt - state.startedAt) / 1000)
-        : 0;
-      lines.push(`Completed: ${endTime} (${duration}s)`);
-    } else if (state.startedAt && state.status === 'running') {
-      const elapsed = Math.round((Date.now() - state.startedAt) / 1000);
-      lines.push(`Elapsed: ${elapsed}s`);
-    }
-  }
-
-  // Errors
-  if (state.errors && state.errors.length > 0) {
-    lines.push('');
-    lines.push('⚠️ Errors:');
-    state.errors.forEach((error, idx) => {
-      const sanitizedError = redactSensitiveData(error).sanitized;
-      lines.push(`  ${idx + 1}. ${sanitizedError}`);
-    });
-  }
-
-  // Metadata (optional)
-  if (includeMetadata && state.metadata) {
-    lines.push('');
-    lines.push('🔧 Metadata:');
-    for (const [key, value] of Object.entries(state.metadata)) {
-      const sanitizedValue = redactSensitiveData(String(value)).sanitized;
-      lines.push(`  ${key}: ${sanitizedValue}`);
-    }
-  }
-
-  // Join and truncate
-  let rendered = lines.join('\n');
-
-  if (rendered.length > maxLength) {
-    const excess = rendered.length - maxLength;
-    const suffixLength = TRUNCATION_SUFFIX.replace('N', String(excess)).length;
-    const truncated = rendered.substring(0, maxLength - suffixLength);
-    rendered = truncated + TRUNCATION_SUFFIX.replace('N', String(excess));
-  }
-
-  return rendered;
+  return line;
 }
 
 // ============================================================================
@@ -153,11 +139,13 @@ export function renderTower(
 // ============================================================================
 
 export function computeRenderHash(state: TowerState): string {
+  // タスクトラッカーの状態も含めてハッシュ化
+  const activeTasks = readActiveTasks();
   const normalized = {
     status: state.status,
-    taskTitle: state.taskTitle || '',
     currentStep: state.currentStep || '',
-    progress: state.progress || { current: 0, total: 0 },
+    taskCount: activeTasks.length,
+    taskNames: activeTasks.map(t => t.name).join('|'),
     errors: (state.errors || []).join('|'),
   };
 
@@ -170,7 +158,7 @@ function simpleHash(str: string): string {
   for (let i = 0; i < str.length; i++) {
     const char = str.charCodeAt(i);
     hash = (hash << 5) - hash + char;
-    hash = hash & hash; // Convert to 32bit integer
+    hash = hash & hash;
   }
   return hash.toString(16);
 }
