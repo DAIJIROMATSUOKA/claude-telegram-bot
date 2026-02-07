@@ -12,7 +12,7 @@ Usage:
 
 Models:
   generate → Z-Image-Turbo 8-bit (mflux, MLX native, ~160s)
-  edit     → FLUX.1 Kontext Dev 4-bit (mflux, MLX native, ~5-10min)
+  edit     → FLUX.1 Kontext Dev 8-bit (mflux, MLX native, --low-ram, ~8min)
   animate  → Wan2.2 TI2V-5B (ComfyUI API, ~15-30min)
 
 Requirements:
@@ -151,7 +151,7 @@ def cmd_generate(args):
 # IMAGE EDITING (FLUX Kontext Dev via mflux)
 # ===========================================================================
 def cmd_edit(args):
-    """Image editing using FLUX.1 Kontext Dev 4-bit."""
+    """Image editing using FLUX.1 Kontext Dev (--low-ram to reduce GPU contention)."""
     ensure_workdir()
 
     if not args.image or not os.path.exists(args.image):
@@ -162,10 +162,11 @@ def cmd_edit(args):
 
     cmd = [
         get_mflux_bin("mflux-generate-kontext"),
+        "--low-ram",
         "--image-path", image_path,
         "--prompt", args.prompt,
-        "-q", str(args.quantize or 4),
-        "--steps", str(args.steps or 25),
+        "-q", str(args.quantize or 8),
+        "--steps", str(args.steps or 12),
         "--output", output,
     ]
     if args.seed is not None:
@@ -720,8 +721,8 @@ def main():
     p_edit.add_argument("--image", required=True)
     p_edit.add_argument("--prompt", required=True)
     p_edit.add_argument("--output", default=None)
-    p_edit.add_argument("--steps", type=int, default=25)
-    p_edit.add_argument("--quantize", type=int, default=4)
+    p_edit.add_argument("--steps", type=int, default=12)
+    p_edit.add_argument("--quantize", type=int, default=8)
     p_edit.add_argument("--seed", type=int, default=None)
 
     # animate — BUG4 fix: 832x480 safe default, 33 frames (~1.4s at 24fps)
