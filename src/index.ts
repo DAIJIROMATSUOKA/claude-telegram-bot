@@ -32,6 +32,7 @@ import {
   handleTaskPause,
   handleFocus,
   handleTodoist,
+  handleAlarm,
 } from "./handlers";
 import {
   handleMeta,
@@ -48,7 +49,9 @@ import {
   handleAskGemini,
 } from "./handlers/council";
 import { handleAISession } from "./handlers/ai-session";
+import { handleImagine, handleEdit } from "./handlers/imagine";
 import { registerMediaCommands } from "./handlers/media-commands";
+import { startTaskPoller } from './utils/task-poller';
 
 // ============== Global Context ==============
 // Bot起動時にCLAUDE.mdを読み込んでグローバルに保持
@@ -112,6 +115,7 @@ bot.command("task_stop", handleTaskStop);
 bot.command("task_pause", handleTaskPause);
 bot.command("focus", handleFocus);
 bot.command("todoist", handleTodoist);
+bot.command("alarm", handleAlarm);
 
 // Meta-Agent commands
 bot.command("meta", handleMeta);
@@ -149,6 +153,8 @@ bot.command("gem", handleAskGemini);
 
 // AI Session Bridge
 bot.command("ai", handleAISession);
+bot.command("imagine", handleImagine);
+bot.command("edit", handleEdit);
 
 registerMediaCommands(bot);
 bot.on("message:text", handleText);
@@ -209,7 +215,10 @@ if (existsSync(RESTART_FILE)) {
 // Start with concurrent runner (commands work immediately)
 const runner = run(bot);
 
-// Startup notification - DJに起動完了を通知
+// Start task poller for remote execution
+  startTaskPoller();
+
+  // Startup notification - DJに起動完了を通知
 try {
   const djChatId = ALLOWED_USERS[0];
   if (djChatId) {

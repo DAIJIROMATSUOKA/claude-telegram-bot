@@ -8,7 +8,10 @@ import type { Context } from "grammy";
 import { session } from "../session";
 import { WORKING_DIR, ALLOWED_USERS, RESTART_FILE } from "../config";
 import { isAuthorized } from "../security";
-import { execSync } from "child_process";
+import { exec, execSync } from "child_process";
+import { promisify } from "util";
+
+const execAsync = promisify(exec);
 import { join } from "path";
 
 // Project root directory (resolve from this file's location, not WORKING_DIR)
@@ -19,6 +22,7 @@ import {
   deliverBufferedNotifications,
   isFocusModeEnabled,
 } from "../utils/focus-mode";
+import { parseAlarmMessage } from "./auto-rules";
 
 /**
  * /start - Show welcome message and status.
@@ -540,5 +544,68 @@ export async function handleFocus(ctx: Context): Promise<void> {
     await deliverBufferedNotifications(ctx, userId!);
   } else {
     await ctx.reply('使い方:\n/focus → 状態確認\n/focus on → 有効化\n/focus off → 解除');
+  }
+}
+
+/**
+ * /alarm - Set iPhone alarm via iMessage
+ * Usage: /alarm 7時半 エサ
+ */
+export async function handleAlarm(ctx: Context): Promise<void> {
+  const userId = ctx.from?.id;
+
+  if (!isAuthorized(userId, ALLOWED_USERS)) {
+    await ctx.reply("Unauthorized.");
+    return;
+  }
+
+  const args = (ctx.message?.text || "").replace(/^\/alarm\s*/, "").trim();
+  if (!args) {
+    await ctx.reply("使い方: /alarm 7時半 エサ\n例: /alarm 19時エサ, /alarm 5:30起床, /alarm 5（5分後）");
+    return;
+  }
+
+  // Normalize fullwidth digits to halfwidth
+  const normalizedArgs = args.replace(/[０-９]/g, (c) =>
+    String.fromCharCode(c.charCodeAt(0) - 0xFEE0)
+  );
+
+  // 相対時間パターン: 数字のみ or 数字+分 → N分後
+  const relativeMatch = normalizedArgs.match(/^(\d+)\s*分?\s*(.*)$/);
+  let time: string;
+  let label: string;
+
+  if (relativeMatch && relativeMatch[1] && !normalizedArgs.includes("時") && !normalizedArgs.includes(":")) {
+    // 相対時間: /alarm 5 → 5分後
+    const minutes = parseInt(relativeMatch[1], 10);
+    if (minutes <= 0 || minutes > 1440) {
+      await ctx.reply("❌ 1〜1440分の範囲で指定してね");
+      return;
+    }
+    const now = new Date();
+    now.setMinutes(now.getMinutes() + minutes);
+    const hour = now.getHours().toString().padStart(2, "0");
+    const minute = now.getMinutes().toString().padStart(2, "0");
+    time = `${hour}:${minute}`;
+    label = relativeMatch[2]?.trim() || `${minutes}分タイマー`;
+  } else {
+    // 絶対時間パターン（既存ロジック）
+    const parsed = parseAlarmMessage(args);
+    if (!parsed) {
+      await ctx.reply("❌ 形式が不正。例: /alarm 19時エサ, /alarm 7時半起床, /alarm 5（5分後）");
+      return;
+    }
+    time = parsed.time;
+    label = parsed.label;
+  }
+  const iMessageFormat = `${time}|${label}`;
+
+  try {
+    await execAsync(
+      `osascript -e 'tell application "Messages" to send "${iMessageFormat}" to buddy "+818065560713"'`
+    );
+    await ctx.reply(`⏰ ${time}のアラーム（${label}）をセットした`);
+  } catch (error) {
+    await ctx.reply(`❌ アラーム設定エラー: ${error}`);
   }
 }
