@@ -46,7 +46,6 @@ export const ALLOWED_USERS: number[] = (
 export const DJ_CHAT_ID = ALLOWED_USERS[0]; // First user is DJ
 
 export const WORKING_DIR = process.env.CLAUDE_WORKING_DIR || HOME;
-export const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
 
 // ============== Claude CLI Path ==============
 
@@ -150,20 +149,6 @@ export const BLOCKED_PATTERNS = [
 
 // Query timeout (3 minutes)
 export const QUERY_TIMEOUT_MS = 180_000;
-
-// ============== Voice Transcription ==============
-
-const BASE_TRANSCRIPTION_PROMPT = `Transcribe this voice message accurately.
-The speaker may use multiple languages (English, and possibly others).
-Focus on accuracy for proper nouns, technical terms, and commands.`;
-
-const TRANSCRIPTION_CONTEXT = process.env.TRANSCRIPTION_CONTEXT || "";
-
-export const TRANSCRIPTION_PROMPT = TRANSCRIPTION_CONTEXT
-  ? `${BASE_TRANSCRIPTION_PROMPT}\n\nAdditional context:\n${TRANSCRIPTION_CONTEXT}`
-  : BASE_TRANSCRIPTION_PROMPT;
-
-export const TRANSCRIPTION_AVAILABLE = !!OPENAI_API_KEY;
 
 // ============== Thinking Keywords ==============
 
