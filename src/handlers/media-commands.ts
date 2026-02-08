@@ -28,7 +28,7 @@ const AI_MEDIA_SCRIPT = join(process.env.HOME || "~", "claude-telegram-bot", "sc
 const MFLUX_VENV_PYTHON = join(process.env.HOME || "~", "ai-tools", "mflux-env", "bin", "python3");
 const PYTHON = existsSync(MFLUX_VENV_PYTHON) ? MFLUX_VENV_PYTHON : "python3";
 const WORKING_DIR = "/tmp/ai-media";
-const TIMEOUT_IMAGE = 15 * 60 * 1000;  // 15 min for image
+const TIMEOUT_IMAGE = 25 * 60 * 1000;  // 25 min for image
 const TIMEOUT_VIDEO = 45 * 60 * 1000;  // 45 min for video
 
 // Ensure working directory exists
@@ -266,8 +266,49 @@ export async function handleEdit(ctx: Context): Promise<void> {
       ).catch(() => {});
     };
 
+    // Extract optional flags from prompt
+    let cleanPrompt = prompt;
+    const editArgs = ["edit", "--image", imagePath];
+
+    // --denoise N
+    const denoiseMatch = cleanPrompt.match(/--denoise\s+([\d.]+)/);
+    if (denoiseMatch?.[1]) {
+      editArgs.push("--denoise", denoiseMatch[1]);
+      cleanPrompt = cleanPrompt.replace(/--denoise\s+[\d.]+/, "").trim();
+    }
+
+    // --no-face-mask
+    if (cleanPrompt.includes("--no-face-mask")) {
+      editArgs.push("--no-face-mask");
+      cleanPrompt = cleanPrompt.replace("--no-face-mask", "").trim();
+    }
+
+    // --face-protect N (0.0〜1.0, default 0.35)
+    const faceProtectMatch = cleanPrompt.match(/--face-protect\s+([\d.]+)/);
+    if (faceProtectMatch?.[1]) {
+      editArgs.push("--face-protect", faceProtectMatch[1]);
+      cleanPrompt = cleanPrompt.replace(/--face-protect\s+[\d.]+/, "").trim();
+    }
+
+    // --neg "negative prompt"
+    const negMatch = cleanPrompt.match(/--neg\s+"([^"]+)"/);
+    if (negMatch?.[1]) {
+      editArgs.push("--negative-prompt", negMatch[1]);
+      cleanPrompt = cleanPrompt.replace(/--neg\s+"[^"]+"/, "").trim();
+    }
+
+    // --pos "additional positive prompt" (appended to user prompt)
+    const posMatch = cleanPrompt.match(/--pos\s+"([^"]+)"/);
+    const posText = posMatch?.[1];
+    if (posText) {
+      cleanPrompt = cleanPrompt.replace(/--pos\s+"[^"]+"/, "").trim();
+      cleanPrompt = cleanPrompt ? `${cleanPrompt}, ${posText}` : posText;
+    }
+
+    editArgs.push("--prompt", cleanPrompt);
+
     const result = await runAiMedia(
-      ["edit", "--image", imagePath, "--prompt", prompt],
+      editArgs,
       { timeout: TIMEOUT_IMAGE, onStderr: debugUpdate }
     );
 

@@ -174,7 +174,7 @@ do_restart() {
     increment_restart_count
 
     log "start-bot.sh を実行中..."
-    if WATCHDOG_RESTART=1 bash "$RESTART_SCRIPT" >> "$WATCHDOG_LOG" 2>&1; then
+    if WATCHDOG_RESTART=1 RESTART_REASON="$reason" RESTART_TASK="watchdog自動復旧" bash "$RESTART_SCRIPT" >> "$WATCHDOG_LOG" 2>&1; then
         log "RESTART SUCCESS"
         return 0
     else

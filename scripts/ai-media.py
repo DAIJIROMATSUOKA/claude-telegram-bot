@@ -80,6 +80,7 @@ FLUX_DEV_T5 = os.environ.get("FLUX_DEV_T5", "t5-v1_1-xxl-encoder-Q5_K_M.gguf")
 FLUX_DEV_VAE = os.environ.get("FLUX_DEV_VAE", "ae.safetensors")
 FLUX_DEV_LORA = os.environ.get("FLUX_DEV_LORA", "roundassv16_FLUX.safetensors")
 FLUX_DEV_LORA_STRENGTH = float(os.environ.get("FLUX_DEV_LORA_STRENGTH", "0.8"))
+FLUX_DEV_EXTRA_LORAS = os.environ.get("FLUX_DEV_EXTRA_LORAS", "flux-lora-uncensored.safetensors:0.9,undressing_flux_v3.safetensors:1.3")
 
 
 def ensure_workdir():
@@ -156,10 +157,84 @@ def cmd_generate(args):
 
 
 # ===========================================================================
+# FACE DETECTION & MASK GENERATION (OpenCV)
+# ===========================================================================
+def detect_faces_and_create_mask(image_path: str, face_protect: float = 0.35) -> str | None:
+    """Detect faces in image and create an inpainting mask.
+
+    Returns path to mask image (white=edit, black=protect) or None if no faces found.
+    face_protect: 0.0 = no protection (full edit), 1.0 = full protection (no change).
+                  Default 0.35 = allow 65% of denoise to affect face area,
+                  so face changes naturally with pose/body edits.
+    """
+    try:
+        import cv2
+        import numpy as np
+
+        img = cv2.imread(image_path)
+        if img is None:
+            print("[ai-media] Could not read image for face detection", file=sys.stderr)
+            return None
+
+        h, w = img.shape[:2]
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+        # Detect faces with Haar Cascade
+        cascade_path = cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
+        face_cascade = cv2.CascadeClassifier(cascade_path)
+        faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(50, 50))
+
+        if len(faces) == 0:
+            print("[ai-media] No faces detected — skipping mask", file=sys.stderr)
+            return None
+
+        print(f"[ai-media] Detected {len(faces)} face(s), creating protection mask (protect={face_protect})", file=sys.stderr)
+
+        # Create mask: 255=full edit, 0=full protect
+        # Face region gets a gray value to allow partial denoise
+        face_value = int(255 * (1.0 - face_protect))  # e.g. protect=0.35 → value=166 (65% edit)
+        mask = np.ones((h, w), dtype=np.uint8) * 255
+
+        for (fx, fy, fw, fh) in faces:
+            # Expand face region by 30% for hair/neck coverage
+            expand = 0.3
+            ex = int(fw * expand)
+            ey = int(fh * expand)
+            x1 = max(0, fx - ex)
+            y1 = max(0, fy - ey)
+            x2 = min(w, fx + fw + ex)
+            y2 = min(h, fy + fh + int(fh * expand * 0.5))  # less expansion below chin
+
+            # Gray ellipse on face area (partial protection)
+            cx = (x1 + x2) // 2
+            cy = (y1 + y2) // 2
+            rx = (x2 - x1) // 2
+            ry = (y2 - y1) // 2
+            cv2.ellipse(mask, (cx, cy), (rx, ry), 0, 0, 360, face_value, -1)
+
+        # Feather the mask edges for smooth blending (gaussian blur)
+        mask = cv2.GaussianBlur(mask, (51, 51), 20)
+
+        mask_path = os.path.join(WORKING_DIR, f"facemask_{uuid.uuid4().hex[:8]}.png")
+        cv2.imwrite(mask_path, mask)
+        print(f"[ai-media] Face mask saved: {mask_path}", file=sys.stderr)
+        return mask_path
+
+    except ImportError:
+        print("[ai-media] OpenCV not installed — face mask unavailable", file=sys.stderr)
+        return None
+    except Exception as e:
+        print(f"[ai-media] Face detection error: {e}", file=sys.stderr)
+        return None
+
+
+# ===========================================================================
 # IMAGE EDITING (FLUX.1 Dev + LoRA via ComfyUI API)
 # ===========================================================================
 def cmd_edit(args):
-    """Image editing using FLUX.1 Dev gguf + LoRA via ComfyUI img2img."""
+    """Image editing using FLUX.1 Dev gguf + LoRA via ComfyUI img2img.
+    Automatically detects faces and protects them with an inpainting mask.
+    """
     ensure_workdir()
 
     if not comfyui_is_running():
@@ -176,11 +251,42 @@ def cmd_edit(args):
         if not uploaded_name:
             return {"ok": False, "error": "Failed to upload image to ComfyUI"}
 
-        denoise = args.denoise if hasattr(args, 'denoise') and args.denoise else 0.65
-        steps = args.steps or 20
+        denoise = args.denoise if hasattr(args, 'denoise') and args.denoise is not None else 0.85
+        steps = args.steps or 15
         seed = args.seed if args.seed is not None else int(time.time()) % (2**32)
         lora = args.lora or FLUX_DEV_LORA
         lora_strength = args.lora_strength if hasattr(args, 'lora_strength') and args.lora_strength else FLUX_DEV_LORA_STRENGTH
+        negative_prompt = args.negative_prompt if hasattr(args, 'negative_prompt') and args.negative_prompt else ""
+
+        # Parse extra LoRAs: "file1.safetensors:0.9,file2.safetensors:1.3"
+        extra_loras = []
+        extra_loras_str = args.extra_loras if hasattr(args, 'extra_loras') and args.extra_loras else FLUX_DEV_EXTRA_LORAS
+        if extra_loras_str:
+            for entry in extra_loras_str.split(","):
+                entry = entry.strip()
+                if not entry:
+                    continue
+                if ":" in entry:
+                    name, strength = entry.rsplit(":", 1)
+                    extra_loras.append((name.strip(), float(strength)))
+                else:
+                    extra_loras.append((entry.strip(), 0.8))
+
+        # Face detection & mask
+        mask_name = None
+        no_face_mask = hasattr(args, 'no_face_mask') and args.no_face_mask
+        face_protect = float(args.face_protect) if hasattr(args, 'face_protect') and args.face_protect is not None else 0.35
+        if not no_face_mask:
+            mask_path = detect_faces_and_create_mask(image_path, face_protect=face_protect)
+            if mask_path:
+                mask_name = comfyui_upload_image(mask_path)
+                if mask_name:
+                    print(f"[ai-media] Face mask uploaded: {mask_name}", file=sys.stderr)
+                # Cleanup local mask file
+                try:
+                    os.unlink(mask_path)
+                except OSError:
+                    pass
 
         workflow = build_flux_img2img_workflow(
             image_name=uploaded_name,
@@ -190,10 +296,16 @@ def cmd_edit(args):
             seed=seed,
             lora=lora,
             lora_strength=lora_strength,
+            mask_name=mask_name,
+            negative_prompt=negative_prompt,
+            extra_loras=extra_loras,
         )
 
+        mask_info = f", face_mask={mask_name}" if mask_name else ", no_mask"
+        extra_info = f", extra_loras={len(extra_loras)}" if extra_loras else ""
+        neg_info = f", neg='{negative_prompt[:50]}'" if negative_prompt else ""
         print(f"[ai-media] Editing image with FLUX.1 Dev + LoRA via ComfyUI...", file=sys.stderr)
-        print(f"[ai-media] denoise={denoise}, steps={steps}, lora={lora}, scale={lora_strength}", file=sys.stderr)
+        print(f"[ai-media] denoise={denoise}, steps={steps}, lora={lora}, scale={lora_strength}{mask_info}{extra_info}{neg_info}", file=sys.stderr)
 
         t0 = time.time()
         output_files = comfyui_queue_and_wait(workflow)
@@ -208,7 +320,6 @@ def cmd_edit(args):
         out_path = comfyui_download_output(fname, subfolder, ftype)
 
         if out_path:
-            # Rename to desired output path
             import shutil
             shutil.move(out_path, output)
             return {"ok": True, "path": output, "elapsed": round(elapsed, 1)}
@@ -220,22 +331,28 @@ def cmd_edit(args):
 
 
 def build_flux_img2img_workflow(image_name: str, prompt: str, steps: int = 20,
-                                 denoise: float = 0.65, seed: int = 0,
-                                 lora: str = "", lora_strength: float = 0.8) -> dict:
-    """Build ComfyUI API workflow for FLUX.1 Dev img2img with LoRA.
+                                 denoise: float = 0.85, seed: int = 0,
+                                 lora: str = "", lora_strength: float = 0.8,
+                                 mask_name: str | None = None,
+                                 negative_prompt: str = "",
+                                 extra_loras: list | None = None) -> dict:
+    """Build ComfyUI API workflow for FLUX.1 Dev img2img with LoRA chain.
 
-    Node graph:
-      [1] UnetLoaderGGUF       → loads FLUX.1 Dev Q5 gguf
-      [2] DualCLIPLoaderGGUF   → clip_l + t5-xxl gguf
-      [3] VAELoader            → ae.safetensors
-      [4] LoraLoaderModelOnly  → NSFW LoRA
-      [5] LoadImage            → input image
-      [6] VAEEncode            → image → latent
-      [7] CLIPTextEncode       → positive prompt
-      [8] CLIPTextEncode       → negative (empty)
-      [9] KSampler             → denoise at img2img strength
-      [10] VAEDecode           → latent → image
-      [11] SaveImage           → output
+    LoRA chain: [1] UnetLoaderGGUF → [4] LoRA1 → [14] LoRA2 → [15] LoRA3 → ... → KSampler
+    Negative prompt: [8] CLIPTextEncode with negative text → KSampler
+
+    Without mask (standard img2img):
+      [1] UnetLoaderGGUF → [4] LoraLoaderModelOnly → [14+] extra LoRAs → [9] KSampler
+      [2] DualCLIPLoaderGGUF → [7] CLIPTextEncode(+) → [9]
+                              → [8] CLIPTextEncode(-) → [9]
+      [3] VAELoader → [6] VAEEncode ← [5] LoadImage → [9] latent
+      [9] KSampler → [10] VAEDecode → [11] SaveImage
+
+    With face mask (inpainting - face protected):
+      Same as above, plus:
+      [12] LoadImageMask  → mask
+      [13] SetLatentNoiseMask ← latent[6] + mask[12] → [9] KSampler
+      KSampler reads masked latent: black regions (face) = no change
     """
     workflow = {
         "1": {
@@ -289,17 +406,17 @@ def build_flux_img2img_workflow(image_name: str, prompt: str, steps: int = 20,
         "8": {
             "class_type": "CLIPTextEncode",
             "inputs": {
-                "text": "",
+                "text": negative_prompt,
                 "clip": ["2", 0],
             }
         },
         "9": {
             "class_type": "KSampler",
             "inputs": {
-                "model": ["4", 0],
+                "model": ["4", 0],  # will be updated to last LoRA in chain
                 "positive": ["7", 0],
                 "negative": ["8", 0],
-                "latent_image": ["6", 0],
+                "latent_image": ["6", 0],  # will be overridden if mask exists
                 "seed": seed,
                 "steps": steps,
                 "cfg": 3.5,
@@ -323,6 +440,47 @@ def build_flux_img2img_workflow(image_name: str, prompt: str, steps: int = 20,
             }
         },
     }
+
+    # Chain extra LoRAs after the primary LoRA (node 4)
+    # Each LoRA takes model output from previous LoRA
+    last_model_node = "4"
+    if extra_loras:
+        node_id = 14  # start extra LoRA nodes from 14
+        for lora_name, strength in extra_loras:
+            workflow[str(node_id)] = {
+                "class_type": "LoraLoaderModelOnly",
+                "inputs": {
+                    "model": [last_model_node, 0],
+                    "lora_name": lora_name,
+                    "strength_model": strength,
+                }
+            }
+            last_model_node = str(node_id)
+            node_id += 1
+        # Point KSampler to the last LoRA in the chain
+        workflow["9"]["inputs"]["model"] = [last_model_node, 0]
+
+    # Add face mask nodes if mask is provided
+    if mask_name:
+        # [12] Load the mask image (white=edit, black=protect)
+        workflow["12"] = {
+            "class_type": "LoadImageMask",
+            "inputs": {
+                "image": mask_name,
+                "channel": "red",
+            }
+        }
+        # [13] Apply mask to latent — KSampler only denoises white regions
+        workflow["13"] = {
+            "class_type": "SetLatentNoiseMask",
+            "inputs": {
+                "samples": ["6", 0],
+                "mask": ["12", 0],
+            }
+        }
+        # Redirect KSampler to use masked latent
+        workflow["9"]["inputs"]["latent_image"] = ["13", 0]
+
     return workflow
 
 
@@ -860,12 +1018,20 @@ def main():
     p_edit.add_argument("--image", required=True)
     p_edit.add_argument("--prompt", required=True)
     p_edit.add_argument("--output", default=None)
-    p_edit.add_argument("--steps", type=int, default=20)
-    p_edit.add_argument("--denoise", type=float, default=0.65,
-                         help="Denoise strength (0.0=no change, 1.0=full regenerate, default 0.65)")
+    p_edit.add_argument("--steps", type=int, default=15)
+    p_edit.add_argument("--denoise", type=float, default=None,
+                         help="Denoise strength (0.0=no change, 1.0=full regenerate, default 0.85)")
     p_edit.add_argument("--seed", type=int, default=None)
     p_edit.add_argument("--lora", default=None, help="LoRA filename (in ComfyUI loras dir)")
     p_edit.add_argument("--lora-strength", type=float, default=None)
+    p_edit.add_argument("--extra-loras", default=None,
+                         help="Extra LoRAs chain: 'file1.safetensors:0.9,file2.safetensors:1.3'")
+    p_edit.add_argument("--negative-prompt", default=None,
+                         help="Negative prompt (what to avoid in generation)")
+    p_edit.add_argument("--no-face-mask", action="store_true",
+                         help="Disable automatic face protection mask")
+    p_edit.add_argument("--face-protect", type=float, default=None,
+                         help="Face protection level: 0.0=no protect, 1.0=full protect (default 0.35)")
 
     # animate — BUG4 fix: 832x480 safe default, 33 frames (~1.4s at 24fps)
     p_anim = sub.add_parser("animate", help="Video generation (Wan2.2 TI2V-5B)")

@@ -149,6 +149,11 @@ async function processPhotos(
 }
 
 /**
+ * Process photos from document handler (HEIC/HEIF conversion).
+ */
+export { processPhotos as processPhotosFromDocument };
+
+/**
  * Handle incoming photo messages.
  */
 export async function handlePhoto(ctx: Context): Promise<void> {
