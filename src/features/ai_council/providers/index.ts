@@ -1,11 +1,12 @@
 /**
  * LLM Provider factory
+ *
+ * Only free-tier providers are allowed (google, local).
+ * OpenAI and Anthropic providers have been removed (pay-per-use API violation).
  */
 
 import type { LlmProvider } from "../types";
 import type { CouncilAgentConfig } from "../../../council-config";
-import { OpenAIProvider } from "./openai";
-import { AnthropicProvider } from "./anthropic";
 import { GoogleProvider } from "./google";
 import { LocalProvider } from "./local";
 
@@ -16,17 +17,13 @@ export function createProvider(
   agentConfig: CouncilAgentConfig
 ): LlmProvider {
   switch (agentConfig.provider) {
-    case "openai":
-      return new OpenAIProvider();
-    case "anthropic":
-      return new AnthropicProvider();
     case "google":
       return new GoogleProvider();
     case "local":
       return new LocalProvider();
     default:
-      throw new Error(`Unknown provider: ${agentConfig.provider}`);
+      throw new Error(`Unknown or disabled provider: ${agentConfig.provider}. Only 'google' and 'local' are allowed.`);
   }
 }
 
-export { OpenAIProvider, AnthropicProvider, GoogleProvider, LocalProvider };
+export { GoogleProvider, LocalProvider };

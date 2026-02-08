@@ -2,12 +2,12 @@
  * Test Generator Engine - AI-Generated Golden Tests (Phase 5-1)
  *
  * Purpose: Automatically generate Golden Test functions from Accident Patterns
- * using LLM (Claude/Gemini/ChatGPT)
+ * using LLM (Gemini free tier only - no pay-per-use APIs)
  *
  * Philosophy: "Automate test creation, maintain human oversight"
  */
 
-import Anthropic from '@anthropic-ai/sdk';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import type { AccidentPattern, GoldenTest } from './golden-test-types';
 
 /**
@@ -15,7 +15,6 @@ import type { AccidentPattern, GoldenTest } from './golden-test-types';
  */
 export interface TestGenerationRequest {
   accident_pattern: AccidentPattern;
-  llm_provider?: 'claude' | 'gemini' | 'chatgpt'; // Default: claude
   validate?: boolean; // Run safety validation (default: true)
 }
 
@@ -50,14 +49,13 @@ export interface ValidationIssue {
 /**
  * Test Generator Engine
  *
- * Generates Golden Tests from Accident Patterns using LLM
+ * Generates Golden Tests from Accident Patterns using Gemini (free tier)
  */
 export class TestGeneratorEngine {
-  private anthropicClient: Anthropic;
-  private readonly DEFAULT_MODEL = 'claude-opus-4-20250514';
+  private geminiClient: GoogleGenerativeAI;
 
-  constructor(private apiKey: string) {
-    this.anthropicClient = new Anthropic({ apiKey });
+  constructor(apiKey: string) {
+    this.geminiClient = new GoogleGenerativeAI(apiKey);
   }
 
   /**
@@ -65,13 +63,12 @@ export class TestGeneratorEngine {
    */
   async generateTest(request: TestGenerationRequest): Promise<TestGenerationResult> {
     const startTime = Date.now();
-    const provider = request.llm_provider || 'claude';
 
     try {
-      console.log(`[TestGenerator] Generating test for ${request.accident_pattern.pattern_id} using ${provider}`);
+      console.log(`[TestGenerator] Generating test for ${request.accident_pattern.pattern_id} using gemini`);
 
-      // Generate test using selected LLM
-      const testFunction = await this.generateTestFunction(request.accident_pattern, provider);
+      // Generate test using Gemini
+      const testFunction = await this.generateTestFunction(request.accident_pattern);
 
       // Create GoldenTest object
       const goldenTest = this.createGoldenTest(request.accident_pattern, testFunction);
@@ -86,7 +83,7 @@ export class TestGeneratorEngine {
             success: false,
             error: `Test validation failed: ${validationResult.issues.map(i => i.issue).join(', ')}`,
             validation_result: validationResult,
-            llm_provider: provider,
+            llm_provider: 'gemini',
             generation_time_ms: Date.now() - startTime,
           };
         }
@@ -99,7 +96,7 @@ export class TestGeneratorEngine {
         golden_test: goldenTest,
         test_function_code: testFunction,
         validation_result: validationResult,
-        llm_provider: provider,
+        llm_provider: 'gemini',
         generation_time_ms: Date.now() - startTime,
       };
 
@@ -108,30 +105,29 @@ export class TestGeneratorEngine {
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error',
-        llm_provider: provider,
+        llm_provider: 'gemini',
         generation_time_ms: Date.now() - startTime,
       };
     }
   }
 
   /**
-   * Generate test function using LLM
+   * Generate test function using Gemini
    */
   private async generateTestFunction(
-    pattern: AccidentPattern,
-    provider: string
+    pattern: AccidentPattern
   ): Promise<string> {
     const prompt = this.buildPrompt(pattern);
 
-    if (provider === 'claude') {
-      return this.generateWithClaude(prompt);
-    } else if (provider === 'gemini') {
-      return this.generateWithGemini(prompt);
-    } else if (provider === 'chatgpt') {
-      return this.generateWithChatGPT(prompt);
-    } else {
-      throw new Error(`Unknown LLM provider: ${provider}`);
-    }
+    const model = this.geminiClient.getGenerativeModel({
+      model: 'gemini-2.5-flash',
+    });
+
+    const result = await model.generateContent(prompt);
+    const text = result.response.text().trim();
+
+    // Remove markdown code blocks if present
+    return text.replace(/^```typescript\n/, '').replace(/^```\n/, '').replace(/\n```$/, '');
   }
 
   /**
@@ -199,50 +195,6 @@ async function testAccidentPrevention(): Promise<void> {
 
 Return ONLY the TypeScript function code, with no markdown code blocks or explanations.
 Start with \`async function test\` and end with the closing brace.`;
-  }
-
-  /**
-   * Generate test using Claude (Anthropic)
-   */
-  private async generateWithClaude(prompt: string): Promise<string> {
-    const response = await this.anthropicClient.messages.create({
-      model: this.DEFAULT_MODEL,
-      max_tokens: 2000,
-      messages: [
-        {
-          role: 'user',
-          content: prompt,
-        },
-      ],
-    });
-
-    const content = response.content[0];
-    if (content.type !== 'text') {
-      throw new Error('Unexpected response type from Claude');
-    }
-
-    let code = content.text.trim();
-
-    // Remove markdown code blocks if present
-    code = code.replace(/^```typescript\n/, '').replace(/^```\n/, '').replace(/\n```$/, '');
-
-    return code;
-  }
-
-  /**
-   * Generate test using Gemini (placeholder)
-   */
-  private async generateWithGemini(prompt: string): Promise<string> {
-    // TODO: Implement Gemini integration
-    throw new Error('Gemini provider not yet implemented');
-  }
-
-  /**
-   * Generate test using ChatGPT (placeholder)
-   */
-  private async generateWithChatGPT(prompt: string): Promise<string> {
-    // TODO: Implement ChatGPT integration
-    throw new Error('ChatGPT provider not yet implemented');
   }
 
   /**

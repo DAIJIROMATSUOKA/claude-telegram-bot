@@ -17,8 +17,8 @@ council:
 
   agents:
     chatgpt:
-      provider: "openai"
-      model: "gpt-4o"
+      provider: "google"
+      model: "gemini-2.5-flash"
       display_name: "ChatGPT"
       emoji: "🟦"
       telegram_token_env: "TELEGRAM_TOKEN_AVATAR_CHATGPT"  # mode=multi-avatar only
@@ -29,8 +29,8 @@ council:
         End with ONE optional follow-up question.
 
     claude:
-      provider: "anthropic"
-      model: "claude-sonnet-4-20250514"
+      provider: "google"
+      model: "gemini-2.5-flash"
       display_name: "Claude"
       emoji: "🟧"
       telegram_token_env: "TELEGRAM_TOKEN_AVATAR_CLAUDE"
