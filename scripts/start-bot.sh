@@ -20,11 +20,14 @@ cd "$PROJECT_DIR"
 
 echo "🔍 既存のbotプロセスをチェック中..."
 
-# 0. LaunchAgentを停止・無効化（最優先）
-echo "🛑 LaunchAgentを停止中..."
-launchctl unload ~/Library/LaunchAgents/com.claude-telegram-bot.plist 2>/dev/null || true
-launchctl disable user/$(id -u)/com.claude-telegram-bot 2>/dev/null || true
-sleep 1
+# 0. LaunchAgentを停止・無効化（手動呼び出し時のみ）
+#    watchdogから呼ばれた場合 (WATCHDOG_RESTART=1) はスキップ
+if [ "${WATCHDOG_RESTART:-0}" != "1" ]; then
+  echo "🛑 LaunchAgentを停止中..."
+  launchctl unload ~/Library/LaunchAgents/com.claude-telegram-bot.plist 2>/dev/null || true
+  launchctl disable user/$(id -u)/com.claude-telegram-bot 2>/dev/null || true
+  sleep 1
+fi
 
 # 1. PIDファイルからプロセスを停止
 if [ -f "$PID_FILE" ]; then
@@ -108,8 +111,8 @@ if ! kill -0 "$NEW_PID" 2>/dev/null; then
   exit 1
 fi
 
-# 409エラーチェック
-if grep -q "409.*Conflict" "$LOG_FILE" 2>/dev/null; then
+# 409エラーチェック（GrammyErrorの409のみ検出。jarvis_context等の文字列は除外）
+if grep -q "GrammyError.*409\|terminated by other getUpdates" "$LOG_FILE" 2>/dev/null; then
   echo "⚠️  WARNING: 409エラーを検出しました"
   echo "別のbotインスタンスが起動している可能性があります"
   echo ""

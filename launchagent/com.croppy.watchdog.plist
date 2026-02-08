@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.croppy.watchdog</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/daijiromatsuokam1/claude-telegram-bot/scripts/watchdog-bot.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/daijiromatsuokam1/claude-telegram-bot</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/Users/daijiromatsuokam1/.bun/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <key>HOME</key>
+        <string>/Users/daijiromatsuokam1</string>
+    </dict>
+
+    <!-- ログイン時に自動起動 -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- watchdog自体が死んでも自動復旧 -->
+    <key>KeepAlive</key>
+    <true/>
+
+    <!-- ログ出力 -->
+    <key>StandardOutPath</key>
+    <string>/Users/daijiromatsuokam1/claude-telegram-bot/logs/watchdog-launchd.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/daijiromatsuokam1/claude-telegram-bot/logs/watchdog-launchd.err</string>
+</dict>
+</plist>

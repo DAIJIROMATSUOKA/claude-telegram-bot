@@ -12,7 +12,7 @@ Usage:
 
 Models:
   generate → Z-Image-Turbo 8-bit (mflux, MLX native, ~160s)
-  edit     → FLUX.1 Kontext Dev 8-bit (mflux, MLX native, --low-ram, ~8min)
+  edit     → FLUX.1 Dev Q5 + LoRA (ComfyUI API, img2img, ~10-15min)
   animate  → Wan2.2 TI2V-5B (ComfyUI API, ~15-30min)
 
 Requirements:
@@ -72,6 +72,14 @@ WAN22_GGUF_UNET_MODEL = os.environ.get("WAN22_GGUF_UNET_MODEL", "wan2.2-ti2v-5b-
 # NOTE: clip_vision_h.safetensors is NOT needed for 5B model.
 # CLIPVision is only used by the 14B model's WanImageToVideoCond node.
 # The 5B model uses Wan22ImageToVideoLatent with direct start_image input.
+
+# --- FLUX.1 Dev img2img config (for /edit via ComfyUI) ---
+FLUX_DEV_UNET = os.environ.get("FLUX_DEV_UNET", "flux1-dev-Q5_K_S.gguf")
+FLUX_DEV_CLIP_L = os.environ.get("FLUX_DEV_CLIP_L", "clip_l.safetensors")
+FLUX_DEV_T5 = os.environ.get("FLUX_DEV_T5", "t5-v1_1-xxl-encoder-Q5_K_M.gguf")
+FLUX_DEV_VAE = os.environ.get("FLUX_DEV_VAE", "ae.safetensors")
+FLUX_DEV_LORA = os.environ.get("FLUX_DEV_LORA", "roundassv16_FLUX.safetensors")
+FLUX_DEV_LORA_STRENGTH = float(os.environ.get("FLUX_DEV_LORA_STRENGTH", "0.8"))
 
 
 def ensure_workdir():
@@ -148,11 +156,14 @@ def cmd_generate(args):
 
 
 # ===========================================================================
-# IMAGE EDITING (FLUX Kontext Dev via mflux)
+# IMAGE EDITING (FLUX.1 Dev + LoRA via ComfyUI API)
 # ===========================================================================
 def cmd_edit(args):
-    """Image editing using FLUX.1 Kontext Dev (--low-ram to reduce GPU contention)."""
+    """Image editing using FLUX.1 Dev gguf + LoRA via ComfyUI img2img."""
     ensure_workdir()
+
+    if not comfyui_is_running():
+        return {"ok": False, "error": "ComfyUI is not running. Start it first: ~/start-comfyui.sh"}
 
     if not args.image or not os.path.exists(args.image):
         return {"ok": False, "error": f"Input image not found: {args.image}"}
@@ -160,31 +171,159 @@ def cmd_edit(args):
     image_path = convert_to_jpg(args.image)
     output = args.output or os.path.join(WORKING_DIR, f"edit_{uuid.uuid4().hex[:8]}.png")
 
-    cmd = [
-        get_mflux_bin("mflux-generate-kontext"),
-        "--low-ram",
-        "--image-path", image_path,
-        "--prompt", args.prompt,
-        "-q", str(args.quantize or 8),
-        "--steps", str(args.steps or 12),
-        "--output", output,
-    ]
-    if args.seed is not None:
-        cmd.extend(["--seed", str(args.seed)])
+    try:
+        uploaded_name = comfyui_upload_image(image_path)
+        if not uploaded_name:
+            return {"ok": False, "error": "Failed to upload image to ComfyUI"}
 
-    print(f"[ai-media] Editing image with Kontext...", file=sys.stderr)
-    print(f"[ai-media] CMD: {' '.join(cmd)}", file=sys.stderr)
+        denoise = args.denoise if hasattr(args, 'denoise') and args.denoise else 0.65
+        steps = args.steps or 20
+        seed = args.seed if args.seed is not None else int(time.time()) % (2**32)
+        lora = args.lora or FLUX_DEV_LORA
+        lora_strength = args.lora_strength if hasattr(args, 'lora_strength') and args.lora_strength else FLUX_DEV_LORA_STRENGTH
 
-    t0 = time.time()
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    elapsed = time.time() - t0
+        workflow = build_flux_img2img_workflow(
+            image_name=uploaded_name,
+            prompt=args.prompt,
+            steps=steps,
+            denoise=denoise,
+            seed=seed,
+            lora=lora,
+            lora_strength=lora_strength,
+        )
 
-    if result.returncode != 0:
-        print(f"[ai-media] STDERR: {result.stderr}", file=sys.stderr)
-        return {"ok": False, "error": result.stderr, "elapsed": elapsed}
+        print(f"[ai-media] Editing image with FLUX.1 Dev + LoRA via ComfyUI...", file=sys.stderr)
+        print(f"[ai-media] denoise={denoise}, steps={steps}, lora={lora}, scale={lora_strength}", file=sys.stderr)
 
-    actual_output = find_output_file(output, WORKING_DIR)
-    return {"ok": True, "path": actual_output, "elapsed": round(elapsed, 1)}
+        t0 = time.time()
+        output_files = comfyui_queue_and_wait(workflow)
+        elapsed = time.time() - t0
+
+        if not output_files:
+            return {"ok": False, "error": "No output files from ComfyUI", "elapsed": round(elapsed, 1)}
+
+        fname = output_files[0].get("filename", "")
+        subfolder = output_files[0].get("subfolder", "")
+        ftype = output_files[0].get("type", "output")
+        out_path = comfyui_download_output(fname, subfolder, ftype)
+
+        if out_path:
+            # Rename to desired output path
+            import shutil
+            shutil.move(out_path, output)
+            return {"ok": True, "path": output, "elapsed": round(elapsed, 1)}
+
+        return {"ok": False, "error": "Could not retrieve image from ComfyUI", "elapsed": round(elapsed, 1)}
+
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+def build_flux_img2img_workflow(image_name: str, prompt: str, steps: int = 20,
+                                 denoise: float = 0.65, seed: int = 0,
+                                 lora: str = "", lora_strength: float = 0.8) -> dict:
+    """Build ComfyUI API workflow for FLUX.1 Dev img2img with LoRA.
+
+    Node graph:
+      [1] UnetLoaderGGUF       → loads FLUX.1 Dev Q5 gguf
+      [2] DualCLIPLoaderGGUF   → clip_l + t5-xxl gguf
+      [3] VAELoader            → ae.safetensors
+      [4] LoraLoaderModelOnly  → NSFW LoRA
+      [5] LoadImage            → input image
+      [6] VAEEncode            → image → latent
+      [7] CLIPTextEncode       → positive prompt
+      [8] CLIPTextEncode       → negative (empty)
+      [9] KSampler             → denoise at img2img strength
+      [10] VAEDecode           → latent → image
+      [11] SaveImage           → output
+    """
+    workflow = {
+        "1": {
+            "class_type": "UnetLoaderGGUF",
+            "inputs": {
+                "unet_name": FLUX_DEV_UNET,
+            }
+        },
+        "2": {
+            "class_type": "DualCLIPLoaderGGUF",
+            "inputs": {
+                "clip_name1": FLUX_DEV_CLIP_L,
+                "clip_name2": FLUX_DEV_T5,
+                "type": "flux",
+            }
+        },
+        "3": {
+            "class_type": "VAELoader",
+            "inputs": {
+                "vae_name": FLUX_DEV_VAE,
+            }
+        },
+        "4": {
+            "class_type": "LoraLoaderModelOnly",
+            "inputs": {
+                "model": ["1", 0],
+                "lora_name": lora,
+                "strength_model": lora_strength,
+            }
+        },
+        "5": {
+            "class_type": "LoadImage",
+            "inputs": {
+                "image": image_name,
+            }
+        },
+        "6": {
+            "class_type": "VAEEncode",
+            "inputs": {
+                "pixels": ["5", 0],
+                "vae": ["3", 0],
+            }
+        },
+        "7": {
+            "class_type": "CLIPTextEncode",
+            "inputs": {
+                "text": prompt,
+                "clip": ["2", 0],
+            }
+        },
+        "8": {
+            "class_type": "CLIPTextEncode",
+            "inputs": {
+                "text": "",
+                "clip": ["2", 0],
+            }
+        },
+        "9": {
+            "class_type": "KSampler",
+            "inputs": {
+                "model": ["4", 0],
+                "positive": ["7", 0],
+                "negative": ["8", 0],
+                "latent_image": ["6", 0],
+                "seed": seed,
+                "steps": steps,
+                "cfg": 3.5,
+                "sampler_name": "euler",
+                "scheduler": "simple",
+                "denoise": denoise,
+            }
+        },
+        "10": {
+            "class_type": "VAEDecode",
+            "inputs": {
+                "samples": ["9", 0],
+                "vae": ["3", 0],
+            }
+        },
+        "11": {
+            "class_type": "SaveImage",
+            "inputs": {
+                "images": ["10", 0],
+                "filename_prefix": "flux_edit",
+            }
+        },
+    }
+    return workflow
 
 
 # ===========================================================================
@@ -717,13 +856,16 @@ def main():
     p_gen.add_argument("--seed", type=int, default=None)
 
     # edit
-    p_edit = sub.add_parser("edit", help="Image editing (FLUX Kontext)")
+    p_edit = sub.add_parser("edit", help="Image editing (FLUX.1 Dev + LoRA via ComfyUI)")
     p_edit.add_argument("--image", required=True)
     p_edit.add_argument("--prompt", required=True)
     p_edit.add_argument("--output", default=None)
-    p_edit.add_argument("--steps", type=int, default=12)
-    p_edit.add_argument("--quantize", type=int, default=8)
+    p_edit.add_argument("--steps", type=int, default=20)
+    p_edit.add_argument("--denoise", type=float, default=0.65,
+                         help="Denoise strength (0.0=no change, 1.0=full regenerate, default 0.65)")
     p_edit.add_argument("--seed", type=int, default=None)
+    p_edit.add_argument("--lora", default=None, help="LoRA filename (in ComfyUI loras dir)")
+    p_edit.add_argument("--lora-strength", type=float, default=None)
 
     # animate — BUG4 fix: 832x480 safe default, 33 frames (~1.4s at 24fps)
     p_anim = sub.add_parser("animate", help="Video generation (Wan2.2 TI2V-5B)")

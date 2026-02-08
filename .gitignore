@@ -46,3 +46,6 @@ __pycache__/
 
 # Runtime files
 .bot.pid
+
+# ML models (large binaries)
+models/
