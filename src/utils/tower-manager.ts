@@ -355,31 +355,11 @@ async function createTowerMessage(
   oldMessageId: string | null
 ): Promise<TowerUpdateResult> {
   try {
-    // Unpin old message before creating new one
-    if (oldMessageId) {
-      try {
-        await ctx.api.unpinChatMessage(chatId, parseInt(oldMessageId, 10));
-        console.log(`[TowerManager] Old message unpinned: ${oldMessageId}`);
-      } catch (unpinError) {
-        console.warn(`[TowerManager] Failed to unpin old message:`, unpinError);
-        // Continue anyway
-      }
-    }
-
     const message = await ctx.api.sendMessage(chatId, content, {
       parse_mode: undefined,
     });
 
-    // Try to pin the message
-    try {
-      await ctx.api.pinChatMessage(chatId, message.message_id, {
-        disable_notification: true,
-      });
-      console.log(`[TowerManager] Message created and pinned: ${message.message_id}`);
-    } catch (pinError) {
-      console.warn(`[TowerManager] Failed to pin message:`, pinError);
-      // Continue anyway - message created successfully
-    }
+    console.log(`[TowerManager] Message created: ${message.message_id}`);
 
     return {
       success: true,

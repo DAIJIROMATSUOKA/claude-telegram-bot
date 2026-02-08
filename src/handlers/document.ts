@@ -15,6 +15,9 @@ import { createMediaGroupBuffer, handleProcessingError } from "./media-group";
 import { controlTowerDB } from "../utils/control-tower-db";
 import { redactSensitiveData } from "../utils/redaction-filter";
 
+// Image extensions that need conversion (HEIC/HEIF → JPEG)
+const IMAGE_EXTENSIONS = [".heic", ".heif"];
+
 // Supported text file extensions
 const TEXT_EXTENSIONS = [
   ".md",
@@ -528,10 +531,17 @@ export async function handleDocument(ctx: Context): Promise<void> {
     TEXT_EXTENSIONS.includes(extension) || doc.mime_type?.startsWith("text/");
   const isArchiveFile = isArchive(fileName);
 
-  if (!isPdf && !isText && !isArchiveFile) {
+  const isImage =
+    IMAGE_EXTENSIONS.includes(extension) ||
+    doc.mime_type === "image/heic" ||
+    doc.mime_type === "image/heif";
+
+  if (!isPdf && !isText && !isArchiveFile && !isImage) {
     await ctx.reply(
       `❌ Unsupported file type: ${extension || doc.mime_type}\n\n` +
-        `Supported: PDF, archives (${ARCHIVE_EXTENSIONS.join(
+        `Supported: PDF, images (${IMAGE_EXTENSIONS.join(
+          ", "
+        )}), archives (${ARCHIVE_EXTENSIONS.join(
           ", "
         )}), ${TEXT_EXTENSIONS.join(", ")}`
     );
@@ -548,7 +558,44 @@ export async function handleDocument(ctx: Context): Promise<void> {
     return;
   }
 
-  // 5. Archive files - process separately (no media group support)
+  // 5. Image files (HEIC/HEIF) - convert to JPEG and process as photo
+  if (isImage) {
+    console.log(`Received image document: ${fileName} from @${username}`);
+    const [allowed, retryAfter] = rateLimiter.check(userId);
+    if (!allowed) {
+      await auditLogRateLimit(userId, username, retryAfter!);
+      await ctx.reply(
+        `⏳ Rate limited. Please wait ${retryAfter!.toFixed(1)} seconds.`
+      );
+      return;
+    }
+
+    try {
+      // Convert HEIC/HEIF to JPEG using sips (macOS built-in)
+      const jpegPath = docPath.replace(/\.[^.]+$/, ".jpg");
+      await Bun.$`sips -s format jpeg ${docPath} --out ${jpegPath}`.quiet();
+      console.log(`Converted ${fileName} → JPEG: ${jpegPath}`);
+
+      // Process as photo using the same flow as photo handler
+      const { processPhotosFromDocument } = await import("./photo");
+      await processPhotosFromDocument(
+        ctx,
+        [jpegPath],
+        ctx.message?.caption,
+        userId,
+        username,
+        chatId
+      );
+    } catch (error) {
+      console.error("HEIC conversion error:", error);
+      await ctx.reply(
+        `❌ Failed to convert image: ${String(error).slice(0, 100)}`
+      );
+    }
+    return;
+  }
+
+  // 6. Archive files - process separately (no media group support)
   if (isArchiveFile) {
     console.log(`Received archive: ${fileName} from @${username}`);
     const [allowed, retryAfter] = rateLimiter.check(userId);

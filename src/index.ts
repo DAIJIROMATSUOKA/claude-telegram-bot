@@ -226,10 +226,12 @@ const runner = run(bot);
     console.warn('⚠️ Memory table init failed (non-fatal):', err);
   });
 
-  // Startup notification - DJに起動完了を通知
+  // Startup: unpin all messages (Control Tower pins disabled)
 try {
   const djChatId = ALLOWED_USERS[0];
   if (djChatId) {
+    await bot.api.unpinAllChatMessages(djChatId);
+    console.log('📌 All pins cleared');
     await bot.api.sendMessage(djChatId, '🤖 Jarvis起動完了');
     console.log('📨 Startup notification sent to DJ');
   }

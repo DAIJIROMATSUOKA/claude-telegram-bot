@@ -170,18 +170,6 @@ async function createNewTower(
   chatId: number
 ): Promise<{ success: boolean; messageId?: string; error?: any }> {
   try {
-    // Unpin old message before creating new one
-    const oldMessageId = getTowerMessageId(String(chatId));
-    if (oldMessageId) {
-      try {
-        await bot.api.unpinChatMessage(chatId, parseInt(oldMessageId, 10));
-        console.log(`[TowerWatchdog] Old message unpinned: ${oldMessageId}`);
-      } catch (unpinError) {
-        console.warn(`[TowerWatchdog] Failed to unpin old message:`, unpinError);
-        // Continue anyway
-      }
-    }
-
     const timestamp = new Date().toLocaleTimeString('ja-JP', {
       timeZone: 'Asia/Tokyo',
       hour: '2-digit',
@@ -190,21 +178,10 @@ async function createNewTower(
 
     const content = `🔧 Self-healed at ${timestamp}\n\n✅ New tower created`;
 
-    // Send new message
+    // Send new message (no pin — pin disabled)
     const message = await bot.api.sendMessage(chatId, content);
 
     console.log(`[TowerWatchdog] New tower message created: ${message.message_id}`);
-
-    // Try to pin the message
-    try {
-      await bot.api.pinChatMessage(chatId, message.message_id, {
-        disable_notification: true,
-      });
-      console.log(`[TowerWatchdog] Tower message pinned: ${message.message_id}`);
-    } catch (pinError) {
-      console.warn(`[TowerWatchdog] Failed to pin message:`, pinError);
-      // Continue anyway - message created successfully
-    }
 
     // Update message_id in settings
     setTowerMessageId(String(chatId), String(message.message_id));

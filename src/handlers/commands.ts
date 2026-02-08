@@ -12,9 +12,27 @@ import { getChatHistory } from "../utils/chat-history";
 import { saveSessionSummary } from "../utils/session-summary";
 import { exec, execSync } from "child_process";
 import { promisify } from "util";
+import { readFileSync, writeFileSync, existsSync } from "fs";
+import { homedir } from "os";
 
 const execAsync = promisify(exec);
 import { join } from "path";
+
+// Task tracker file (shared with tower-renderer for pin display)
+const TASK_TRACKER_PATH = join(homedir(), ".task-tracker.json");
+
+function readTaskTracker(): Record<string, string> {
+  try {
+    if (!existsSync(TASK_TRACKER_PATH)) return {};
+    return JSON.parse(readFileSync(TASK_TRACKER_PATH, "utf-8"));
+  } catch {
+    return {};
+  }
+}
+
+function writeTaskTracker(data: Record<string, string>): void {
+  writeFileSync(TASK_TRACKER_PATH, JSON.stringify(data, null, 2));
+}
 
 // Project root directory (resolve from this file's location, not WORKING_DIR)
 const PROJECT_ROOT = join(import.meta.dir, "..", "..");
@@ -348,14 +366,19 @@ export async function handleTaskStart(ctx: Context): Promise<void> {
   const text = ctx.message?.text || "";
   const taskName = text.replace(/^\/task_start\s*/, "").trim() || "Unnamed Task";
 
+  // Write to task-tracker.json (used by tower-renderer for pin display)
+  const tracker = readTaskTracker();
+  tracker[taskName] = new Date().toISOString();
+  writeTaskTracker(tracker);
+
   try {
     const scriptPath = join(PROJECT_ROOT, "scripts", "timer-sync.sh");
     execSync(`"${scriptPath}" START "${taskName}"`, { encoding: "utf-8" });
-    await ctx.reply(`⏱ タスク開始: ${taskName}`);
   } catch (error: any) {
-    console.error("[task_start] Timer sync failed:", error.message);
-    await ctx.reply(`⚠️ タイマー同期失敗: ${error.message}`);
+    console.error("[task_start] Timer sync failed (non-fatal):", error.message);
   }
+
+  await ctx.reply(`⏱ タスク開始: ${taskName}`);
 }
 
 /**
@@ -373,14 +396,19 @@ export async function handleTaskStop(ctx: Context): Promise<void> {
   const text = ctx.message?.text || "";
   const taskName = text.replace(/^\/task_stop\s*/, "").trim() || "Unnamed Task";
 
+  // Remove from task-tracker.json
+  const tracker = readTaskTracker();
+  delete tracker[taskName];
+  writeTaskTracker(tracker);
+
   try {
     const scriptPath = join(PROJECT_ROOT, "scripts", "timer-sync.sh");
     execSync(`"${scriptPath}" STOP "${taskName}"`, { encoding: "utf-8" });
-    await ctx.reply(`⏹ タスク停止: ${taskName}`);
   } catch (error: any) {
-    console.error("[task_stop] Timer sync failed:", error.message);
-    await ctx.reply(`⚠️ タイマー同期失敗: ${error.message}`);
+    console.error("[task_stop] Timer sync failed (non-fatal):", error.message);
   }
+
+  await ctx.reply(`⏹ タスク停止: ${taskName}`);
 }
 
 /**
@@ -398,14 +426,19 @@ export async function handleTaskPause(ctx: Context): Promise<void> {
   const text = ctx.message?.text || "";
   const taskName = text.replace(/^\/task_pause\s*/, "").trim() || "Unnamed Task";
 
+  // Remove from task-tracker.json (paused = not active)
+  const tracker = readTaskTracker();
+  delete tracker[taskName];
+  writeTaskTracker(tracker);
+
   try {
     const scriptPath = join(PROJECT_ROOT, "scripts", "timer-sync.sh");
     execSync(`"${scriptPath}" PAUSE "${taskName}"`, { encoding: "utf-8" });
-    await ctx.reply(`⏸ タスク一時停止: ${taskName}`);
   } catch (error: any) {
-    console.error("[task_pause] Timer sync failed:", error.message);
-    await ctx.reply(`⚠️ タイマー同期失敗: ${error.message}`);
+    console.error("[task_pause] Timer sync failed (non-fatal):", error.message);
   }
+
+  await ctx.reply(`⏸ タスク一時停止: ${taskName}`);
 }
 
 /**

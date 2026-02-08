@@ -11,8 +11,49 @@ PROJECT_DIR="$HOME/claude-telegram-bot"
 PID_FILE="$PROJECT_DIR/.bot.pid"
 LOG_DIR="$PROJECT_DIR/logs"
 LOG_FILE="$LOG_DIR/bot.log"
+ENV_FILE="$PROJECT_DIR/.env"
 
 cd "$PROJECT_DIR"
+
+# ============================================
+# Telegram通知関数
+# ============================================
+
+notify_telegram() {
+    local message="$1"
+    # .envからトークンとユーザーIDを取得
+    local token chat_id
+    token=$(grep '^TELEGRAM_BOT_TOKEN=' "$ENV_FILE" 2>/dev/null | cut -d'=' -f2)
+    chat_id=$(grep '^TELEGRAM_ALLOWED_USERS=' "$ENV_FILE" 2>/dev/null | cut -d'=' -f2 | cut -d',' -f1)
+
+    if [ -n "$token" ] && [ -n "$chat_id" ]; then
+        curl -s -X POST "https://api.telegram.org/bot${token}/sendMessage" \
+            -d chat_id="$chat_id" \
+            -d text="$message" \
+            -d parse_mode="HTML" \
+            --max-time 5 > /dev/null 2>&1 || true
+    fi
+}
+
+# ============================================
+# STEP 0: 再起動前の通知
+# ============================================
+
+# Botプロセスが動いている場合のみ通知（初回起動時は不要）
+if pgrep -f "bun.*index.ts" > /dev/null 2>&1; then
+    RESTART_REASON="${RESTART_REASON:-手動再起動}"
+    RESTART_MSG="🔄 <b>Bot再起動</b>
+理由: ${RESTART_REASON}"
+    if [ -n "${RESTART_TASK:-}" ]; then
+        RESTART_MSG="${RESTART_MSG}
+作業: ${RESTART_TASK}"
+    fi
+    RESTART_MSG="${RESTART_MSG}
+数秒後に復帰します..."
+    echo "📨 再起動前の通知を送信中..."
+    notify_telegram "$RESTART_MSG"
+    sleep 1
+fi
 
 # ============================================
 # STEP 1: 既存プロセスを完全停止
@@ -141,3 +182,12 @@ echo "   Log: $LOG_FILE"
 echo ""
 echo "📊 状態確認: ./scripts/status-bot.sh"
 echo "🛑 停止: ./scripts/stop-bot.sh"
+
+# 起動成功通知
+STARTUP_MSG="✅ <b>Bot起動完了</b>
+PID: ${NEW_PID}"
+if [ -n "${RESTART_TASK:-}" ]; then
+    STARTUP_MSG="${STARTUP_MSG}
+これから: ${RESTART_TASK}"
+fi
+notify_telegram "$STARTUP_MSG"
