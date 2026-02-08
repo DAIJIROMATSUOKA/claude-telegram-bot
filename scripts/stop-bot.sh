@@ -3,11 +3,28 @@
 # ============================================
 # Telegram Bot Stop Script
 # ============================================
+# watchdogが動いている場合、先にwatchdogも停止する。
+# そうしないとwatchdogが即座にBotを再起動してしまう。
+# ============================================
 
 PROJECT_DIR="$HOME/claude-telegram-bot"
 PID_FILE="$PROJECT_DIR/.bot.pid"
+WATCHDOG_LOCK="/tmp/croppy-watchdog.lock"
 
 echo "🛑 Botを停止中..."
+
+# 0. watchdogを先に停止（再起動を防ぐ）
+if [ -f "$WATCHDOG_LOCK" ]; then
+  WATCHDOG_PID=$(cat "$WATCHDOG_LOCK" 2>/dev/null)
+  if [ -n "$WATCHDOG_PID" ] && kill -0 "$WATCHDOG_PID" 2>/dev/null; then
+    echo "🐕 Watchdog (PID $WATCHDOG_PID) を停止中..."
+    kill "$WATCHDOG_PID" 2>/dev/null || true
+    sleep 1
+  fi
+  rm -f "$WATCHDOG_LOCK"
+fi
+# watchdog LaunchAgentも停止
+launchctl bootout "gui/$(id -u)/com.croppy.watchdog" 2>/dev/null || true
 
 # 1. PIDファイルから停止
 if [ -f "$PID_FILE" ]; then
@@ -32,4 +49,7 @@ if pgrep -f "bun.*index.ts" > /dev/null; then
   exit 1
 else
   echo "✅ Botを完全に停止しました"
+  echo ""
+  echo "💡 watchdog付きで再起動するには:"
+  echo "   ./scripts/setup-watchdog.sh"
 fi

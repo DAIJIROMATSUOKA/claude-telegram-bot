@@ -237,8 +237,17 @@ try {
   console.warn('⚠️ Startup notification failed (non-fatal):', e);
 }
 
+// Heartbeat log for watchdog (5min interval)
+const HEARTBEAT_INTERVAL = 5 * 60 * 1000;
+const heartbeatTimer = setInterval(() => {
+  if (runner.isRunning()) {
+    console.log(`[heartbeat] alive (PID ${process.pid})`);
+  }
+}, HEARTBEAT_INTERVAL);
+
 // Graceful shutdown
 const stopRunner = () => {
+  clearInterval(heartbeatTimer);
   if (runner.isRunning()) {
     console.log("Stopping bot...");
     runner.stop();
