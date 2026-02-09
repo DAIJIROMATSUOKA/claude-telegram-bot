@@ -67,6 +67,23 @@ export function createMediaGroupBuffer(config: MediaGroupConfig) {
       `Processing ${group.items.length} ${config.itemLabelPlural} from @${username}`
     );
 
+    // No caption: save silently, don't invoke Claude
+    if (!group.caption) {
+      console.log(`Album saved without caption: ${group.items.length} ${config.itemLabelPlural}`);
+      if (group.statusMsg) {
+        try {
+          await group.ctx.api.editMessageText(
+            group.statusMsg.chat.id,
+            group.statusMsg.message_id,
+            `${config.emoji} ${group.items.length}枚の画像を保存した。\nキャプション付きで送ると処理する。`
+          );
+        } catch (error) {
+          console.debug("Failed to update status message:", error);
+        }
+      }
+      return;
+    }
+
     // Update status message
     if (group.statusMsg) {
       try {

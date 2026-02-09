@@ -32,8 +32,24 @@ const AI_COUNCIL_CONFIG = {
   errorThreshold: 2,               // エラー2回で相談
 };
 
-// Track consultation history (in-memory)
+// Track consultation history (in-memory) with periodic cleanup
 const consultationHistory: Map<string, number> = new Map(); // taskHash -> timestamp
+const CONSULTATION_TTL_MS = 60 * 60 * 1000; // 1時間で期限切れ
+
+// 定期クリーンアップ（5分毎に古いエントリを削除）
+setInterval(() => {
+  const now = Date.now();
+  let cleaned = 0;
+  for (const [key, timestamp] of consultationHistory) {
+    if (now - timestamp > CONSULTATION_TTL_MS) {
+      consultationHistory.delete(key);
+      cleaned++;
+    }
+  }
+  if (cleaned > 0) {
+    console.log(`[AI Council] Cleaned up ${cleaned} expired consultation entries`);
+  }
+}, 5 * 60 * 1000);
 
 /**
  * Check if message matches any auto-execution rules and handle them.
@@ -86,8 +102,11 @@ export async function checkAutoRules(
       return true;
     }
 
-    // Rule 8: Twitter/X URL Auto-fetch (補助情報として取得、Claudeへの送信はブロックしない)
-    await handleTwitterURL(ctx, message);
+    // Rule 8: Twitter/X URL Auto-fetch
+    // NOTE: X URL要約はtext.tsのmaybeEnrichWithXSummary()で処理するため無効化。
+    // 旧実装(handleTwitterURL)はHTML scrapingで不安定だったため、
+    // api.fxtwitter.comのJSON APIベースのx-summary.tsに移行済み。
+    // await handleTwitterURL(ctx, message);
 
     // Rule 9: Proactive AI Council Consultation (実装前相談 - ブロックせずに相談結果をClaudeに渡す)
     await handlePreImplementationConsultation(ctx, message);
@@ -209,7 +228,7 @@ function parseAlarmMessage(message: string): { time: string; label: string } | n
   if (match1 && match1[1] && match1[2]) {
     const hour = match1[1].padStart(2, "0");
     const minute = match1[2].padStart(2, "0");
-    const label = match1[3].trim() || "アラーム";
+    const label = (match1[3] ?? "").trim() || "アラーム";
     return { time: `${hour}:${minute}`, label };
   }
 
@@ -218,7 +237,7 @@ function parseAlarmMessage(message: string): { time: string; label: string } | n
   const match2 = content.match(pattern2);
   if (match2 && match2[1]) {
     const hour = match2[1].padStart(2, "0");
-    const label = match2[2].trim() || "アラーム";
+    const label = (match2[2] ?? "").trim() || "アラーム";
     return { time: `${hour}:30`, label };
   }
 
@@ -228,7 +247,7 @@ function parseAlarmMessage(message: string): { time: string; label: string } | n
   if (match3 && match3[1] && match3[2]) {
     const hour = match3[1].padStart(2, "0");
     const minute = match3[2];
-    const label = match3[3].trim() || "アラーム";
+    const label = (match3[3] ?? "").trim() || "アラーム";
     return { time: `${hour}:${minute}`, label };
   }
 
@@ -238,7 +257,7 @@ function parseAlarmMessage(message: string): { time: string; label: string } | n
   const match4 = content.match(pattern4);
   if (match4 && match4[1]) {
     const hour = match4[1].padStart(2, "0");
-    const label = match4[2].trim() || "アラーム";
+    const label = (match4[2] ?? "").trim() || "アラーム";
     return { time: `${hour}:00`, label };
   }
 
@@ -304,7 +323,7 @@ async function handleTwitterURL(
       const content = await fetchTwitterContent(url);
       if (content) {
         await ctx.reply(`🐦 Twitter投稿内容:\n\n${content}`, {
-          disable_web_page_preview: true,
+          link_preview_options: { is_disabled: true },
         });
       }
     }
@@ -363,7 +382,7 @@ function extractContentFromNitter(html: string): string | null {
     if (!tweetTextMatch) return null;
 
     // Clean HTML tags and decode entities
-    let text = tweetTextMatch[1]
+    let text = (tweetTextMatch[1] ?? "")
       .replace(/<[^>]+>/g, " ")
       .replace(/&quot;/g, '"')
       .replace(/&amp;/g, "&")
@@ -486,7 +505,7 @@ async function autoCheckTaskInMemory(taskName: string): Promise<void> {
     let currentSection: string[] = [];
 
     for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
+      const line = lines[i]!;
 
       // Detect start of today's task section (any version)
       if (line.includes(`## ${dateStr} 今日やること`)) {
@@ -502,8 +521,9 @@ async function autoCheckTaskInMemory(taskName: string): Promise<void> {
           inTodaySection = false;
 
           // Extract version number if present
-          const versionMatch = currentSection[0].match(/v(\d+)/);
-          const version = versionMatch ? parseInt(versionMatch[1]) : 0;
+          const firstLine = currentSection[0];
+          const versionMatch = firstLine?.match(/v(\d+)/);
+          const version = versionMatch ? parseInt(versionMatch[1]!) : 0;
 
           // Keep the highest version
           if (version > latestVersion) {
@@ -519,8 +539,9 @@ async function autoCheckTaskInMemory(taskName: string): Promise<void> {
 
     // Handle case where section is at the end of the file
     if (inTodaySection && currentSection.length > 0) {
-      const versionMatch = currentSection[0].match(/v(\d+)/);
-      const version = versionMatch ? parseInt(versionMatch[1]) : 0;
+      const firstLine = currentSection[0];
+      const versionMatch = firstLine?.match(/v(\d+)/);
+      const version = versionMatch ? parseInt(versionMatch[1]!) : 0;
       if (version > latestVersion) {
         latestVersion = version;
         latestTaskSection = [...currentSection];
@@ -554,7 +575,7 @@ async function autoCheckTaskInMemory(taskName: string): Promise<void> {
       const taskLines = updatedSection.slice(1).join('\n'); // Skip the old header
 
       const updateContent = `---
-**追加: ${dateStr} ${today.toTimeString().split(' ')[0].slice(0, 5)}**
+**追加: ${dateStr} ${(today.toTimeString().split(' ')[0] ?? '').slice(0, 5)}**
 ${header}
 ${taskLines}`;
 
@@ -655,41 +676,57 @@ async function handlePreImplementationConsultation(
 }
 
 /**
- * Check if message is an implementation request
+ * Check if message is an implementation request.
+ * Returns a confidence score (0-1) instead of boolean.
  */
-function isImplementationRequest(message: string): boolean {
+function getImplementationConfidence(message: string): number {
+  let score = 0;
+
+  // 1. 実装系キーワード（0.3点）
   const implementationKeywords = [
-    '実装',
-    '開発',
-    '作成',
-    '構築',
-    '追加',
-    'を作って',
-    'を作る',
-    'を実装',
-    'を開発',
-    'を構築',
-    'システム',
-    '機能',
-    'API',
-    'エンドポイント',
-    'データベース',
-    'テーブル',
-    'マイグレーション',
+    '実装', '開発', '作成', '構築', '追加', 'リファクタ', '改善',
+    'を作って', 'を作る', 'を実装', 'を開発', 'を構築',
+    'システム', '機能', 'API', 'エンドポイント',
+    'データベース', 'テーブル', 'マイグレーション',
   ];
 
-  const lowerMessage = message.toLowerCase();
+  const matchedKeywords = implementationKeywords.filter(k => message.includes(k));
+  if (matchedKeywords.length > 0) {
+    score += Math.min(0.3, matchedKeywords.length * 0.1);
+  }
 
-  // Check for implementation keywords
-  const hasKeyword = implementationKeywords.some(keyword =>
-    message.includes(keyword)
-  );
+  // 2. 命令形パターン（0.2点）
+  if (/[てで](ください|欲しい|くれ|お願い)/.test(message) ||
+      /[をに](作|実装|開発|構築|追加)/.test(message)) {
+    score += 0.2;
+  }
 
-  // Check for imperative patterns (命令形)
-  const hasImperativePattern = /[てで](ください|欲しい|くれ|お願い)/.test(message) ||
-    /[をに](作|実装|開発|構築|追加)/.test(message);
+  // 3. アーキテクチャ関連キーワード（0.2点） — councilの価値が特に高い
+  const archKeywords = [
+    '設計', 'アーキテクチャ', 'パターン', 'スキーマ',
+    '構造', 'インターフェース', 'プロトコル', '戦略',
+  ];
+  if (archKeywords.some(k => message.includes(k))) {
+    score += 0.2;
+  }
 
-  return hasKeyword && hasImperativePattern;
+  // 4. メッセージの長さ（長い指示は複雑な実装の可能性が高い）
+  if (message.length > 200) score += 0.15;
+  else if (message.length > 100) score += 0.1;
+
+  // 5. 複数ファイル・複数ステップの示唆（0.15点）
+  if (/(?:まず|次に|その後|最後に|ステップ|phase|フェーズ)/i.test(message)) {
+    score += 0.15;
+  }
+
+  return Math.min(score, 1.0);
+}
+
+/**
+ * Check if message is an implementation request (backward compat wrapper)
+ */
+function isImplementationRequest(message: string): boolean {
+  return getImplementationConfidence(message) >= 0.4;
 }
 
 /**

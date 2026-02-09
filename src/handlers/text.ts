@@ -1,5 +1,12 @@
 /**
  * Text message handler for Claude Telegram Bot.
+ *
+ * Pipeline:
+ *   1. Auth & Rate Limit
+ *   2. Routing (Darwin, Croppy debug, AI Session Bridge)
+ *   3. Enrichment (X summary, Web search, Croppy, Tool preload)
+ *   4. Claude Session (streaming)
+ *   5. Post-Process (auto-review, learned memory, session summary, auto-resume)
  */
 
 import type { Context } from "grammy";
@@ -13,26 +20,21 @@ import { redactSensitiveData } from "../utils/redaction-filter";
 import { routeDarwinCommand } from "./darwin-commands";
 import { checkPhaseCompletionApproval } from "../utils/phase-detector";
 import { saveChatMessage, cleanupOldHistory } from "../utils/chat-history";
-import { autoUpdateContext, getJarvisContext, autoDetectAndUpdateWorkMode } from "../utils/jarvis-context";
+import { autoDetectAndUpdateWorkMode } from "../utils/jarvis-context";
 import {
   hasActiveSession,
   sendToSession,
   splitTelegramMessage,
 } from "../utils/session-bridge";
-import { buildCroppyPrompt } from "../utils/croppy-context";
-import { detectInterruptableTask } from "../utils/implementation-detector";
-import { saveInterruptSnapshot, type SnapshotData } from "../utils/auto-resume";
 import { isFocusModeEnabled, bufferNotification } from "../utils/focus-mode";
-import { preloadToolContext, formatPreloadedContext } from "../utils/tool-preloader";
-import { processAndLearn } from "../utils/learned-memory";
-import { saveSessionSummary } from "../utils/session-summary";
-import { getChatHistory } from "../utils/chat-history";
-import { WORKING_DIR } from "../config";
-import { autoReviewWithGemini } from "../utils/auto-review";
 import { maybeEnrichWithWebSearch } from "../utils/web-search";
-
-// Session Summary: メッセージカウンター（20メッセージ毎に要約保存）
-let _sessionMsgCount = 0;
+import { maybeEnrichWithXSummary } from "../utils/x-summary";
+import { recordMessageMetrics } from "../utils/metrics";
+import { enrichMessage } from "./pipeline/enrichment";
+import { runPostProcess } from "./pipeline/post-process";
+import { setClaudeStatus } from "../utils/tower-renderer";
+import { updateTower } from "../utils/tower-manager";
+import type { TowerIdentifier } from "../types/control-tower";
 
 /**
  * Handle incoming text messages.
@@ -47,21 +49,20 @@ export async function handleText(ctx: Context): Promise<void> {
     return;
   }
 
-  // 1. Authorization check
+  // ── Stage 1: Auth & Rate Limit ──
   if (!isAuthorized(userId, ALLOWED_USERS)) {
     await ctx.reply("Unauthorized. Contact the bot owner for access.");
     return;
   }
 
-  // 2. Check for darwin commands
+  // ── Stage 2: Routing ──
   const _lm = message.trim().toLowerCase();
   if (_lm === 'darwin' || _lm.startsWith('darwin ')) {
-    const args = message.trim().split(/\s+/).slice(1); // Remove 'darwin' prefix
+    const args = message.trim().split(/\s+/).slice(1);
     await routeDarwinCommand(ctx, args);
     return;
   }
 
-  // 2.5. Check for croppy: debug command
   if (message.trim().toLowerCase() === 'croppy: debug') {
     const { formatCroppyDebugOutput } = await import("../utils/croppy-context");
     const debugOutput = await formatCroppyDebugOutput(userId);
@@ -69,13 +70,11 @@ export async function handleText(ctx: Context): Promise<void> {
     return;
   }
 
-  // 3. Check for interrupt prefix
   message = await checkInterrupt(message);
   if (!message.trim()) {
     return;
   }
 
-  // 4. Rate limit check
   const [allowed, retryAfter] = rateLimiter.check(userId);
   if (!allowed) {
     await auditLogRateLimit(userId, username, retryAfter!);
@@ -83,19 +82,19 @@ export async function handleText(ctx: Context): Promise<void> {
     return;
   }
 
-  // 5. Mark processing started
   const stopProcessing = session.startProcessing();
 
-  // 6. Start typing indicator
-  // === AI Session Bridge ===
-  // When a session is active, bypass normal Jarvis and send directly to the selected AI
+  // AI Session Bridge: bypass Jarvis when session is active
   if (hasActiveSession(userId)) {
     const _sbTyping = startTypingIndicator(ctx);
     const _replyParams = ctx.message?.message_id
       ? { reply_parameters: { message_id: ctx.message.message_id } }
       : {};
     try {
-      const enrichedMessage = await maybeEnrichWithWebSearch(message);
+      let enrichedMessage = await maybeEnrichWithXSummary(message);
+      if (enrichedMessage === message) {
+        enrichedMessage = await maybeEnrichWithWebSearch(message);
+      }
       const aiResponse = await sendToSession(userId, enrichedMessage);
       _sbTyping.stop();
       const chunks = splitTelegramMessage(aiResponse);
@@ -112,12 +111,10 @@ export async function handleText(ctx: Context): Promise<void> {
 
   const typing = startTypingIndicator(ctx);
 
-  // 7. Create streaming state and callback
   const state = new StreamingState();
   state.replyToMessageId = ctx.message?.message_id;
   const statusCallback = createStatusCallback(ctx, state);
 
-  // 8. Start action trace
   const sessionId = `telegram_${chatId}_${Date.now()}`;
   const startedAt = Date.now();
   const actionName = message.slice(0, 50);
@@ -132,44 +129,30 @@ export async function handleText(ctx: Context): Promise<void> {
   });
 
   try {
-    // 9. Save user message to chat history
+    // Save user message
     await saveChatMessage(userId, 'user', message);
 
-    // 10. Cleanup old history (30+ days) periodically
-    // Run cleanup with 1% probability to avoid overhead
+    // Periodic cleanup (1% probability)
     if (Math.random() < 0.01) {
       cleanupOldHistory().catch(err => console.error('Cleanup error:', err));
     }
 
-    // 10.5. Smart AI Router - Auto-detect work mode and update DB
+    // Auto-detect work mode
     await autoDetectAndUpdateWorkMode(userId, message);
-    const jarvisContext = await getJarvisContext(userId);
 
-    // 10.6. Tool Pre-Loading - Detect file refs, git context, errors from message
-    let preloadedContext = '';
-    const preloaded = preloadToolContext(message);
-    preloadedContext = formatPreloadedContext(preloaded);
-    if (preloadedContext) {
-      console.log(`[Tool Preloader] Loaded ${preloaded.length} context(s): ${preloaded.map(p => p.type).join(', ')}`);
-    }
+    // ── Stage 3: Enrichment (pipeline module) ──
+    const enrichResult = await enrichMessage(message, userId);
+    message = enrichResult.message;
 
-    // 10.7. Web Search Enrichment - ジェミー💎先行Web検索（事実・最新情報系のみ）
-    message = await maybeEnrichWithWebSearch(message);
+    // ── Stage 4: Claude Session ──
+    setClaudeStatus('processing', actionName);
+    // ピン更新（処理開始）
+    try {
+      const towerIdent: TowerIdentifier = { tenantId: 'telegram-bot', userId: String(userId), chatId: String(chatId) };
+      await updateTower(ctx, towerIdent, { status: 'running', currentStep: actionName });
+    } catch (e) { console.debug('[Tower] update failed:', e); }
 
-    // 11. Check for croppy: prefix and inject context
-    if (message.trim().toLowerCase().startsWith('croppy:')) {
-      console.log('[Text Handler] croppy: detected, injecting context...');
-      const originalPrompt = message.slice(7).trim(); // Remove "croppy:" prefix
-      message = 'croppy: ' + await buildCroppyPrompt(originalPrompt, userId);
-      console.log('[Text Handler] Context injected, new message length:', message.length);
-    }
-
-    // 11.5. Inject preloaded tool context if available
-    if (preloadedContext && !message.includes('croppy:')) {
-      message = message + '\n' + preloadedContext;
-    }
-
-    // 12. Send to Claude with streaming
+    const claudeStart = Date.now();
     const response = await session.sendMessageStreaming(
       message,
       username,
@@ -178,11 +161,12 @@ export async function handleText(ctx: Context): Promise<void> {
       chatId,
       ctx
     );
+    const claudeMs = Date.now() - claudeStart;
 
-    // 12. Save assistant response to chat history
+    // Save assistant response
     await saveChatMessage(userId, 'assistant', response);
 
-    // 12.2. Work Summary - 実装系タスクの場合、完了時にやったことをサマリー送信
+    // Work Summary
     const workSummary = extractWorkSummary(response);
     if (workSummary) {
       try {
@@ -198,77 +182,17 @@ export async function handleText(ctx: Context): Promise<void> {
       }
     }
 
-    // 12.3. Auto Review - コード変更をジェミー💎が自動レビュー（バックグラウンド）
-    const _reviewReplyId = state.replyToMessageId;
-    autoReviewWithGemini(response).then(async (review) => {
-      if (review) {
-        try {
-          await ctx.reply(`━━━━━━━━━━━━━━━\n${review}\n━━━━━━━━━━━━━━━`, {
-            ...(_reviewReplyId ? { reply_parameters: { message_id: _reviewReplyId } } : {}),
-          });
-        } catch (e) {
-          console.error('[Auto Review] Failed to send review:', e);
-        }
-      }
-    }).catch(err => console.error('[Auto Review] Background error:', err));
+    // ── Stage 5: Post-Process (pipeline module) ──
+    await runPostProcess({
+      ctx,
+      userId,
+      sessionId,
+      message,
+      response,
+      replyToMessageId: state.replyToMessageId,
+    });
 
-    // 13. Auto-update jarvis_context (task, phase, assumptions, decisions)
-    await autoUpdateContext(userId, response);
-
-    // 13.5. Learned Memory - DJの指示・好み・修正を自動学習して永続保存
-    processAndLearn(userId, message, response).catch(err =>
-      console.error('[Learned Memory] Background error:', err)
-    );
-
-    // 13.6. Session Summary - 20メッセージ毎にセッション要約を保存
-    _sessionMsgCount++;
-    if (_sessionMsgCount % 20 === 0) {
-      getChatHistory(userId, 50).then(history => {
-        if (history.length >= 10) {
-          saveSessionSummary(userId, sessionId, history).catch(err =>
-            console.error('[Session Summary] Background error:', err)
-          );
-        }
-      }).catch(() => {});
-    }
-
-    // 14. Auto-Resume Detection: Check if this is an interruptable task
-    const detectionResult = detectInterruptableTask(response, 'bot');
-    if (detectionResult.detected && detectionResult.confidence >= 0.85) {
-      console.log('[Auto-Resume] 🎯 Interruptable task detected:', {
-        task: detectionResult.taskDescription,
-        phase: detectionResult.phase,
-        priority: detectionResult.priority,
-        confidence: detectionResult.confidence,
-      });
-
-      // Get current context for snapshot
-      const jarvisContext = await getJarvisContext(userId);
-      const workMode = jarvisContext?.work_mode || 'coding';
-      const currentTask = jarvisContext?.current_task || detectionResult.taskDescription;
-      const currentPhase = jarvisContext?.current_phase || detectionResult.phase;
-
-      // Build snapshot data
-      const snapshotData: SnapshotData = {
-        task_description: detectionResult.taskDescription || currentTask || '不明なタスク',
-        next_action: `${detectionResult.phase || 'Phase不明'}の実装を続行`,
-        context_summary: response.substring(0, 500), // First 500 chars as summary
-        priority: detectionResult.priority,
-        auto_resume_eligible: true,
-      };
-
-      // Save snapshot to database
-      await saveInterruptSnapshot(
-        String(userId),
-        sessionId,
-        workMode,
-        currentTask,
-        currentPhase,
-        snapshotData
-      );
-    }
-
-    // 14. Complete action trace (success)
+    // Complete action trace
     const completedAt = Math.floor(Date.now() / 1000);
     const durationMs = Date.now() - startedAt;
     const outputsSummary = response.slice(0, 200);
@@ -281,24 +205,31 @@ export async function handleText(ctx: Context): Promise<void> {
       outputs_summary: outputsSummary,
     });
 
-    // 15. Check for phase completion and croppy approval
-    // (Skip in focus mode - will be buffered)
+    // Record metrics
+    recordMessageMetrics({
+      message_type: 'text',
+      enrichment_ms: enrichResult.enrichmentMs,
+      claude_latency_ms: claudeMs,
+      total_ms: durationMs,
+      context_size_chars: message.length,
+      success: true,
+    });
+
+    // Phase completion check
     const inFocusMode = await isFocusModeEnabled(userId);
     if (!inFocusMode) {
       await checkPhaseCompletionApproval(ctx, response);
     } else {
-      // Buffer phase completion notifications
       if (response.toLowerCase().includes('phase') && response.toLowerCase().includes('完了')) {
         await bufferNotification(userId, 'info', 'Phase完了検出（要承認確認）');
       }
     }
 
-    // 16. Audit log
+    // Audit log
     await auditLog(userId, username, "TEXT", message, response);
   } catch (error) {
     console.error("Error processing message:", error);
 
-    // Complete action trace (failed)
     const completedAt = Math.floor(Date.now() / 1000);
     const durationMs = Date.now() - startedAt;
     const errorSummary = String(error).slice(0, 200);
@@ -311,7 +242,13 @@ export async function handleText(ctx: Context): Promise<void> {
       error_summary: errorSummary,
     });
 
-    // Clean up any partial messages
+    recordMessageMetrics({
+      message_type: 'text',
+      total_ms: durationMs,
+      success: false,
+    });
+
+    // Clean up partial messages
     for (const toolMsg of state.toolMessages) {
       try {
         await ctx.api.deleteMessage(toolMsg.chat.id, toolMsg.message_id);
@@ -328,12 +265,17 @@ export async function handleText(ctx: Context): Promise<void> {
     if (errStr.includes("abort") || errStr.includes("cancel")) {
       await ctx.reply("🛑 Query stopped.", _errReplyOpts);
     } else if (errStr.includes("timeout") || errStr.includes("timed out") || errStr.includes("タイムアウト")) {
-      // タイムアウトはログのみ。部分レスポンスがあればそのまま残す
       console.warn("[Text Handler] Timeout (suppressed from user):", String(error).slice(0, 200));
     } else {
       await ctx.reply(`❌ Error: ${String(error).slice(0, 200)}`, _errReplyOpts);
     }
   } finally {
+    setClaudeStatus('idle');
+    // ピン更新（処理完了）
+    try {
+      const towerIdent: TowerIdentifier = { tenantId: 'telegram-bot', userId: String(userId), chatId: String(chatId) };
+      await updateTower(ctx, towerIdent, { status: 'idle' });
+    } catch (e) { console.debug('[Tower] update failed:', e); }
     stopProcessing();
     typing.stop();
   }
@@ -341,12 +283,10 @@ export async function handleText(ctx: Context): Promise<void> {
 
 /**
  * Claudeの応答からファイル操作・コマンド実行を抽出してサマリーを生成
- * 実装系タスク（ファイル変更があった場合）のみサマリーを返す
  */
 function extractWorkSummary(response: string): string | null {
   const actions: string[] = [];
 
-  // ファイル編集の検出
   const editMatches = response.matchAll(/(?:✏️|Edit|Edited)\s+(.+?\.\w+)/gi);
   for (const m of editMatches) {
     const file = m[1]?.split('/').pop() || m[1];
@@ -355,7 +295,6 @@ function extractWorkSummary(response: string): string | null {
     }
   }
 
-  // ファイル作成の検出
   const writeMatches = response.matchAll(/(?:📝|Write|Created|Wrote)\s+(.+?\.\w+)/gi);
   for (const m of writeMatches) {
     const file = m[1]?.split('/').pop() || m[1];
@@ -364,7 +303,6 @@ function extractWorkSummary(response: string): string | null {
     }
   }
 
-  // Bash実行の検出
   const bashMatches = response.matchAll(/(?:🔨|Bash|Running|Executed)[:：]?\s*`?(.+?)`?$/gim);
   for (const m of bashMatches) {
     const cmd = m[1]?.trim().slice(0, 60);
@@ -373,10 +311,8 @@ function extractWorkSummary(response: string): string | null {
     }
   }
 
-  // ファイル変更がなければサマリー不要（会話のみ）
   if (actions.length === 0) return null;
 
-  // 最大8件に制限
   const limited = actions.slice(0, 8);
   if (actions.length > 8) {
     limited.push(`... 他${actions.length - 8}件`);

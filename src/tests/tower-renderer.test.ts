@@ -47,7 +47,7 @@ describe('Tower Renderer', () => {
     const state: TowerState = { status: 'idle' };
     const rendered = renderTower(state);
 
-    expect(rendered).toBe('📌 タスクなし');
+    expect(rendered).toBe('📌 待機中');
   });
 
   test('should render single active task with elapsed time', () => {
@@ -125,7 +125,7 @@ describe('Tower Renderer', () => {
     const state: TowerState = { status: 'idle' };
     const rendered = renderTower(state);
 
-    expect(rendered).toBe('📌 タスクなし');
+    expect(rendered).toBe('📌 待機中');
   });
 
   // ==========================================================================
@@ -254,7 +254,7 @@ describe('Tower Renderer', () => {
 describe('Tower Renderer - Summary', () => {
   test('TaskShoot Dashboard acceptance criteria', () => {
     console.log('Acceptance criteria:');
-    console.log('- No active tasks -> "📌 タスクなし"');
+    console.log('- No active tasks -> "📌 待機中"');
     console.log('- Single task -> "⏱ {name}（{elapsed}）"');
     console.log('- Multiple tasks -> "⏱ name1(elapsed) | name2(elapsed)"');
     console.log('- maxLength truncation with "…"');

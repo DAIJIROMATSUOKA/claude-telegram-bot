@@ -16,7 +16,19 @@ import { controlTowerDB } from "../utils/control-tower-db";
 import { redactSensitiveData } from "../utils/redaction-filter";
 
 // Image extensions that need conversion (HEIC/HEIF → JPEG)
-const IMAGE_EXTENSIONS = [".heic", ".heif"];
+const HEIC_EXTENSIONS = [".heic", ".heif"];
+
+// All supported image extensions (including standard formats)
+const IMAGE_EXTENSIONS = [
+  ".heic",
+  ".heif",
+  ".jpg",
+  ".jpeg",
+  ".png",
+  ".gif",
+  ".webp",
+  ".bmp",
+];
 
 // Supported text file extensions
 const TEXT_EXTENSIONS = [
@@ -533,8 +545,7 @@ export async function handleDocument(ctx: Context): Promise<void> {
 
   const isImage =
     IMAGE_EXTENSIONS.includes(extension) ||
-    doc.mime_type === "image/heic" ||
-    doc.mime_type === "image/heif";
+    doc.mime_type?.startsWith("image/");
 
   if (!isPdf && !isText && !isArchiveFile && !isImage) {
     await ctx.reply(
@@ -571,25 +582,30 @@ export async function handleDocument(ctx: Context): Promise<void> {
     }
 
     try {
+      let imagePath = docPath;
+
       // Convert HEIC/HEIF to JPEG using sips (macOS built-in)
-      const jpegPath = docPath.replace(/\.[^.]+$/, ".jpg");
-      await Bun.$`sips -s format jpeg ${docPath} --out ${jpegPath}`.quiet();
-      console.log(`Converted ${fileName} → JPEG: ${jpegPath}`);
+      if (HEIC_EXTENSIONS.includes(extension)) {
+        const jpegPath = docPath.replace(/\.[^.]+$/, ".jpg");
+        await Bun.$`sips -s format jpeg ${docPath} --out ${jpegPath}`.quiet();
+        console.log(`Converted ${fileName} → JPEG: ${jpegPath}`);
+        imagePath = jpegPath;
+      }
 
       // Process as photo using the same flow as photo handler
       const { processPhotosFromDocument } = await import("./photo");
       await processPhotosFromDocument(
         ctx,
-        [jpegPath],
+        [imagePath],
         ctx.message?.caption,
         userId,
         username,
         chatId
       );
     } catch (error) {
-      console.error("HEIC conversion error:", error);
+      console.error("Image processing error:", error);
       await ctx.reply(
-        `❌ Failed to convert image: ${String(error).slice(0, 100)}`
+        `❌ Failed to process image: ${String(error).slice(0, 100)}`
       );
     }
     return;

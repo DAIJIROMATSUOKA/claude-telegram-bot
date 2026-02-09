@@ -26,6 +26,11 @@ CHECK_INTERVAL=30          # ヘルスチェック間隔（秒）
 SILENT_DEATH_THRESHOLD=900 # ログ無更新でサイレント死亡とみなす秒数（15分）※Bot側で5分間隔のheartbeatログあり
 MAX_RESTARTS_PER_HOUR=5    # 1時間あたりの最大再起動回数（無限ループ防止）
 RESTART_COUNT_FILE="/tmp/croppy-restart-count"
+BACKOFF_STATE_FILE="/tmp/croppy-backoff-state"
+
+# Exponential Backoff 設定
+# リスタート間隔: 0s → 10s → 60s → 300s → 1800s
+BACKOFF_DELAYS=(0 10 60 300 1800)
 
 # --- ログ関数 ---
 log() {
@@ -103,6 +108,64 @@ increment_restart_count() {
     fi
 }
 
+# --- Exponential Backoff ---
+get_backoff_level() {
+    if [ ! -f "$BACKOFF_STATE_FILE" ]; then
+        echo 0
+        return
+    fi
+    local level last_success
+    read -r level last_success < "$BACKOFF_STATE_FILE"
+    local now
+    now=$(date +%s)
+    local since_success=$(( now - last_success ))
+
+    # 10分成功が続いたらレベルをリセット
+    if [ "$since_success" -ge 600 ] && [ "$level" -gt 0 ]; then
+        echo 0
+        return
+    fi
+    echo "$level"
+}
+
+increment_backoff() {
+    local current_level
+    current_level=$(get_backoff_level)
+    local max_idx=$(( ${#BACKOFF_DELAYS[@]} - 1 ))
+    local new_level=$(( current_level + 1 ))
+    if [ "$new_level" -gt "$max_idx" ]; then
+        new_level=$max_idx
+    fi
+    echo "$new_level $(date +%s)" > "$BACKOFF_STATE_FILE"
+    log "BACKOFF: level $current_level → $new_level (next wait: ${BACKOFF_DELAYS[$new_level]}s)"
+
+    # 最大レベルに達したらTelegram通知
+    if [ "$new_level" -ge "$max_idx" ]; then
+        local token
+        token=$(grep TELEGRAM_BOT_TOKEN "$PROJECT_DIR/.env" 2>/dev/null | cut -d= -f2 | tr -d '"' | tr -d "'")
+        local chat_id
+        chat_id=$(grep TELEGRAM_ALLOWED_USERS "$PROJECT_DIR/.env" 2>/dev/null | cut -d= -f2 | tr -d '"' | tr -d "'" | cut -d, -f1)
+        if [ -n "$token" ] && [ -n "$chat_id" ]; then
+            curl -s -X POST "https://api.telegram.org/bot${token}/sendMessage" \
+                -d "chat_id=${chat_id}" \
+                -d "text=⚠️ Watchdog: 最大バックオフレベル到達。手動介入が必要な可能性あり。" > /dev/null 2>&1
+        fi
+    fi
+}
+
+reset_backoff() {
+    if [ -f "$BACKOFF_STATE_FILE" ]; then
+        rm -f "$BACKOFF_STATE_FILE"
+        log "BACKOFF: Reset to level 0 (bot is healthy)"
+    fi
+}
+
+get_backoff_delay() {
+    local level
+    level=$(get_backoff_level)
+    echo "${BACKOFF_DELAYS[$level]}"
+}
+
 # --- ヘルスチェック関数 ---
 
 # プロセス生存チェック
@@ -171,7 +234,16 @@ do_restart() {
         return 1
     fi
 
+    # Exponential Backoff: 待機
+    local delay
+    delay=$(get_backoff_delay)
+    if [ "$delay" -gt 0 ]; then
+        log "BACKOFF: ${delay}s 待機してからリスタート..."
+        sleep "$delay"
+    fi
+
     increment_restart_count
+    increment_backoff
 
     log "start-bot.sh を実行中..."
     if WATCHDOG_RESTART=1 RESTART_REASON="$reason" RESTART_TASK="watchdog自動復旧" bash "$RESTART_SCRIPT" >> "$WATCHDOG_LOG" 2>&1; then
@@ -196,28 +268,35 @@ main() {
     fi
 
     while true; do
+        local needs_restart=false
+        local restart_reason=""
+
         # チェック1: プロセス生存
         if ! check_process_alive; then
             log "ALERT: Botプロセスが見つからない"
-            do_restart "プロセス死亡を検出"
-            sleep "$CHECK_INTERVAL"
-            continue
+            needs_restart=true
+            restart_reason="プロセス死亡を検出"
         fi
 
         # チェック2: 409エラー
-        if check_409_error; then
+        if [ "$needs_restart" = false ] && check_409_error; then
             log "ALERT: 409 Conflictエラーを検出"
-            do_restart "409 Conflictエラー（多重起動）"
-            sleep "$CHECK_INTERVAL"
-            continue
+            needs_restart=true
+            restart_reason="409 Conflictエラー（多重起動）"
         fi
 
         # チェック3: サイレント死亡
-        if check_silent_death; then
+        if [ "$needs_restart" = false ] && check_silent_death; then
             log "ALERT: ログが${SILENT_DEATH_THRESHOLD}秒以上更新されていない"
-            do_restart "サイレント死亡の疑い（ログ無更新）"
-            sleep "$CHECK_INTERVAL"
-            continue
+            needs_restart=true
+            restart_reason="サイレント死亡の疑い（ログ無更新）"
+        fi
+
+        if [ "$needs_restart" = true ]; then
+            do_restart "$restart_reason"
+        else
+            # 全チェックOK → backoffリセット
+            reset_backoff
         fi
 
         sleep "$CHECK_INTERVAL"
