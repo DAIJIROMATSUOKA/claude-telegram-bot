@@ -61,17 +61,21 @@ async function processPhotos(
   // Mark processing started
   const stopProcessing = session.startProcessing();
 
-  // Build prompt
+  // Build prompt — pass file path only (don't trigger image rendering in CLI)
   let prompt: string;
   if (photoPaths.length === 1) {
+    const fname = photoPaths[0]!.split("/").pop();
     prompt = caption
-      ? `[Photo: ${photoPaths[0]}]\n\n${caption}`
-      : `Please analyze this image: ${photoPaths[0]}`;
+      ? `[Photo saved: ${fname} (path: ${photoPaths[0]})]\n\n${caption}`
+      : `[Photo saved: ${fname} (path: ${photoPaths[0]})]\nDJが画像を送った。キャプションなし。画像をReadで開かず、何について話したいか聞け。`;
   } else {
-    const pathsList = photoPaths.map((p, i) => `${i + 1}. ${p}`).join("\n");
+    const pathsList = photoPaths.map((p, i) => {
+      const fname = p.split("/").pop();
+      return `${i + 1}. ${fname} (path: ${p})`;
+    }).join("\n");
     prompt = caption
-      ? `[Photos:\n${pathsList}]\n\n${caption}`
-      : `Please analyze these ${photoPaths.length} images:\n${pathsList}`;
+      ? `[Photos saved:\n${pathsList}]\n\n${caption}`
+      : `[Photos saved:\n${pathsList}]\nDJが${photoPaths.length}枚の画像を送った。キャプションなし。画像をReadで開かず、何について話したいか聞け。`;
   }
 
   // Set conversation title (if new session)
@@ -213,22 +217,42 @@ export async function handlePhoto(ctx: Context): Promise<void> {
     return;
   }
 
-  // 4. Single photo - process immediately
-  if (!mediaGroupId && statusMsg) {
+  // 4. Single photo - process only if caption is provided
+  if (!mediaGroupId) {
+    const caption = ctx.message?.caption;
+    if (!caption) {
+      // No caption: save silently, don't invoke Claude
+      console.log(`Photo saved without caption: ${photoPath}`);
+      if (statusMsg) {
+        try {
+          await ctx.api.editMessageText(
+            statusMsg.chat.id,
+            statusMsg.message_id,
+            `📷 画像を保存した: ${photoPath.split("/").pop()}\nキャプション付きで送ると処理する。`
+          );
+        } catch (e) {
+          console.debug("Failed to edit status message:", e);
+        }
+      }
+      return;
+    }
+
     await processPhotos(
       ctx,
       [photoPath],
-      ctx.message?.caption,
+      caption,
       userId,
       username,
       chatId
     );
 
     // Clean up status message
-    try {
-      await ctx.api.deleteMessage(statusMsg.chat.id, statusMsg.message_id);
-    } catch (error) {
-      console.debug("Failed to delete status message:", error);
+    if (statusMsg) {
+      try {
+        await ctx.api.deleteMessage(statusMsg.chat.id, statusMsg.message_id);
+      } catch (error) {
+        console.debug("Failed to delete status message:", error);
+      }
     }
     return;
   }

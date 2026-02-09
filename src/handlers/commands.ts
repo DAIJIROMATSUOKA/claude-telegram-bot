@@ -43,6 +43,11 @@ import {
   isFocusModeEnabled,
 } from "../utils/focus-mode";
 import { parseAlarmMessage } from "./auto-rules";
+import { formatMetricsForStatus } from "../utils/metrics";
+import { memoryGatewayBreaker, geminiBreaker } from "../utils/circuit-breaker";
+import { getBgTaskSummary } from "../utils/bg-task-manager";
+import { updateTower } from "../utils/tower-manager";
+import type { TowerIdentifier } from "../types/control-tower";
 
 /**
  * /start - Show welcome message and status.
@@ -212,6 +217,27 @@ export async function handleStatus(ctx: Context): Promise<void> {
   // Working directory
   lines.push(`\n📁 Working dir: <code>${WORKING_DIR}</code>`);
 
+  // Circuit Breaker status
+  const mgStatus = memoryGatewayBreaker.getStatus();
+  const gmStatus = geminiBreaker.getStatus();
+  lines.push(`\n🔌 Circuit Breakers:`);
+  lines.push(`   MemoryGW: ${mgStatus.state} (成功率${mgStatus.successRate}%)`);
+  lines.push(`   Gemini: ${gmStatus.state} (成功率${gmStatus.successRate}%)`);
+
+  // Background task summary
+  const bgSummary = getBgTaskSummary();
+  if (bgSummary.total > 0) {
+    lines.push(`\n⚙️ BG Tasks: ${bgSummary.successes}/${bgSummary.total} OK`);
+    if (bgSummary.recentFailures.length > 0) {
+      for (const f of bgSummary.recentFailures.slice(-3)) {
+        lines.push(`   ❌ ${f.name}: ${f.error?.slice(0, 60)}`);
+      }
+    }
+  }
+
+  // Performance metrics
+  lines.push(`\n${formatMetricsForStatus(1)}`);
+
   await ctx.reply(lines.join("\n"), { parse_mode: "HTML" });
 }
 
@@ -371,6 +397,15 @@ export async function handleTaskStart(ctx: Context): Promise<void> {
   tracker[taskName] = new Date().toISOString();
   writeTaskTracker(tracker);
 
+  // ピン更新
+  try {
+    const chatId = ctx.chat?.id;
+    if (chatId) {
+      const towerIdent: TowerIdentifier = { tenantId: 'telegram-bot', userId: String(userId), chatId: String(chatId) };
+      await updateTower(ctx, towerIdent, { status: 'running', currentStep: taskName });
+    }
+  } catch (e) { console.debug('[Tower] update failed:', e); }
+
   try {
     const scriptPath = join(PROJECT_ROOT, "scripts", "timer-sync.sh");
     execSync(`"${scriptPath}" START "${taskName}"`, { encoding: "utf-8" });
@@ -397,9 +432,18 @@ export async function handleTaskStop(ctx: Context): Promise<void> {
   const taskName = text.replace(/^\/task_stop\s*/, "").trim() || "Unnamed Task";
 
   // Remove from task-tracker.json
-  const tracker = readTaskTracker();
-  delete tracker[taskName];
-  writeTaskTracker(tracker);
+  const trackerStop = readTaskTracker();
+  delete trackerStop[taskName];
+  writeTaskTracker(trackerStop);
+
+  // ピン更新
+  try {
+    const chatId = ctx.chat?.id;
+    if (chatId) {
+      const towerIdent: TowerIdentifier = { tenantId: 'telegram-bot', userId: String(userId), chatId: String(chatId) };
+      await updateTower(ctx, towerIdent, { status: 'idle' });
+    }
+  } catch (e) { console.debug('[Tower] update failed:', e); }
 
   try {
     const scriptPath = join(PROJECT_ROOT, "scripts", "timer-sync.sh");
@@ -427,9 +471,18 @@ export async function handleTaskPause(ctx: Context): Promise<void> {
   const taskName = text.replace(/^\/task_pause\s*/, "").trim() || "Unnamed Task";
 
   // Remove from task-tracker.json (paused = not active)
-  const tracker = readTaskTracker();
-  delete tracker[taskName];
-  writeTaskTracker(tracker);
+  const trackerPause = readTaskTracker();
+  delete trackerPause[taskName];
+  writeTaskTracker(trackerPause);
+
+  // ピン更新
+  try {
+    const chatId = ctx.chat?.id;
+    if (chatId) {
+      const towerIdent: TowerIdentifier = { tenantId: 'telegram-bot', userId: String(userId), chatId: String(chatId) };
+      await updateTower(ctx, towerIdent, { status: 'idle' });
+    }
+  } catch (e) { console.debug('[Tower] update failed:', e); }
 
   try {
     const scriptPath = join(PROJECT_ROOT, "scripts", "timer-sync.sh");

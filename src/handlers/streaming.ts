@@ -18,6 +18,7 @@ import {
 import { getSessionIdFromContext } from "../utils/session-helper.js";
 import { updateStatus } from "../utils/control-tower-helper.js";
 import { controlTowerDB } from "../utils/control-tower-db.js";
+import { setClaudeStatus } from "../utils/tower-renderer.js";
 
 /**
  * Create inline keyboard for ask_user options.
@@ -105,6 +106,7 @@ export function createStatusCallback(ctx: Context, state: StreamingState): Statu
         // Log thinking (no Telegram notification)
         const preview = content.length > 500 ? content.slice(0, 500) + "..." : content;
         console.log(`🧠 Thinking: ${preview}`);
+        setClaudeStatus('processing', 'thinking');
 
         // Record to D1
         if (sessionId) {
@@ -122,6 +124,7 @@ export function createStatusCallback(ctx: Context, state: StreamingState): Statu
       } else if (statusType === "tool") {
         // Log tool execution (no Telegram notification)
         console.log(`🔧 Tool: ${content}`);
+        setClaudeStatus('tool', content);
 
         // Record to D1
         if (sessionId) {
@@ -246,6 +249,7 @@ export function createStatusCallback(ctx: Context, state: StreamingState): Statu
           }
         }
       } else if (statusType === "done") {
+        setClaudeStatus('idle');
         // Record to D1
         if (sessionId) {
           await updateStatus(sessionId, 'done', null, null, ctx);

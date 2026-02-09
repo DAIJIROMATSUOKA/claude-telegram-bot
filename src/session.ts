@@ -27,8 +27,9 @@ import {
 import { formatToolStatus } from "./formatting";
 import { checkPendingAskUserRequests } from "./handlers/streaming";
 import { checkCommandSafety, isPathAllowed } from "./security";
-import { getLearnedMemories, formatLearnedMemoryForPrompt } from "./utils/learned-memory";
+import { getLearnedMemories, formatLearnedMemoryForPrompt, filterRelevantMemories } from "./utils/learned-memory";
 import { getRecentSessionSummaries, formatSessionSummariesForPrompt } from "./utils/session-summary";
+import { memoryGatewayBreaker } from "./utils/circuit-breaker";
 import type {
   SavedSession,
   SessionHistory,
@@ -43,35 +44,35 @@ async function fetchJarvisContext(): Promise<string> {
   const MEMORY_GATEWAY_URL = process.env.MEMORY_GATEWAY_URL || 'https://jarvis-memory-gateway.jarvis-matsuoka.workers.dev';
   const GATEWAY_API_KEY = process.env.GATEWAY_API_KEY || '';
 
-  // Try memory-gateway API first
-  try {
+  // Try memory-gateway API first (Circuit Breaker経由)
+  const apiResult = await memoryGatewayBreaker.execute(async () => {
     const response = await fetch(`${MEMORY_GATEWAY_URL}/api/memory/jarvis_context`, {
       headers: {
         'Authorization': `Bearer ${GATEWAY_API_KEY}`,
       },
-      signal: AbortSignal.timeout(1000) // 1秒タイムアウト
+      signal: AbortSignal.timeout(1000)
     });
-    if (response.ok) {
-      const data = await response.json() as {
-        current_task?: string;
-        current_phase?: string;
-        current_assumption?: string;
-        important_decisions?: string[];
-      };
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
-      const parts: string[] = [];
-      if (data.current_task) parts.push(`タスク: ${data.current_task}`);
-      if (data.current_phase) parts.push(`Phase: ${data.current_phase}`);
-      if (data.current_assumption) parts.push(`前提: ${data.current_assumption}`);
-      if (data.important_decisions?.length) {
-        parts.push(`重要な決定: ${data.important_decisions.join(", ")}`);
-      }
+    const data = await response.json() as {
+      current_task?: string;
+      current_phase?: string;
+      current_assumption?: string;
+      important_decisions?: string[];
+    };
 
-      if (parts.length > 0) return parts.join("\n");
+    const parts: string[] = [];
+    if (data.current_task) parts.push(`タスク: ${data.current_task}`);
+    if (data.current_phase) parts.push(`Phase: ${data.current_phase}`);
+    if (data.current_assumption) parts.push(`前提: ${data.current_assumption}`);
+    if (data.important_decisions?.length) {
+      parts.push(`重要な決定: ${data.important_decisions.join(", ")}`);
     }
-  } catch (error) {
-    console.warn(`Memory gateway unavailable, falling back to file: ${error}`);
-  }
+
+    return parts.length > 0 ? parts.join("\n") : "";
+  }, "" /* fallback: empty string */);
+
+  if (apiResult) return apiResult;
 
   // Fallback to local jarvis_context file
   try {
@@ -118,8 +119,7 @@ async function fetchChatHistory(): Promise<string> {
   const MEMORY_GATEWAY_URL = process.env.MEMORY_GATEWAY_URL || 'https://jarvis-memory-gateway.jarvis-matsuoka.workers.dev';
   const GATEWAY_API_KEY = process.env.GATEWAY_API_KEY || '';
 
-  try {
-    // Use /v1/db/query endpoint to fetch chat history
+  return memoryGatewayBreaker.execute(async () => {
     const response = await fetch(`${MEMORY_GATEWAY_URL}/v1/db/query`, {
       method: 'POST',
       headers: {
@@ -133,7 +133,7 @@ async function fetchChatHistory(): Promise<string> {
               LIMIT ?`,
         params: [50],
       }),
-      signal: AbortSignal.timeout(3000) // 3秒タイムアウト
+      signal: AbortSignal.timeout(3000)
     });
 
     if (!response.ok) {
@@ -165,10 +165,7 @@ async function fetchChatHistory(): Promise<string> {
 
     console.log(`[fetchChatHistory] Fetched ${lines.length} messages (${reversed.length - Math.min(reversed.length, 15)} summarized + ${Math.min(reversed.length, 15)} full)`);
     return lines.join("\n");
-  } catch (error) {
-    console.warn(`Failed to fetch chat_history from Memory Gateway: ${error}`);
-    return "";
-  }
+  }, "" /* fallback: empty string */);
 }
 
 /**
@@ -340,18 +337,28 @@ class ClaudeSession {
       }
     )}]\n\n`;
 
-    // Fetch all context from memory-gateway in parallel
+    // 段階的フォールバック: タイムバジェット2秒。
+    // 個別のCircuit Breakerが効いてる場合はさらに速い（即fallback）。
+    const contextFetchStart = Date.now();
+    const CONTEXT_BUDGET_MS = 2000;
+
+    // 全部並列で開始し、バジェット超過分は空で返す
+    const withBudget = <T>(promise: Promise<T>, fallback: T): Promise<T> => {
+      const budget = new Promise<T>((resolve) =>
+        setTimeout(() => resolve(fallback), CONTEXT_BUDGET_MS)
+      );
+      return Promise.race([promise, budget]);
+    };
+
     const [jarvisContext, chatHistory, learnedMemories, sessionSummaries] = await Promise.all([
-      fetchJarvisContext(),
-      fetchChatHistory(),
-      getLearnedMemories(userId, 30).catch(() => []),
-      getRecentSessionSummaries(userId, 5).catch(() => []),
+      withBudget(fetchJarvisContext(), ""),
+      withBudget(fetchChatHistory(), ""),
+      withBudget(getLearnedMemories(userId, 30).catch(() => []), []),
+      withBudget(getRecentSessionSummaries(userId, 5).catch(() => []), []),
     ]);
 
-    console.log("[Context Injection] jarvisContext:", jarvisContext || "(none)");
-    console.log("[Context Injection] chatHistory:", chatHistory ? `${chatHistory.split('\n').length} lines` : "(none)");
-    console.log("[Context Injection] learnedMemories:", learnedMemories.length, "items");
-    console.log("[Context Injection] sessionSummaries:", sessionSummaries.length, "items");
+    const contextFetchMs = Date.now() - contextFetchStart;
+    console.log(`[Context Injection] Fetched in ${contextFetchMs}ms — jarvis:${jarvisContext ? 'ok' : 'empty'} chat:${chatHistory ? chatHistory.split('\n').length + 'lines' : 'empty'} learned:${learnedMemories.length} summaries:${sessionSummaries.length}`);
 
     // Build context block - always include SYSTEM CONTEXT
     const contextParts: string[] = ["[SYSTEM CONTEXT]"];
@@ -360,7 +367,9 @@ class ClaudeSession {
     contextParts.push("");
 
     // Learned preferences (highest priority - DJが過去に教えたルール)
-    const learnedBlock = formatLearnedMemoryForPrompt(learnedMemories);
+    // Semantic Retrieval: メッセージに関連するメモリのみ注入（コンテキスト膨張防止）
+    const relevantMemories = filterRelevantMemories(learnedMemories, message, 15);
+    const learnedBlock = formatLearnedMemoryForPrompt(relevantMemories);
     if (learnedBlock) {
       contextParts.push(learnedBlock);
       contextParts.push("");

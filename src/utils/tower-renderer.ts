@@ -39,6 +39,17 @@ export interface RenderOptions {
 const MAX_TOWER_LENGTH = 800;
 const TASK_TRACKER_PATH = `${homedir()}/.task-tracker.json`;
 
+// Claude処理状態（グローバル、text.tsから更新される）
+let _claudeStatus: { state: 'idle' | 'processing' | 'tool'; detail?: string; startedAt?: number } = { state: 'idle' };
+
+export function setClaudeStatus(state: 'idle' | 'processing' | 'tool', detail?: string): void {
+  _claudeStatus = { state, detail, startedAt: state !== 'idle' ? Date.now() : undefined };
+}
+
+export function getClaudeStatus(): typeof _claudeStatus {
+  return _claudeStatus;
+}
+
 // ============================================================================
 // Task Tracker Reader
 // ============================================================================
@@ -108,25 +119,35 @@ export function renderTower(
 ): string {
   const { maxLength = MAX_TOWER_LENGTH } = options;
 
-  // 1行表示: 進行中タスクのみ
+  const parts: string[] = [];
+
+  // 1. Claude処理状態
+  const claude = _claudeStatus;
+  if (claude.state === 'processing') {
+    const elapsed = claude.startedAt ? Math.floor((Date.now() - claude.startedAt) / 1000) : 0;
+    parts.push(`▶ 処理中（${elapsed}s）`);
+  } else if (claude.state === 'tool') {
+    const detail = claude.detail ? claude.detail.slice(0, 30) : '実行中';
+    parts.push(`🔧 ${detail}`);
+  }
+
+  // 2. 進行中タスク
   const activeTasks = readActiveTasks();
-
-  if (activeTasks.length === 0) {
-    return '📌 タスクなし';
-  }
-
   if (activeTasks.length === 1) {
-    const t = activeTasks[0];
-    return `⏱ ${t.name}（${t.elapsed}）`;
+    const t = activeTasks[0]!;
+    parts.push(`⏱ ${t.name}（${t.elapsed}）`);
+  } else if (activeTasks.length > 1) {
+    const taskSummary = activeTasks
+      .map(t => `${t.name}(${t.elapsed})`)
+      .join(' | ');
+    parts.push(`⏱ ${taskSummary}`);
   }
 
-  // 複数タスク: 1行にまとめる
-  const summary = activeTasks
-    .map(t => `${t.name}(${t.elapsed})`)
-    .join(' | ');
-  const line = `⏱ ${summary}`;
+  if (parts.length === 0) {
+    return '📌 待機中';
+  }
 
-  // 長すぎる場合は切り詰め
+  const line = parts.join('\n');
   if (line.length > maxLength) {
     return line.slice(0, maxLength - 1) + '…';
   }

@@ -247,6 +247,85 @@ export async function getLearnedMemories(
 }
 
 /**
+ * メッセージに対する関連度スコアを計算（キーワード一致ベース）
+ * ベクトル検索の代替 — 外部API不要で即時実行可能
+ */
+function computeRelevanceScore(memory: LearnedMemory, message: string): number {
+  const msgLower = message.toLowerCase();
+  const memLower = memory.content.toLowerCase();
+
+  // 1. カテゴリ基礎スコア（rule は常に重要）
+  const categoryBonus: Record<string, number> = {
+    rule: 0.5,
+    correction: 0.3,
+    preference: 0.2,
+    workflow: 0.1,
+    fact: 0.1,
+  };
+  let score = categoryBonus[memory.category] || 0;
+
+  // 2. confidence スコア
+  score += memory.confidence * 0.3;
+
+  // 3. キーワード一致スコア
+  // メモリの内容を単語に分割し、メッセージに含まれる割合を計算
+  const memWords = memLower
+    .replace(/[、。！？「」（）\s]+/g, ' ')
+    .split(' ')
+    .filter(w => w.length >= 2); // 2文字以上の単語のみ
+
+  if (memWords.length > 0) {
+    const matchCount = memWords.filter(w => msgLower.includes(w)).length;
+    score += (matchCount / memWords.length) * 0.4;
+  }
+
+  // 4. 【重要】マーク付きは常に高スコア
+  if (memory.content.startsWith('【重要】')) {
+    score += 0.5;
+  }
+
+  return Math.min(score, 1.0);
+}
+
+/**
+ * メッセージに関連するメモリだけをフィルタリングして返す
+ * @param memories 全メモリ
+ * @param message 現在のメッセージ
+ * @param maxItems 最大件数（デフォルト: 15）
+ */
+export function filterRelevantMemories(
+  memories: LearnedMemory[],
+  message: string,
+  maxItems: number = 15
+): LearnedMemory[] {
+  if (memories.length <= maxItems) return memories;
+
+  // rule カテゴリは常に含める
+  const rules = memories.filter(m => m.category === 'rule');
+  const nonRules = memories.filter(m => m.category !== 'rule');
+
+  // 非ルールを関連度でスコアリング・ソート
+  const scored = nonRules.map(m => ({
+    memory: m,
+    score: computeRelevanceScore(m, message),
+  }));
+  scored.sort((a, b) => b.score - a.score);
+
+  // ルール全部 + 残りは上位をmaxItemsまで
+  const remaining = maxItems - rules.length;
+  const selected = [
+    ...rules,
+    ...scored.slice(0, Math.max(0, remaining)).map(s => s.memory),
+  ];
+
+  if (memories.length > selected.length) {
+    console.log(`[Learned Memory] Filtered ${memories.length} → ${selected.length} items (relevance-based)`);
+  }
+
+  return selected;
+}
+
+/**
  * 学習メモリをプロンプト用に整形
  */
 export function formatLearnedMemoryForPrompt(memories: LearnedMemory[]): string {

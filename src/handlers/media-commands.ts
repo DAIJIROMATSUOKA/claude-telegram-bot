@@ -112,7 +112,7 @@ async function runAiMedia(args: string[], opts: RunOptions): Promise<MediaResult
       try {
         // stdout should be JSON on the last line
         const lines = stdout.trim().split("\n");
-        const jsonLine = lines[lines.length - 1];
+        const jsonLine = lines[lines.length - 1] ?? "";
         resolve(JSON.parse(jsonLine));
       } catch (e) {
         resolve({
@@ -141,9 +141,15 @@ async function downloadPhoto(ctx: Context): Promise<string | null> {
 
     if (msg.photo && msg.photo.length > 0) {
       // Get highest resolution photo
-      fileId = msg.photo[msg.photo.length - 1].file_id;
-    } else if (msg.document && msg.document.mime_type?.startsWith("image/")) {
-      fileId = msg.document.file_id;
+      fileId = msg.photo[msg.photo.length - 1]!.file_id;
+    } else if (msg.document) {
+      // Accept image documents by mime_type OR file extension (HEIC often has wrong mime)
+      const mime = msg.document.mime_type || "";
+      const fname = (msg.document.file_name || "").toLowerCase();
+      const imageExts = [".heic", ".heif", ".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tiff"];
+      if (mime.startsWith("image/") || imageExts.some(ext => fname.endsWith(ext))) {
+        fileId = msg.document.file_id;
+      }
     }
 
     if (!fileId) return null;
@@ -157,10 +163,25 @@ async function downloadPhoto(ctx: Context): Promise<string | null> {
     const response = await fetch(url);
     if (!response.ok) return null;
 
-    const ext = filePath.split(".").pop() || "jpg";
+    const ext = (filePath.split(".").pop() || "jpg").toLowerCase();
     const localPath = join(WORKING_DIR, `input_${Date.now()}.${ext}`);
     const buffer = Buffer.from(await response.arrayBuffer());
     writeFileSync(localPath, buffer);
+
+    // Convert HEIC/HEIF to JPEG using macOS sips (more reliable than PIL)
+    if (ext === "heic" || ext === "heif") {
+      const jpegPath = localPath.replace(/\.[^.]+$/, ".jpg");
+      try {
+        const proc = Bun.spawnSync(["sips", "-s", "format", "jpeg", localPath, "--out", jpegPath]);
+        if (proc.exitCode === 0 && existsSync(jpegPath)) {
+          try { unlinkSync(localPath); } catch {}
+          console.log(`[media] Converted HEIC → JPEG: ${jpegPath}`);
+          return jpegPath;
+        }
+      } catch (e) {
+        console.error("[media] HEIC conversion failed, using original:", e);
+      }
+    }
 
     return localPath;
   } catch (e) {
@@ -198,9 +219,11 @@ export async function handleImagine(ctx: Context): Promise<void> {
       return;
     }
 
-    // Send the image
-    await ctx.replyWithPhoto(new InputFile(result.path), {
+    // Send as document (file link, no inline preview, no thumbnail)
+    const imagineFilename = `imagine_${Date.now()}.png`;
+    await ctx.replyWithDocument(new InputFile(result.path, imagineFilename), {
       caption: `🎨 ${prompt}\n⏱ ${result.elapsed}秒`,
+      disable_content_type_detection: true,
     });
 
     // Delete status message
@@ -225,7 +248,7 @@ export async function handleEdit(ctx: Context): Promise<void> {
   const prompt = text.replace(/^\/edit\s*/i, "").trim();
 
   if (!prompt) {
-    await ctx.reply("使い方: 写真に返信して /edit <指示>\n例: /edit 髪を金髪にして");
+    await ctx.reply("使い方: 写真に返信して /edit <指示>\n例: /edit 髪を金髪にして\n\nオプション:\n--denoise 0.7 (変更の強さ 0.0〜1.0)\n--face-mask (顔保護を有効化)\n--face-protect 0.5 (顔保護レベル 0.0〜1.0)\n--neg \"避けたい内容\"\n--pos \"追加指示\"\n\n※顔保護はデフォルト無効");
     return;
   }
 
@@ -235,7 +258,7 @@ export async function handleEdit(ctx: Context): Promise<void> {
     return;
   }
 
-  const statusMsg = await ctx.reply("✏️ 画像編集中... (FLUX Kontext, ~5-10分)");
+  const statusMsg = await ctx.reply("✏️ 画像編集中... (FLUX Dev img2img, ~5-10分)");
   const chatId = ctx.chat!.id;
 
   try {
@@ -277,10 +300,10 @@ export async function handleEdit(ctx: Context): Promise<void> {
       cleanPrompt = cleanPrompt.replace(/--denoise\s+[\d.]+/, "").trim();
     }
 
-    // --no-face-mask
-    if (cleanPrompt.includes("--no-face-mask")) {
-      editArgs.push("--no-face-mask");
-      cleanPrompt = cleanPrompt.replace("--no-face-mask", "").trim();
+    // --face-mask to enable face protection (off by default)
+    if (cleanPrompt.includes("--face-mask")) {
+      editArgs.push("--face-mask");
+      cleanPrompt = cleanPrompt.replace("--face-mask", "").trim();
     }
 
     // --face-protect N (0.0〜1.0, default 0.35)
@@ -322,8 +345,10 @@ export async function handleEdit(ctx: Context): Promise<void> {
       return;
     }
 
-    await ctx.replyWithPhoto(new InputFile(result.path), {
+    const filename = `edit_${Date.now()}.png`;
+    await ctx.replyWithDocument(new InputFile(result.path, filename), {
       caption: `✏️ ${prompt}\n⏱ ${result.elapsed}秒`,
+      disable_content_type_detection: true,
     });
 
     await ctx.api.deleteMessage(ctx.chat!.id, statusMsg.message_id).catch(() => {});
@@ -333,6 +358,126 @@ export async function handleEdit(ctx: Context): Promise<void> {
   } catch (e: any) {
     await ctx.api.editMessageText(
       ctx.chat!.id,
+      statusMsg.message_id,
+      `❌ エラー: ${e.message?.slice(0, 200) || "unknown"}`
+    );
+  }
+}
+
+// ============================================================
+// /outpaint handler
+// ============================================================
+export async function handleOutpaint(ctx: Context): Promise<void> {
+  const text = ctx.message?.text || "";
+  const prompt = text.replace(/^\/outpaint\s*/i, "").trim();
+
+  if (!prompt) {
+    await ctx.reply("使い方: 写真に返信して /outpaint <指示>\n例: /outpaint full body, standing, natural skin\n\nオプション:\n--direction bottom|top|left|right (拡張方向, デフォルト: bottom)\n--expand 512 (拡張ピクセル数, 0=自動)\n--denoise 0.85 (変更の強さ)\n--feathering 128 (境界ぼかし幅, デフォルト: 128)\n--neg \"避けたい内容\"");
+    return;
+  }
+
+  if (!ctx.message?.reply_to_message) {
+    await ctx.reply("⚠️ 拡張する写真に返信してください");
+    return;
+  }
+
+  const statusMsg = await ctx.reply("🖼️ 画像拡張中... (FLUX Dev outpaint, ~15-30分)");
+  const chatId = ctx.chat!.id;
+
+  try {
+    const imagePath = await downloadPhoto(ctx);
+    if (!imagePath) {
+      await ctx.api.editMessageText(
+        chatId,
+        statusMsg.message_id,
+        "❌ 写真のダウンロードに失敗しました"
+      );
+      return;
+    }
+
+    let lastUpdate = 0;
+    const UPDATE_INTERVAL = 4_000;
+    const debugUpdate = (line: string) => {
+      const now = Date.now();
+      if (now - lastUpdate < UPDATE_INTERVAL) return;
+      lastUpdate = now;
+      const short = line.length > 120 ? line.slice(0, 120) + "…" : line;
+      ctx.api.editMessageText(
+        chatId,
+        statusMsg.message_id,
+        `🖼️ 拡張中...\n<code>${escapeHtml(short)}</code>`,
+        { parse_mode: "HTML" }
+      ).catch(() => {});
+    };
+
+    let cleanPrompt = prompt;
+    const outpaintArgs = ["outpaint", "--image", imagePath];
+
+    // --direction
+    const dirMatch = cleanPrompt.match(/--direction\s+(bottom|top|left|right)/);
+    if (dirMatch?.[1]) {
+      outpaintArgs.push("--direction", dirMatch[1]);
+      cleanPrompt = cleanPrompt.replace(/--direction\s+\S+/, "").trim();
+    }
+
+    // --expand N
+    const expandMatch = cleanPrompt.match(/--expand\s+(\d+)/);
+    if (expandMatch?.[1]) {
+      outpaintArgs.push("--expand", expandMatch[1]);
+      cleanPrompt = cleanPrompt.replace(/--expand\s+\d+/, "").trim();
+    }
+
+    // --denoise N
+    const denoiseMatch = cleanPrompt.match(/--denoise\s+([\d.]+)/);
+    if (denoiseMatch?.[1]) {
+      outpaintArgs.push("--denoise", denoiseMatch[1]);
+      cleanPrompt = cleanPrompt.replace(/--denoise\s+[\d.]+/, "").trim();
+    }
+
+    // --feathering N
+    const featherMatch = cleanPrompt.match(/--feathering\s+(\d+)/);
+    if (featherMatch?.[1]) {
+      outpaintArgs.push("--feathering", featherMatch[1]);
+      cleanPrompt = cleanPrompt.replace(/--feathering\s+\d+/, "").trim();
+    }
+
+    // --neg "negative prompt"
+    const negMatch = cleanPrompt.match(/--neg\s+"([^"]+)"/);
+    if (negMatch?.[1]) {
+      outpaintArgs.push("--negative-prompt", negMatch[1]);
+      cleanPrompt = cleanPrompt.replace(/--neg\s+"[^"]+"/, "").trim();
+    }
+
+    outpaintArgs.push("--prompt", cleanPrompt);
+
+    const result = await runAiMedia(
+      outpaintArgs,
+      { timeout: TIMEOUT_VIDEO, onStderr: debugUpdate }
+    );
+
+    if (!result.ok || !result.path) {
+      await ctx.api.editMessageText(
+        chatId,
+        statusMsg.message_id,
+        `❌ 拡張失敗: ${result.error?.slice(-500) || "unknown error"}`
+      );
+      cleanupFile(imagePath);
+      return;
+    }
+
+    const filename = `outpaint_${Date.now()}.png`;
+    await ctx.replyWithDocument(new InputFile(result.path, filename), {
+      caption: `🖼️ ${prompt}\n⏱ ${result.elapsed}秒`,
+      disable_content_type_detection: true,
+    });
+
+    await ctx.api.deleteMessage(chatId, statusMsg.message_id).catch(() => {});
+
+    cleanupFile(imagePath);
+    cleanupFile(result.path);
+  } catch (e: any) {
+    await ctx.api.editMessageText(
+      chatId,
       statusMsg.message_id,
       `❌ エラー: ${e.message?.slice(0, 200) || "unknown"}`
     );
@@ -358,11 +503,11 @@ export async function handleAnimate(ctx: Context): Promise<void> {
 
   const hasReply = !!ctx.message?.reply_to_message;
   const statusMsg = await ctx.reply(
-    `🎬 動画生成中... (Wan2.2, ~15-30分)\n${hasReply ? "📸 Image-to-Video" : "📝 Text-to-Video"}`
+    `🎬 動画生成中... (Wan2.2, 10秒/240f, 長時間かかります)\n${hasReply ? "📸 Image-to-Video" : "📝 Text-to-Video"}`
   );
 
   try {
-    const args = ["animate", "--prompt", prompt];
+    const args = ["animate", "--prompt", prompt, "--frames", "240"];
 
     // If replying to a photo, download it
     if (hasReply) {
@@ -432,5 +577,6 @@ function cleanupFile(path: string): void {
 export function registerMediaCommands(bot: any): void {
   bot.command("imagine", handleImagine);
   bot.command("edit", handleEdit);
+  bot.command("outpaint", handleOutpaint);
   bot.command("animate", handleAnimate);
 }
