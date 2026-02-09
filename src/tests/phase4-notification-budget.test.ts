@@ -60,9 +60,9 @@ describe('Phase 4 Notification Budget Tests', () => {
     await notificationBuffer.endPhase(ctx, true);
     // endPhase sends exactly 1 notification
     expect(notifications.length).toBe(1);
-    expect(notifications[0].text).toContain('✅');
-    expect(notifications[0].text).toContain('実装開始');
-    expect(notifications[0].options).toEqual({ disable_notification: false });
+    expect(notifications[0]!.text).toContain('✅');
+    expect(notifications[0]!.text).toContain('実装開始');
+    expect(notifications[0]!.options).toEqual({ disable_notification: false });
   });
 
   test('End notification uses ━━━━━━━━━━━━━━━ separator format', async () => {
@@ -72,9 +72,9 @@ describe('Phase 4 Notification Budget Tests', () => {
     await notificationBuffer.endPhase(ctx, true);
 
     expect(notifications.length).toBe(1);
-    expect(notifications[0].text).toContain('━━━━━━━━━━━━━━━');
+    expect(notifications[0]!.text).toContain('━━━━━━━━━━━━━━━');
     // The message is wrapped: ━━━━━━━━━━━━━━━\n{summary}\n━━━━━━━━━━━━━━━
-    const separatorCount = (notifications[0].text.match(/━━━━━━━━━━━━━━━/g) || []).length;
+    const separatorCount = (notifications[0]!.text.match(/━━━━━━━━━━━━━━━/g) || []).length;
     expect(separatorCount).toBeGreaterThanOrEqual(2);
   });
 
@@ -97,10 +97,10 @@ describe('Phase 4 Notification Budget Tests', () => {
     expect(notifications.length).toBe(1);
 
     // Summary shows tool activities under 📋 やったこと: with bullet descriptions
-    expect(notifications[0].text).toContain('📋 やったこと:');
-    expect(notifications[0].text).toContain('• Read file.ts');
-    expect(notifications[0].text).toContain('• Edit file.ts');
-    expect(notifications[0].text).toContain('🧠 思考: 1回');
+    expect(notifications[0]!.text).toContain('📋 やったこと:');
+    expect(notifications[0]!.text).toContain('• Read file.ts');
+    expect(notifications[0]!.text).toContain('• Edit file.ts');
+    expect(notifications[0]!.text).toContain('🧠 思考: 1回');
   });
 
   test('Text responses are buffered and included in phase completion', async () => {
@@ -121,10 +121,10 @@ describe('Phase 4 Notification Budget Tests', () => {
     expect(notifications.length).toBe(1);
 
     // Text should be in the final notification, joined by ---
-    expect(notifications[0].text).toContain('First response paragraph');
-    expect(notifications[0].text).toContain('Second response paragraph');
-    expect(notifications[0].text).toContain('Third response paragraph');
-    expect(notifications[0].text).toContain('---');
+    expect(notifications[0]!.text).toContain('First response paragraph');
+    expect(notifications[0]!.text).toContain('Second response paragraph');
+    expect(notifications[0]!.text).toContain('Third response paragraph');
+    expect(notifications[0]!.text).toContain('---');
   });
 
   test('Error phase = exactly 1 notification', async () => {
@@ -139,10 +139,10 @@ describe('Phase 4 Notification Budget Tests', () => {
     await notificationBuffer.endPhase(ctx, false);
     expect(notifications.length).toBe(1);
 
-    expect(notifications[0].text).toContain('❌');
-    expect(notifications[0].text).toContain('⚠️ エラー: 2回');
-    expect(notifications[0].text).toContain('• Failed to read file');
-    expect(notifications[0].text).toContain('• Network timeout');
+    expect(notifications[0]!.text).toContain('❌');
+    expect(notifications[0]!.text).toContain('⚠️ エラー: 2回');
+    expect(notifications[0]!.text).toContain('• Failed to read file');
+    expect(notifications[0]!.text).toContain('• Network timeout');
   });
 
   test('Multiple phases in sequence = 1 notification per phase', async () => {
@@ -161,12 +161,12 @@ describe('Phase 4 Notification Budget Tests', () => {
     expect(notifications.length).toBe(2);
 
     // Phase 1 end notification
-    expect(notifications[0].text).toContain('Phase 1');
-    expect(notifications[0].text).toContain('✅');
+    expect(notifications[0]!.text).toContain('Phase 1');
+    expect(notifications[0]!.text).toContain('✅');
 
     // Phase 2 end notification
-    expect(notifications[1].text).toContain('Phase 2');
-    expect(notifications[1].text).toContain('✅');
+    expect(notifications[1]!.text).toContain('Phase 2');
+    expect(notifications[1]!.text).toContain('✅');
   });
 
   test('isActive() returns correct state', async () => {
@@ -205,8 +205,8 @@ describe('Phase 4 Notification Budget Tests', () => {
     await notificationBuffer.endPhase(ctx, true);
     expect(notifications.length).toBe(1);
 
-    expect(notifications[0].text).toContain('✅');
-    expect(notifications[0].text).toContain('Empty Phase');
+    expect(notifications[0]!.text).toContain('✅');
+    expect(notifications[0]!.text).toContain('Empty Phase');
   });
 
   test('Text responses with activities = single combined notification', async () => {
@@ -229,13 +229,13 @@ describe('Phase 4 Notification Budget Tests', () => {
     expect(notifications.length).toBe(1);
 
     // Final notification contains both text and summary
-    expect(notifications[0].text).toContain('Here is my response');
-    expect(notifications[0].text).toContain('Another paragraph');
+    expect(notifications[0]!.text).toContain('Here is my response');
+    expect(notifications[0]!.text).toContain('Another paragraph');
     // Tool activities listed individually, not as count
-    expect(notifications[0].text).toContain('📋 やったこと:');
-    expect(notifications[0].text).toContain('• Read file');
-    expect(notifications[0].text).toContain('• Write file');
-    expect(notifications[0].text).toContain('🧠 思考: 1回');
+    expect(notifications[0]!.text).toContain('📋 やったこと:');
+    expect(notifications[0]!.text).toContain('• Read file');
+    expect(notifications[0]!.text).toContain('• Write file');
+    expect(notifications[0]!.text).toContain('🧠 思考: 1回');
   });
 
   test('getCurrentPhase() returns correct phase name', async () => {
@@ -269,8 +269,8 @@ describe('Phase 4 Notification Budget Tests', () => {
     await notificationBuffer.endPhase(ctx, true);
 
     expect(notifications.length).toBe(1);
-    expect(notifications[0].text).toContain('⏱ 所要時間:');
-    expect(notifications[0].text).toContain('秒');
+    expect(notifications[0]!.text).toContain('⏱ 所要時間:');
+    expect(notifications[0]!.text).toContain('秒');
   });
 
   test('endPhase without active phase does nothing', async () => {
@@ -295,12 +295,12 @@ describe('Phase 4 Notification Budget Tests', () => {
     await notificationBuffer.endPhase(ctx, true);
 
     expect(notifications.length).toBe(1);
-    expect(notifications[0].text).toContain('📋 やったこと:');
-    expect(notifications[0].text).toContain('• Read config.ts');
-    expect(notifications[0].text).toContain('• Write config.ts');
+    expect(notifications[0]!.text).toContain('📋 やったこと:');
+    expect(notifications[0]!.text).toContain('• Read config.ts');
+    expect(notifications[0]!.text).toContain('• Write config.ts');
 
     // Count occurrences of "Read config.ts" - should appear only once (deduplicated)
-    const readCount = (notifications[0].text.match(/• Read config\.ts/g) || []).length;
+    const readCount = (notifications[0]!.text.match(/• Read config\.ts/g) || []).length;
     expect(readCount).toBe(1);
   });
 });

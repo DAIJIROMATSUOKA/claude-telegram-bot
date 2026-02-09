@@ -116,7 +116,7 @@ export function detectFrequencyPatterns(historyText: string): PredictedTask[] {
       const confidence = Math.min(0.9, 0.5 + (frequency * 0.1));
 
       predictions.push({
-        content: tasks[0],
+        content: tasks[0] ?? '',
         reason: `「${word}」が${frequency}回出現しています`,
         confidence,
         source: 'frequency-based'
@@ -218,7 +218,7 @@ export function formatPredictedTasks(predictions: PredictedTask[]): string {
   message += '以下のタスクが必要になる可能性があります：\n\n';
 
   for (let i = 0; i < Math.min(predictions.length, 5); i++) {
-    const p = predictions[i];
+    const p = predictions[i]!;
     const confidenceEmoji = p.confidence >= 0.8 ? '🔥' : p.confidence >= 0.7 ? '⭐' : '💡';
     const confidencePercent = Math.round(p.confidence * 100);
 

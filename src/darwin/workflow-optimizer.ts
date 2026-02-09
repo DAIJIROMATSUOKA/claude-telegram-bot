@@ -431,7 +431,7 @@ export class WorkflowAnalyzer {
       const prediction: TimePrediction = {
         action_name: actionName,
         action_type: 'tool',
-        predicted_duration_ms: median,
+        predicted_duration_ms: median ?? 0,
         prediction_confidence: Math.round(confidence * 100) / 100,
         based_on_samples: durations.length,
         session_id: sessionId,

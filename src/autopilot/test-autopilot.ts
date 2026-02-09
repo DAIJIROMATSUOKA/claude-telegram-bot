@@ -110,7 +110,7 @@ async function testActionLedger() {
 
   const { ActionLedger } = await import('../utils/action-ledger');
 
-  const ledger = new ActionLedger(5000); // 5 second TTL for testing
+  const ledger = new ActionLedger({ defaultTTL: 5000 }); // 5 second TTL for testing
 
   console.log('\n🧪 Testing deduplication...\n');
 

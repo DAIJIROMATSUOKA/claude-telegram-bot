@@ -61,7 +61,7 @@ export async function performSelfAudit(logPath: string = './logs/bot.log'): Prom
     lines.forEach((line) => {
       const match = line.match(/response[_\s]time[:\s]*(\d+)\s*ms/i);
       if (match) {
-        responseTimes.push(parseInt(match[1], 10));
+        responseTimes.push(parseInt(match[1]!, 10));
       }
     });
     const avgResponseMs = responseTimes.length > 0
@@ -92,7 +92,7 @@ export async function performSelfAudit(logPath: string = './logs/bot.log'): Prom
     }
 
     const auditResult: SelfAuditResult = {
-      date,
+      date: date ?? new Date().toISOString().split('T')[0]!,
       error_count: errorCount,
       avg_response_ms: avgResponseMs,
       satisfaction_score: satisfactionScore,
@@ -113,7 +113,7 @@ export async function performSelfAudit(logPath: string = './logs/bot.log'): Prom
       INSERT OR REPLACE INTO self_audit_results
       (date, error_count, avg_response_ms, satisfaction_score, issues_found, recommendations, log_file_size, total_messages, total_sessions, metadata)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
+    `).run(...[
       auditResult.date,
       auditResult.error_count,
       auditResult.avg_response_ms,
@@ -124,7 +124,7 @@ export async function performSelfAudit(logPath: string = './logs/bot.log'): Prom
       auditResult.total_messages,
       auditResult.total_sessions,
       auditResult.metadata
-    );
+    ] as any);
 
     // Update log
     const duration = Date.now() - startTime;

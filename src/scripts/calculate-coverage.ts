@@ -20,7 +20,7 @@ async function main() {
     const patterns = await extractor.extractFromMemoryGateway();
 
     // Load Golden Tests (mocked for now - replace with actual loading)
-    const tests = []; // TODO: Load from storage
+    const tests: any[] = []; // TODO: Load from storage
 
     // Calculate coverage
     const metrics = await tracker.calculateCoverage(patterns, tests);

@@ -398,7 +398,7 @@ export async function handleDarwinNightCommand(ctx: Context, command: string, ar
         await ctx.reply('❌ Usage: darwin PRIORITY <theme>');
         return;
       }
-      await handlePriorityCommand(ctx, args[0]);
+      await handlePriorityCommand(ctx, args[0]!);
       break;
 
     case 'KILL':
@@ -566,10 +566,10 @@ export async function handleDarwinAnalyze(ctx: Context): Promise<void> {
     const predictionsMatch = result.match(/Predictions: (\d+)/);
     const skipMatch = result.match(/Skip Candidates: (\d+)/);
 
-    const patterns = patternsMatch ? parseInt(patternsMatch[1]) : 0;
-    const bottlenecks = bottlenecksMatch ? parseInt(bottlenecksMatch[1]) : 0;
-    const predictions = predictionsMatch ? parseInt(predictionsMatch[1]) : 0;
-    const skipCandidates = skipMatch ? parseInt(skipMatch[1]) : 0;
+    const patterns = patternsMatch ? parseInt(patternsMatch[1]!) : 0;
+    const bottlenecks = bottlenecksMatch ? parseInt(bottlenecksMatch[1]!) : 0;
+    const predictions = predictionsMatch ? parseInt(predictionsMatch[1]!) : 0;
+    const skipCandidates = skipMatch ? parseInt(skipMatch[1]!) : 0;
 
     await ctx.reply(
       `✅ **Analysis Complete**\n\n` +
@@ -616,7 +616,7 @@ export async function routeDarwinCommand(ctx: Context, args: string[]): Promise<
     return;
   }
 
-  const command = args[0].toLowerCase();
+  const command = args[0]!.toLowerCase();
   const restArgs = args.slice(1);
 
   switch (command) {
@@ -637,7 +637,7 @@ export async function routeDarwinCommand(ctx: Context, args: string[]): Promise<
         await ctx.reply('❌ Usage: darwin detail <run_id>');
         return;
       }
-      await handleDarwinDetail(ctx, restArgs[0]);
+      await handleDarwinDetail(ctx, restArgs[0]!);
       break;
 
     case 'feedback':
@@ -645,7 +645,7 @@ export async function routeDarwinCommand(ctx: Context, args: string[]): Promise<
         await ctx.reply('❌ Usage: darwin feedback <idea_id> <reaction> [comment]');
         return;
       }
-      await handleDarwinFeedback(ctx, restArgs[0], restArgs[1], restArgs.slice(2).join(' ') || undefined);
+      await handleDarwinFeedback(ctx, restArgs[0]!, restArgs[1]!, restArgs.slice(2).join(' ') || undefined);
       break;
 
     // Workflow Optimizer commands (v1.3)

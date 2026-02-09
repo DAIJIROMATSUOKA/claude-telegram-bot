@@ -117,7 +117,7 @@ export class ExecutionRouter {
         return { enabled: false };
       }
 
-      const data = await response.json();
+      const data = await response.json() as any;
 
       if (data.items && data.items.length > 0) {
         const killSwitch = data.items[0];
@@ -288,8 +288,8 @@ export class ExecutionRouter {
    */
   private extractActionType(proposal: AutopilotProposal): string {
     // Extract from proposal title or content
-    const title = proposal.title.toLowerCase();
-    const content = proposal.rationale.toLowerCase();
+    const title = ((proposal as any).title ?? '').toLowerCase();
+    const content = ((proposal as any).rationale ?? '').toLowerCase();
 
     if (title.includes('open') || content.includes('open url') || content.includes('open file')) {
       return 'open_url';

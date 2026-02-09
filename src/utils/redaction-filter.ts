@@ -80,7 +80,7 @@ function calculateEntropy(str: string): number {
   let entropy = 0;
   const len = str.length;
   for (const char in freq) {
-    const p = freq[char] / len;
+    const p = freq[char]! / len;
     entropy -= p * Math.log2(p);
   }
 
@@ -138,9 +138,9 @@ export function redactSensitiveData(
     const matches = sanitized.match(pattern.regex);
     if (matches) {
       // Check entropy if required
-      if (pattern.minEntropy) {
+      if ((pattern as any).minEntropy) {
         const validMatches = matches.filter(match =>
-          calculateEntropy(match) >= pattern.minEntropy
+          calculateEntropy(match) >= (pattern as any).minEntropy
         );
         if (validMatches.length === 0) continue;
       }

@@ -91,7 +91,7 @@ function checkTowerHealth(chatId: string): TowerHealthStatus {
 
   // Sort by updated_at descending to get latest
   const sortedTowers = chatTowers.sort((a, b) => b.updated_at - a.updated_at);
-  const latestTower = sortedTowers[0];
+  const latestTower = sortedTowers[0]!;
   const now = Date.now();
   const lastCheckedAt = latestTower.updated_at * 1000;
   const timeSinceUpdate = now - lastCheckedAt;
@@ -295,7 +295,7 @@ describe('Tower Watchdog Tests', () => {
 
     // Verify message_id was updated
     const savedMessageId = getTowerMessageId(String(TEST_CHAT_ID));
-    expect(savedMessageId).toBe(createResult.messageId);
+    expect(savedMessageId).toBe(createResult.messageId as any);
   });
 
   test('Create new tower - pins message', async () => {

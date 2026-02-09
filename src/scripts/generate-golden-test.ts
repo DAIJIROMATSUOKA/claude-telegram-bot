@@ -45,7 +45,7 @@ async function main() {
     console.log('🔄 Generating tests for all accident patterns...\n');
     await generateAllTests(engine);
   } else {
-    const patternId = args[0];
+    const patternId = args[0] ?? '';
     await generateSingleTest(engine, patternId);
   }
 }
@@ -72,9 +72,8 @@ async function generateSingleTest(engine: TestGeneratorEngine, patternId: string
 
   const result = await engine.generateTest({
     accident_pattern: pattern,
-    llm_provider: 'claude',
     validate: true,
-  });
+  } as any);
 
   if (!result.success) {
     console.error('❌ Test generation failed:', result.error);
@@ -141,9 +140,8 @@ async function generateAllTests(engine: TestGeneratorEngine) {
 
     const result = await engine.generateTest({
       accident_pattern: pattern,
-      llm_provider: 'claude',
       validate: true,
-    });
+    } as any);
 
     if (result.success) {
       console.log(`✅ Success: ${result.golden_test?.test_id} (${result.generation_time_ms}ms)`);

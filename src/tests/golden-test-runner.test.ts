@@ -128,16 +128,16 @@ describe('Golden Test Suite (AI_MEMORY)', () => {
 
     // Mock notification system
     const notifications: string[] = [];
-    global.sendTelegramNotification = async (msg: string) => {
+    (globalThis as any).sendTelegramNotification = async (msg: string) => {
       notifications.push(msg);
     };
 
     // Mock implementation task execution
     const executeImplementationTask = async (task: any) => {
       // Simulate Phase-based notifications (Phase 5実装後の理想形)
-      await global.sendTelegramNotification('🔄 Implementation started');
+      await (globalThis as any).sendTelegramNotification('🔄 Implementation started');
       // No intermediate notifications
-      await global.sendTelegramNotification('✅ Implementation completed');
+      await (globalThis as any).sendTelegramNotification('✅ Implementation completed');
     };
 
     // Execute

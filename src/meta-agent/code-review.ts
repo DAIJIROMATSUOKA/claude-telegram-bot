@@ -158,7 +158,7 @@ async function reviewFile(filePath: string, relativePath: string): Promise<CodeR
         INSERT INTO code_review_suggestions
         (suggestion_id, file_path, line_number, issue_type, severity, description, suggested_fix, status, reviewed_at, metadata)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
+      `).run(...[
         suggestion.suggestion_id,
         suggestion.file_path,
         suggestion.line_number,
@@ -169,7 +169,7 @@ async function reviewFile(filePath: string, relativePath: string): Promise<CodeR
         suggestion.status,
         suggestion.reviewed_at,
         suggestion.metadata
-      );
+      ] as any);
 
       return suggestion;
     });

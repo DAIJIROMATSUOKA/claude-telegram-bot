@@ -540,7 +540,7 @@ async function main() {
           }
         } catch (error) {
           console.error(`  Failed to generate idea: ${error}`);
-          failuresByModel[task.model]++;
+          failuresByModel[task.model] = (failuresByModel[task.model] ?? 0) + 1;
         }
       }
     }
@@ -555,7 +555,7 @@ async function main() {
       const backupGenerator = new BackupGenerator();
 
       for (const task of tasks) {
-        const failures = failuresByModel[task.model];
+        const failures = failuresByModel[task.model] ?? 0;
         if (failures > 0) {
           const backupIdeas = await backupGenerator.generate({
             theme: task.theme,
@@ -570,7 +570,7 @@ async function main() {
               run_id,
               generation: 0,
               parent_id: null,
-              model: 'jarvis', // Jarvis as backup
+              model: 'jarvis' as any, // Jarvis as backup
               theme: task.theme,
               title: truncated.title,
               content: truncated.content,
@@ -606,7 +606,7 @@ async function main() {
     // Update consensus info in DB
     for (const [group, members] of consensusGroups.entries()) {
       for (const member of members) {
-        await db.query(
+        await (db as any).query(
           'UPDATE darwin_ideas SET consensus_count = ?, consensus_group = ? WHERE idea_id = ?',
           [members.length, group, member.idea_id]
         );
@@ -619,11 +619,11 @@ async function main() {
 
     // Update scores, fitness, and RED-TEAM in DB
     for (const idea of allIdeas) {
-      const fitnessScores = evaluation.fitness[idea.idea_id];
-      const redteamResult = evaluation.redteam[idea.idea_id];
+      const fitnessScores = evaluation.fitness[idea.idea_id]!;
+      const redteamResult = evaluation.redteam[idea.idea_id]!;
       const score = evaluation.scores[idea.idea_id];
 
-      await db.query(
+      await (db as any).query(
         `UPDATE darwin_ideas SET
           score = ?,
           fitness_novelty = ?, fitness_leverage = ?, fitness_feasibility = ?,
@@ -647,7 +647,7 @@ async function main() {
 
     const ideasWithScores = allIdeas.map(idea => ({
       idea_id: idea.idea_id,
-      score: evaluation.scores[idea.idea_id],
+      score: evaluation.scores[idea.idea_id] ?? 0,
       theme: idea.theme,
     }));
 
@@ -655,7 +655,7 @@ async function main() {
 
     // Mark TOP10 in DB
     for (let i = 0; i < top10Ids.length; i++) {
-      await db.updateIdeaRank(top10Ids[i], i + 1, 'top10');
+      await db.updateIdeaRank(top10Ids[i] ?? '', i + 1, 'top10');
     }
 
     console.log(`✅ Selected TOP10`);

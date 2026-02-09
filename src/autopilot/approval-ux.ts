@@ -279,7 +279,7 @@ export class ApprovalUX {
 
     return {
       action: match[1] as 'approve' | 'reject',
-      proposalId: match[2],
+      proposalId: match[2] ?? '',
     };
   }
 }

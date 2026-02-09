@@ -49,6 +49,18 @@ export async function handleText(ctx: Context): Promise<void> {
     return;
   }
 
+  // ── Reply context: リプライ元メッセージをClaudeに渡す ──
+  const replyMsg = ctx.message?.reply_to_message;
+  if (replyMsg) {
+    const replyText = "text" in replyMsg ? replyMsg.text : undefined;
+    const replyCaption = "caption" in replyMsg ? replyMsg.caption : undefined;
+    const replyContent = replyText || replyCaption;
+    if (replyContent) {
+      const replyFrom = replyMsg.from?.first_name || replyMsg.from?.username || "unknown";
+      message = `[返信元メッセージ（${replyFrom}）]\n${replyContent}\n[/返信元]\n\n${message}`;
+    }
+  }
+
   // ── Stage 1: Auth & Rate Limit ──
   if (!isAuthorized(userId, ALLOWED_USERS)) {
     await ctx.reply("Unauthorized. Contact the bot owner for access.");

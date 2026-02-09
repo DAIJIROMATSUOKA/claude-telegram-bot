@@ -94,9 +94,9 @@ async function main() {
     plan_id: 'test-003',
     actions: [
       {
-        ...validBundle.actions[0],
+        ...validBundle.actions[0]!,
         idempotency_key: '', // EMPTY
-      },
+      } as any,
     ],
   };
 

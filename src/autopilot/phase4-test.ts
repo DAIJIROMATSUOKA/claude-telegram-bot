@@ -190,9 +190,9 @@ async function testLearningLog() {
   console.log('Recording test executions to Learning Log...\n');
 
   for (let i = 0; i < 3; i++) {
-    const proposal = testProposals[i % testProposals.length];
-    const routingResult = router.route(proposal);
-    const redTeamResult = routingResult.requiresRedTeam ? redTeam.validate(proposal) : null;
+    const proposal = testProposals[i % testProposals.length]!;
+    const routingResult = router.route(proposal!);
+    const redTeamResult = routingResult.requiresRedTeam ? redTeam.validate(proposal!) : null;
     const executionTime = Math.random() * 5000 + 500; // 500-5500ms
 
     // Simulate 80% success rate
@@ -205,16 +205,16 @@ async function testLearningLog() {
         redTeamResult,
         executionTime
       );
-      console.log(`✅ Recorded success: ${proposal.task.title} (${executionTime.toFixed(0)}ms)`);
+      console.log(`✅ Recorded success: ${proposal!.task.title} (${executionTime.toFixed(0)}ms)`);
     } else {
       await learningLog.recordFailure(
-        proposal,
+        proposal!,
         routingResult,
         redTeamResult,
         executionTime,
         'Test error: Simulated failure'
       );
-      console.log(`❌ Recorded failure: ${proposal.task.title} (${executionTime.toFixed(0)}ms)`);
+      console.log(`❌ Recorded failure: ${proposal!.task.title} (${executionTime.toFixed(0)}ms)`);
     }
   }
 

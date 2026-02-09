@@ -155,7 +155,7 @@ export class ReverseScheduler implements AutopilotPlugin {
     // Try to find "deadline: YYYY-MM-DD" pattern
     const deadlineMatch = content.match(/deadline[:\s]+(\d{4}-\d{2}-\d{2})/i);
     if (deadlineMatch) {
-      return deadlineMatch[1];
+      return deadlineMatch[1] ?? null;
     }
 
     return null;

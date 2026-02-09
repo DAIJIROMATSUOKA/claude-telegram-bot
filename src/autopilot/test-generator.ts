@@ -339,9 +339,9 @@ Start with \`async function test\` and end with the closing brace.`;
     const thenMatch = testFunction.match(/\/\/ Then:?\s*(.+)/i);
 
     return {
-      given: givenMatch ? givenMatch[1].trim() : 'Initial test conditions',
-      when: whenMatch ? whenMatch[1].trim() : 'Execute test action',
-      then: thenMatch ? thenMatch[1].trim() : 'Verify safe outcome',
+      given: givenMatch ? givenMatch[1]!.trim() : 'Initial test conditions',
+      when: whenMatch ? whenMatch[1]!.trim() : 'Execute test action',
+      then: thenMatch ? thenMatch[1]!.trim() : 'Verify safe outcome',
     };
   }
 

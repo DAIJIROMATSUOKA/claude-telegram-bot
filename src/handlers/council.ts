@@ -218,7 +218,7 @@ async function runCouncilDebate(
   const round1: RoundEntry[] = [];
   r1Results.forEach((r, i) => {
     if (r.status === "fulfilled") {
-      round1.push({ role: ROLE_ORDER[i], response: r.value });
+      round1.push({ role: ROLE_ORDER[i]!, response: r.value });
     }
   });
 
@@ -270,7 +270,7 @@ async function runCouncilDebate(
   const round2: RoundEntry[] = [];
   r2Results.forEach((r, i) => {
     if (r.status === "fulfilled") {
-      round2.push({ role: r1Success[i].role, response: r.value });
+      round2.push({ role: r1Success[i]!.role, response: r.value });
     }
   });
 
@@ -439,7 +439,7 @@ export async function handleDebate(ctx: Context): Promise<void> {
     const messages = formatDebateOutput(result);
 
     // Edit progress message to Round 1 summary
-    await safeEditMessageText(ctx, chatId, msg.message_id, messages[0]);
+    await safeEditMessageText(ctx, chatId, msg.message_id, messages[0] ?? '');
 
     // Send synthesis as separate message
     if (messages[1]) {

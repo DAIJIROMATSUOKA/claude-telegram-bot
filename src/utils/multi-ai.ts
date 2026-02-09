@@ -150,7 +150,7 @@ export async function checkAvailability(): Promise<{ name: string; available: bo
   ]);
   const names = ["claude", "gemini", "chatgpt"];
   return checks.map((r, i) => ({
-    name: names[i],
+    name: names[i]!,
     available: r.status === "fulfilled" && !r.value.error,
   }));
 }

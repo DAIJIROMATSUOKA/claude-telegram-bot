@@ -182,7 +182,7 @@ export class MeshRegistry {
       }
 
       // Otherwise return first available
-      return { device: devices[0] };
+      return { device: devices[0]! };
     }
 
     // No online device found - check for fallback instructions

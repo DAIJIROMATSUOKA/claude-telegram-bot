@@ -248,7 +248,7 @@ export async function handleEdit(ctx: Context): Promise<void> {
   const prompt = text.replace(/^\/edit\s*/i, "").trim();
 
   if (!prompt) {
-    await ctx.reply("使い方: 写真に返信して /edit <指示>\n例: /edit 髪を金髪にして\n\nオプション:\n--denoise 0.7 (変更の強さ 0.0〜1.0)\n--face-mask (顔保護を有効化)\n--face-protect 0.5 (顔保護レベル 0.0〜1.0)\n--neg \"避けたい内容\"\n--pos \"追加指示\"\n\n※顔保護はデフォルト無効");
+    await ctx.reply("使い方: 写真に返信して /edit <指示>\n例: /edit 髪を金髪にして\n\nオプション:\n--denoise 0.7 (変更の強さ 0.0〜1.0)\n--face-mask (顔保護を有効化)\n--face-protect 0.5 (顔保護レベル 0.0〜1.0)\n--expand bottom 512 (キャンバス拡張: 方向 ピクセル数)\n--neg \"避けたい内容\"\n--pos \"追加指示\"\n\n※顔保護はデフォルト無効");
     return;
   }
 
@@ -311,6 +311,20 @@ export async function handleEdit(ctx: Context): Promise<void> {
     if (faceProtectMatch?.[1]) {
       editArgs.push("--face-protect", faceProtectMatch[1]);
       cleanPrompt = cleanPrompt.replace(/--face-protect\s+[\d.]+/, "").trim();
+    }
+
+    // --expand [direction] N (canvas expansion before edit)
+    const expandMatch = cleanPrompt.match(/--expand\s+(bottom|top|left|right)\s+(\d+)/);
+    if (expandMatch?.[1] && expandMatch[2]) {
+      editArgs.push("--direction", expandMatch[1], "--expand", expandMatch[2]);
+      cleanPrompt = cleanPrompt.replace(/--expand\s+(bottom|top|left|right)\s+\d+/, "").trim();
+    } else {
+      // --expand N (direction defaults to bottom)
+      const expandSimple = cleanPrompt.match(/--expand\s+(\d+)/);
+      if (expandSimple?.[1]) {
+        editArgs.push("--expand", expandSimple[1]);
+        cleanPrompt = cleanPrompt.replace(/--expand\s+\d+/, "").trim();
+      }
     }
 
     // --neg "negative prompt"
@@ -503,11 +517,12 @@ export async function handleAnimate(ctx: Context): Promise<void> {
 
   const hasReply = !!ctx.message?.reply_to_message;
   const statusMsg = await ctx.reply(
-    `🎬 動画生成中... (Wan2.2, 10秒/240f, 長時間かかります)\n${hasReply ? "📸 Image-to-Video" : "📝 Text-to-Video"}`
+    `🎬 動画生成中... (Wan2.2, ~3秒/81f, 長時間かかります)\n${hasReply ? "📸 Image-to-Video" : "📝 Text-to-Video"}`
   );
 
   try {
-    const args = ["animate", "--prompt", prompt, "--frames", "240"];
+    // 81 frames (~3.4s @24fps) — 240f requires ~49GB buffer, exceeds 64GB RAM
+    const args = ["animate", "--prompt", prompt, "--frames", "81"];
 
     // If replying to a photo, download it
     if (hasReply) {

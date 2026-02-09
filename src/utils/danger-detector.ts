@@ -161,7 +161,7 @@ export function detectDangerousCommand(command: string): DangerDetectionResult {
       if (highestLevel === 'safe' ||
           (dangerPattern.level === 'critical') ||
           (dangerPattern.level === 'high' && highestLevel !== 'critical') ||
-          (dangerPattern.level === 'medium' && highestLevel === 'safe')) {
+          (dangerPattern.level === 'medium' && (highestLevel as string) === 'safe')) {
         highestLevel = dangerPattern.level;
       }
     }

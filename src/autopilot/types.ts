@@ -216,3 +216,66 @@ export interface PolicyViolation {
   description: string; // What was violated
   required_fix: string; // How to fix it
 }
+
+/**
+ * Plugin Trigger - Detected trigger from a plugin
+ */
+export interface PluginTrigger {
+  plugin_name: string;
+  trigger_type: 'scheduled' | string;
+  confidence: number;
+  reason: string;
+  context_needed: string[];
+}
+
+/**
+ * Plugin Proposal - Proposal from a plugin with action plan
+ */
+export interface PluginProposal {
+  task: {
+    id: string;
+    type: string;
+    title: string;
+    description: string;
+    reason: string;
+    confidence: number;
+    impact: 'low' | 'medium' | 'high' | 'critical';
+    created_at: string;
+    status: string;
+    source_plugin: string;
+  };
+  action_plan: string[];
+  estimated_duration: string;
+  risks: string[];
+  approval_required: boolean;
+}
+
+/**
+ * Kill Switch Decision
+ */
+export interface KillSwitchDecision {
+  activated_at: string;
+  reason: string;
+  severity: 'warning' | 'critical';
+}
+
+/**
+ * Test Execution Result
+ */
+export interface TestExecutionResult {
+  test_id: string;
+  status: 'passed' | 'failed' | 'skipped';
+  message?: string;
+  duration_ms?: number;
+}
+
+/**
+ * Golden Test Result
+ */
+export interface GoldenTestResult {
+  all_passed: boolean;
+  results: TestExecutionResult[];
+  total_tests: number;
+  failed_tests: number;
+  kill_switch_decision?: KillSwitchDecision;
+}

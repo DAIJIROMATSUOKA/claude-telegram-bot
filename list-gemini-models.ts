@@ -9,11 +9,11 @@ if (!apiKey) {
 
 async function listModels() {
   try {
-    const genAI = new GoogleGenerativeAI(apiKey);
+    const genAI = new GoogleGenerativeAI(apiKey!);
 
     console.log("📋 Fetching available Gemini models...\n");
 
-    const models = await genAI.listModels();
+    const models = await (genAI as any).listModels();
 
     console.log("✅ Available models:");
     for await (const model of models) {

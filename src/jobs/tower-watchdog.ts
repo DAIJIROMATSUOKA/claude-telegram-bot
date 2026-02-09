@@ -104,7 +104,7 @@ function checkTowerHealth(chatId: string): TowerHealthStatus {
   // Get latest tower
   const latestTower = chatTowers[0];
   const now = Date.now();
-  const lastCheckedAt = latestTower.updated_at * 1000; // Convert to ms
+  const lastCheckedAt = latestTower!.updated_at * 1000; // Convert to ms
   const timeSinceUpdate = now - lastCheckedAt;
 
   // Check if last update is too old (> 10 minutes)
@@ -276,7 +276,7 @@ async function runWatchdog() {
       }
     } else {
       console.warn(`[TowerWatchdog] ⚠️ Tower is unhealthy: ${health.reason}`);
-      await performSelfHealing(bot, chatId, health);
+      await performSelfHealing(bot, chatId!, health);
     }
 
     console.log('[TowerWatchdog] ✅ Watchdog completed successfully');

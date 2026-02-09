@@ -12,7 +12,7 @@
  * 5. Policy Engine Bypass (2026-02-04 05:28)
  */
 
-import { AccidentPattern, GoldenTest, TestSelectionCriteria } from './golden-test-types';
+import type { AccidentPattern, GoldenTest, TestSelectionCriteria } from './golden-test-types';
 
 /**
  * AI_MEMORY抽出: 実際の事故パターン（5つ）

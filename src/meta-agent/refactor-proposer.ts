@@ -159,7 +159,7 @@ async function generateProposalForFile(
       INSERT INTO refactor_proposals
       (proposal_id, proposal_title, proposal_description, affected_files, estimated_impact, estimated_time_minutes, benefits, risks, rollback_plan, status, metadata)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
+    `).run(...[
       proposal.proposal_id,
       proposal.proposal_title,
       proposal.proposal_description,
@@ -171,7 +171,7 @@ async function generateProposalForFile(
       proposal.rollback_plan,
       proposal.status,
       proposal.metadata
-    );
+    ] as any);
 
     return proposal;
   } catch (error) {

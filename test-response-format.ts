@@ -17,7 +17,7 @@ async function testResponseFormat() {
     })
   });
 
-  const data = await response.json();
+  const data = await response.json() as any;
   console.log('Response structure:');
   console.log('- data.error:', data.error);
   console.log('- data.data:', data.data);

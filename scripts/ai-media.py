@@ -84,6 +84,17 @@ FLUX_DEV_LORA = os.environ.get("FLUX_DEV_LORA", "roundassv16_FLUX.safetensors")
 FLUX_DEV_LORA_STRENGTH = float(os.environ.get("FLUX_DEV_LORA_STRENGTH", "0.8"))
 FLUX_DEV_EXTRA_LORAS = os.environ.get("FLUX_DEV_EXTRA_LORAS", "flux-lora-uncensored.safetensors:0.9,undressing_flux_v3.safetensors:1.3")
 
+# --- Edit-specific defaults (conservative to preserve original image) ---
+FLUX_EDIT_LORA_STRENGTH = float(os.environ.get("FLUX_EDIT_LORA_STRENGTH", "0.4"))
+FLUX_EDIT_EXTRA_LORAS = os.environ.get("FLUX_EDIT_EXTRA_LORAS", "")  # No extra LoRA by default for edit
+FLUX_EDIT_CFG = float(os.environ.get("FLUX_EDIT_CFG", "3.5"))
+
+# --- Outpaint-specific defaults (prioritize natural image continuation) ---
+FLUX_OUTPAINT_LORA_STRENGTH = float(os.environ.get("FLUX_OUTPAINT_LORA_STRENGTH", "0.3"))
+FLUX_OUTPAINT_EXTRA_LORAS = os.environ.get("FLUX_OUTPAINT_EXTRA_LORAS", "")  # No extra LoRA for outpaint
+FLUX_OUTPAINT_CFG = float(os.environ.get("FLUX_OUTPAINT_CFG", "5.5"))
+FLUX_OUTPAINT_DENOISE = float(os.environ.get("FLUX_OUTPAINT_DENOISE", "1.0"))
+
 
 def ensure_workdir():
     os.makedirs(WORKING_DIR, exist_ok=True)
@@ -299,6 +310,22 @@ def cmd_edit(args):
     output = args.output or os.path.join(WORKING_DIR, f"edit_{uuid.uuid4().hex[:8]}.png")
 
     try:
+        # --- Canvas expansion (--expand) ---
+        # Expand the canvas BEFORE uploading, using average-color fill.
+        # This allows img2img edit to generate full-body from bust-up shots.
+        expand_pixels = args.expand if hasattr(args, 'expand') and args.expand else 0
+        direction = args.direction if hasattr(args, 'direction') and args.direction else "bottom"
+        original_image_path = image_path  # keep reference for face detection
+
+        if expand_pixels > 0:
+            expand_pixels = (expand_pixels // 8) * 8  # align to 8px for latent space
+            expand_pixels = max(expand_pixels, 64)
+            padded_path, _ = prepare_outpaint_images(
+                image_path, direction, expand_pixels, feathering=64
+            )
+            image_path = padded_path  # use expanded canvas for edit
+            print(f"[ai-media] Edit canvas expanded: {direction} +{expand_pixels}px", file=sys.stderr)
+
         uploaded_name = comfyui_upload_image(image_path)
         if not uploaded_name:
             return {"ok": False, "error": "Failed to upload image to ComfyUI"}
@@ -307,12 +334,13 @@ def cmd_edit(args):
         steps = args.steps or 15
         seed = args.seed if args.seed is not None else int(time.time()) % (2**32)
         lora = args.lora or FLUX_DEV_LORA
-        lora_strength = args.lora_strength if hasattr(args, 'lora_strength') and args.lora_strength else FLUX_DEV_LORA_STRENGTH
+        lora_strength = args.lora_strength if hasattr(args, 'lora_strength') and args.lora_strength else FLUX_EDIT_LORA_STRENGTH
         negative_prompt = args.negative_prompt if hasattr(args, 'negative_prompt') and args.negative_prompt else ""
 
         # Parse extra LoRAs: "file1.safetensors:0.9,file2.safetensors:1.3"
+        # Edit uses NO extra LoRAs by default (preserves original image fidelity)
         extra_loras = []
-        extra_loras_str = args.extra_loras if hasattr(args, 'extra_loras') and args.extra_loras else FLUX_DEV_EXTRA_LORAS
+        extra_loras_str = args.extra_loras if hasattr(args, 'extra_loras') and args.extra_loras else FLUX_EDIT_EXTRA_LORAS
         if extra_loras_str:
             for entry in extra_loras_str.split(","):
                 entry = entry.strip()
@@ -325,18 +353,55 @@ def cmd_edit(args):
                     extra_loras.append((entry.strip(), 0.8))
 
         # Face detection & mask (disabled by default — use --face-mask to enable)
+        # When canvas is expanded, detect face on ORIGINAL image, then expand mask
+        # to match the new canvas size (face region stays in its original position)
         mask_name = None
         use_face_mask = hasattr(args, 'face_mask') and args.face_mask
         face_protect = float(args.face_protect) if hasattr(args, 'face_protect') and args.face_protect is not None else 0.35
         if use_face_mask:
-            mask_path = detect_faces_and_create_mask(image_path, face_protect=face_protect)
-            if mask_path:
-                mask_name = comfyui_upload_image(mask_path)
+            face_mask_path = detect_faces_and_create_mask(original_image_path, face_protect=face_protect)
+            if face_mask_path and expand_pixels > 0:
+                # Expand the face mask to match expanded canvas
+                from PIL import Image as PILImage
+                orig_img = PILImage.open(original_image_path)
+                ow, oh = orig_img.size
+                face_mask_img = PILImage.open(face_mask_path).convert("L")
+
+                if direction == "bottom":
+                    new_w, new_h = ow, oh + expand_pixels
+                    expanded_mask = PILImage.new("L", (new_w, new_h), 255)  # white = edit
+                    expanded_mask.paste(face_mask_img, (0, 0))
+                elif direction == "top":
+                    new_w, new_h = ow, oh + expand_pixels
+                    expanded_mask = PILImage.new("L", (new_w, new_h), 255)
+                    expanded_mask.paste(face_mask_img, (0, expand_pixels))
+                elif direction == "right":
+                    new_w, new_h = ow + expand_pixels, oh
+                    expanded_mask = PILImage.new("L", (new_w, new_h), 255)
+                    expanded_mask.paste(face_mask_img, (0, 0))
+                elif direction == "left":
+                    new_w, new_h = ow + expand_pixels, oh
+                    expanded_mask = PILImage.new("L", (new_w, new_h), 255)
+                    expanded_mask.paste(face_mask_img, (expand_pixels, 0))
+                else:
+                    expanded_mask = face_mask_img
+
+                expanded_mask_path = os.path.join(WORKING_DIR, f"face_mask_expanded_{uuid.uuid4().hex[:8]}.png")
+                expanded_mask.save(expanded_mask_path, "PNG")
+                try:
+                    os.unlink(face_mask_path)
+                except OSError:
+                    pass
+                face_mask_path = expanded_mask_path
+                print(f"[ai-media] Face mask expanded to {new_w}x{new_h}", file=sys.stderr)
+
+            if face_mask_path:
+                mask_name = comfyui_upload_image(face_mask_path)
                 if mask_name:
                     print(f"[ai-media] Face mask uploaded: {mask_name}", file=sys.stderr)
                 # Cleanup local mask file
                 try:
-                    os.unlink(mask_path)
+                    os.unlink(face_mask_path)
                 except OSError:
                     pass
 
@@ -351,13 +416,14 @@ def cmd_edit(args):
             mask_name=mask_name,
             negative_prompt=negative_prompt,
             extra_loras=extra_loras,
+            cfg=FLUX_EDIT_CFG,
         )
 
         mask_info = f", face_mask={mask_name}" if mask_name else ", no_mask"
         extra_info = f", extra_loras={len(extra_loras)}" if extra_loras else ""
         neg_info = f", neg='{negative_prompt[:50]}'" if negative_prompt else ""
         print(f"[ai-media] Editing image with FLUX.1 Dev + LoRA via ComfyUI...", file=sys.stderr)
-        print(f"[ai-media] denoise={denoise}, steps={steps}, lora={lora}, scale={lora_strength}{mask_info}{extra_info}{neg_info}", file=sys.stderr)
+        print(f"[ai-media] denoise={denoise}, steps={steps}, cfg={FLUX_EDIT_CFG}, lora={lora}, scale={lora_strength}{mask_info}{extra_info}{neg_info}", file=sys.stderr)
 
         t0 = time.time()
         output_files = comfyui_queue_and_wait(workflow)
@@ -374,6 +440,7 @@ def cmd_edit(args):
         if out_path:
             import shutil
             shutil.move(out_path, output)
+            comfyui_free_memory()
             return {"ok": True, "path": output, "elapsed": round(elapsed, 1)}
 
         return {"ok": False, "error": "Could not retrieve image from ComfyUI", "elapsed": round(elapsed, 1)}
@@ -387,7 +454,8 @@ def build_flux_img2img_workflow(image_name: str, prompt: str, steps: int = 20,
                                  lora: str = "", lora_strength: float = 0.8,
                                  mask_name: str | None = None,
                                  negative_prompt: str = "",
-                                 extra_loras: list | None = None) -> dict:
+                                 extra_loras: list | None = None,
+                                 cfg: float = 3.5) -> dict:
     """Build ComfyUI API workflow for FLUX.1 Dev img2img with LoRA chain.
 
     LoRA chain: [1] UnetLoaderGGUF → [4] LoRA1 → [14] LoRA2 → [15] LoRA3 → ... → KSampler
@@ -471,7 +539,7 @@ def build_flux_img2img_workflow(image_name: str, prompt: str, steps: int = 20,
                 "latent_image": ["6", 0],  # will be overridden if mask exists
                 "seed": seed,
                 "steps": steps,
-                "cfg": 2.0,
+                "cfg": cfg,
                 "sampler_name": "euler",
                 "scheduler": "simple",
                 "denoise": denoise,
@@ -555,15 +623,11 @@ def cmd_outpaint(args):
     output = args.output or os.path.join(WORKING_DIR, f"outpaint_{uuid.uuid4().hex[:8]}.png")
 
     try:
-        uploaded_name = comfyui_upload_image(image_path)
-        if not uploaded_name:
-            return {"ok": False, "error": "Failed to upload image to ComfyUI"}
-
-        denoise = args.denoise if hasattr(args, 'denoise') and args.denoise is not None else 1.0
+        denoise = args.denoise if hasattr(args, 'denoise') and args.denoise is not None else FLUX_OUTPAINT_DENOISE
         steps = args.steps if hasattr(args, 'steps') and args.steps is not None else 25
         seed = args.seed if args.seed is not None else int(time.time()) % (2**32)
         lora = args.lora or FLUX_DEV_LORA
-        lora_strength = args.lora_strength if hasattr(args, 'lora_strength') and args.lora_strength else FLUX_DEV_LORA_STRENGTH
+        lora_strength = args.lora_strength if hasattr(args, 'lora_strength') and args.lora_strength else FLUX_OUTPAINT_LORA_STRENGTH
         negative_prompt = args.negative_prompt if hasattr(args, 'negative_prompt') and args.negative_prompt else ""
 
         # Direction and amount of extension
@@ -577,22 +641,23 @@ def cmd_outpaint(args):
             img = Image.open(image_path)
             w, h = img.size
             if direction in ("bottom", "top"):
-                # Extend by ~75% of the shorter dimension, capped for quality
-                expand_pixels = int(min(w, h) * 0.75)
-                expand_pixels = min(expand_pixels, 768)  # cap to avoid grey fill
-                expand_pixels = max(expand_pixels, 256)   # minimum useful expansion
+                # Extend by ~50% of the shorter dimension, capped for quality
+                # FLUX Q5 struggles with large expansion — keep conservative
+                expand_pixels = int(min(w, h) * 0.5)
+                expand_pixels = min(expand_pixels, 512)
+                expand_pixels = max(expand_pixels, 256)
                 expand_pixels = (expand_pixels // 8) * 8
             else:
-                expand_pixels = int(min(w, h) * 0.5)
-                expand_pixels = min(expand_pixels, 768)
+                expand_pixels = int(min(w, h) * 0.4)
+                expand_pixels = min(expand_pixels, 512)
                 expand_pixels = max(expand_pixels, 256)
                 expand_pixels = (expand_pixels // 8) * 8
 
         print(f"[ai-media] Outpaint direction={direction}, expand={expand_pixels}px, feathering={feathering}", file=sys.stderr)
 
-        # Parse extra LoRAs
+        # Parse extra LoRAs (outpaint uses none by default for natural continuation)
         extra_loras = []
-        extra_loras_str = args.extra_loras if hasattr(args, 'extra_loras') and args.extra_loras else FLUX_DEV_EXTRA_LORAS
+        extra_loras_str = args.extra_loras if hasattr(args, 'extra_loras') and args.extra_loras else FLUX_OUTPAINT_EXTRA_LORAS
         if extra_loras_str:
             for entry in extra_loras_str.split(","):
                 entry = entry.strip()
@@ -604,9 +669,38 @@ def cmd_outpaint(args):
                 else:
                     extra_loras.append((entry.strip(), 0.8))
 
+        # Auto-augment prompt with direction-specific keywords for better continuity
+        augmented_prompt = args.prompt
+        direction_hints = {
+            "bottom": "full body, legs, feet, standing on the floor, lower body continuation",
+            "top": "head, sky, ceiling, upper space continuation",
+            "right": "wide shot, extended background, right side continuation",
+            "left": "wide shot, extended background, left side continuation",
+        }
+        hint = direction_hints.get(direction, "")
+        if hint and hint.lower() not in augmented_prompt.lower():
+            augmented_prompt = f"{augmented_prompt}, {hint}"
+            print(f"[ai-media] Prompt augmented with direction hints: +'{hint}'", file=sys.stderr)
+
+        # Pre-process: create padded image with edge-mirrored fill + mask
+        # This avoids the grey fill problem caused by VAEEncodeForInpaint
+        padded_path, mask_path = prepare_outpaint_images(
+            image_path, direction, expand_pixels, feathering
+        )
+        padded_name = comfyui_upload_image(padded_path)
+        mask_name = comfyui_upload_image(mask_path)
+        if not padded_name or not mask_name:
+            return {"ok": False, "error": "Failed to upload padded image or mask to ComfyUI"}
+        # Cleanup local temp files
+        for tmp in (padded_path, mask_path):
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+
         workflow = build_flux_outpaint_workflow(
-            image_name=uploaded_name,
-            prompt=args.prompt,
+            image_name=padded_name,
+            prompt=augmented_prompt,
             steps=steps,
             denoise=denoise,
             seed=seed,
@@ -614,6 +708,7 @@ def cmd_outpaint(args):
             lora_strength=lora_strength,
             negative_prompt=negative_prompt,
             extra_loras=extra_loras,
+            mask_name=mask_name,
             direction=direction,
             expand_pixels=expand_pixels,
             feathering=feathering,
@@ -641,8 +736,8 @@ def cmd_outpaint(args):
             # Post-process: blend original image back into result to eliminate boundary
             try:
                 from PIL import Image, ImageFilter
-                original = Image.open(image_path).convert("RGBA")
-                result_img = Image.open(out_path).convert("RGBA")
+                original = Image.open(image_path).convert("RGB")
+                result_img = Image.open(out_path).convert("RGB")
                 ow, oh = original.size
                 rw, rh = result_img.size
 
@@ -658,8 +753,9 @@ def cmd_outpaint(args):
                 else:
                     ox, oy = 0, 0
 
-                # Create alpha mask for blending: original area = opaque, fade at boundary
-                blend_zone = 128  # pixels of gradient blending
+                # Create alpha mask for blending (RGB mode to avoid transparency artifacts)
+                # Wider blend zone prevents visible seams at lighting/color transitions
+                blend_zone = max(96, min(ow, oh) // 8)  # scale with image, at least 96px
                 mask = Image.new("L", (rw, rh), 0)
                 # Fill original region as white (opaque = use original)
                 mask.paste(255, (ox, oy, ox + ow, oy + oh))
@@ -667,16 +763,17 @@ def cmd_outpaint(args):
                 mask = mask.filter(ImageFilter.GaussianBlur(radius=blend_zone))
 
                 # Composite: where mask is white use original, where black use generated
-                canvas = Image.new("RGBA", (rw, rh), (0, 0, 0, 0))
+                # Both are RGB — no transparency artifacts
+                canvas = result_img.copy()
                 canvas.paste(original, (ox, oy))
                 blended = Image.composite(canvas, result_img, mask)
-                blended = blended.convert("RGB")
                 blended.save(out_path, "PNG")
                 print(f"[ai-media] Post-blend applied (blend_zone={blend_zone}px)", file=sys.stderr)
             except Exception as blend_err:
                 print(f"[ai-media] Post-blend skipped: {blend_err}", file=sys.stderr)
 
             shutil.move(out_path, output)
+            comfyui_free_memory()
             return {"ok": True, "path": output, "elapsed": round(elapsed, 1)}
 
         return {"ok": False, "error": "Could not retrieve image from ComfyUI", "elapsed": round(elapsed, 1)}
@@ -685,41 +782,185 @@ def cmd_outpaint(args):
         return {"ok": False, "error": str(e)}
 
 
+def prepare_outpaint_images(image_path: str, direction: str, expand_pixels: int,
+                             feathering: int = 128) -> tuple[str, str]:
+    """Pre-process image for outpainting: create padded image + mask.
+
+    Instead of relying on ImagePadForOutpaint + VAEEncodeForInpaint (which fills
+    the expansion area with grey 0.5 — causing FLUX to output flat grey), we:
+      1. Extend the canvas by mirroring + blurring the edge pixels
+      2. Create a separate mask (white=regenerate, black=keep)
+      3. Apply feathering at the boundary for smooth blending
+
+    Returns (padded_image_path, mask_path).
+    """
+    from PIL import Image, ImageFilter
+    import numpy as np
+
+    img = Image.open(image_path).convert("RGB")
+    w, h = img.size
+    img_np = np.array(img)
+
+    # Calculate new dimensions
+    if direction == "bottom":
+        new_w, new_h = w, h + expand_pixels
+    elif direction == "top":
+        new_w, new_h = w, h + expand_pixels
+    elif direction == "right":
+        new_w, new_h = w + expand_pixels, h
+    elif direction == "left":
+        new_w, new_h = w + expand_pixels, h
+    else:
+        new_w, new_h = w, h + expand_pixels
+        direction = "bottom"
+
+    # --- Create padded image with average-color gradient fill ---
+    # IMPORTANT: Do NOT use edge-mirrored fill for outpaint.
+    # Mirror fill causes FLUX to reproduce reversed copies of the original content
+    # (e.g., upside-down faces). Instead, use the average color of the boundary
+    # edge with slight noise — this gives FLUX a neutral starting point with
+    # no structural hints to copy.
+    padded = np.zeros((new_h, new_w, 3), dtype=np.uint8)
+
+    if direction == "bottom":
+        padded[:h, :w] = img_np
+        # Get average color of the bottom edge (last 16 rows)
+        edge_rows = min(16, h)
+        avg_color = img_np[h - edge_rows:h, :w].mean(axis=(0, 1)).astype(np.uint8)
+        # Fill expansion with average color + random noise for texture
+        fill = np.full((expand_pixels, w, 3), avg_color, dtype=np.uint8)
+        noise = np.random.randint(-15, 16, fill.shape, dtype=np.int16)
+        fill = np.clip(fill.astype(np.int16) + noise, 0, 255).astype(np.uint8)
+        # Gradient: blend from edge to average over first 64px
+        gradient_len = min(64, expand_pixels)
+        for i in range(gradient_len):
+            alpha = i / gradient_len
+            fill[i] = ((1 - alpha) * img_np[h - 1].astype(np.float32) + alpha * fill[i].astype(np.float32)).astype(np.uint8)
+        padded[h:, :w] = fill
+    elif direction == "top":
+        padded[expand_pixels:expand_pixels + h, :w] = img_np
+        edge_rows = min(16, h)
+        avg_color = img_np[:edge_rows, :w].mean(axis=(0, 1)).astype(np.uint8)
+        fill = np.full((expand_pixels, w, 3), avg_color, dtype=np.uint8)
+        noise = np.random.randint(-15, 16, fill.shape, dtype=np.int16)
+        fill = np.clip(fill.astype(np.int16) + noise, 0, 255).astype(np.uint8)
+        gradient_len = min(64, expand_pixels)
+        for i in range(gradient_len):
+            alpha = i / gradient_len
+            row_idx = expand_pixels - 1 - i
+            fill[row_idx] = ((1 - alpha) * img_np[0].astype(np.float32) + alpha * fill[row_idx].astype(np.float32)).astype(np.uint8)
+        padded[:expand_pixels, :w] = fill
+    elif direction == "right":
+        padded[:h, :w] = img_np
+        edge_cols = min(16, w)
+        avg_color = img_np[:h, w - edge_cols:w].mean(axis=(0, 1)).astype(np.uint8)
+        fill = np.full((h, expand_pixels, 3), avg_color, dtype=np.uint8)
+        noise = np.random.randint(-15, 16, fill.shape, dtype=np.int16)
+        fill = np.clip(fill.astype(np.int16) + noise, 0, 255).astype(np.uint8)
+        gradient_len = min(64, expand_pixels)
+        for i in range(gradient_len):
+            alpha = i / gradient_len
+            fill[:, i] = ((1 - alpha) * img_np[:, w - 1].astype(np.float32) + alpha * fill[:, i].astype(np.float32)).astype(np.uint8)
+        padded[:h, w:] = fill
+    elif direction == "left":
+        padded[:h, expand_pixels:expand_pixels + w] = img_np
+        edge_cols = min(16, w)
+        avg_color = img_np[:h, :edge_cols].mean(axis=(0, 1)).astype(np.uint8)
+        fill = np.full((h, expand_pixels, 3), avg_color, dtype=np.uint8)
+        noise = np.random.randint(-15, 16, fill.shape, dtype=np.int16)
+        fill = np.clip(fill.astype(np.int16) + noise, 0, 255).astype(np.uint8)
+        gradient_len = min(64, expand_pixels)
+        for i in range(gradient_len):
+            alpha = i / gradient_len
+            col_idx = expand_pixels - 1 - i
+            fill[:, col_idx] = ((1 - alpha) * img_np[:, 0].astype(np.float32) + alpha * fill[:, col_idx].astype(np.float32)).astype(np.uint8)
+        padded[:h, :expand_pixels] = fill
+
+    # Gentle blur on the fill area only to smooth noise (not heavy — no structure to hide)
+    padded_img = Image.fromarray(padded)
+    blurred = padded_img.filter(ImageFilter.GaussianBlur(radius=20))
+    blurred_np = np.array(blurred)
+    # Restore original region from unblurred source
+    if direction == "bottom":
+        blurred_np[:h, :w] = img_np
+    elif direction == "top":
+        blurred_np[expand_pixels:expand_pixels + h, :w] = img_np
+    elif direction == "right":
+        blurred_np[:h, :w] = img_np
+    elif direction == "left":
+        blurred_np[:h, expand_pixels:expand_pixels + w] = img_np
+    padded_img = Image.fromarray(blurred_np)
+
+    # --- Create mask: white (255) = area to regenerate, black (0) = keep ---
+    mask = np.zeros((new_h, new_w), dtype=np.uint8)
+    if direction == "bottom":
+        mask[h:, :] = 255
+        # Feathering: gradient at boundary
+        for i in range(min(feathering, expand_pixels)):
+            alpha = int(255 * (i + 1) / feathering)
+            mask[h + i, :] = alpha
+    elif direction == "top":
+        mask[:expand_pixels, :] = 255
+        for i in range(min(feathering, expand_pixels)):
+            alpha = int(255 * (i + 1) / feathering)
+            mask[expand_pixels - 1 - i, :] = alpha
+    elif direction == "right":
+        mask[:, w:] = 255
+        for i in range(min(feathering, expand_pixels)):
+            alpha = int(255 * (i + 1) / feathering)
+            mask[:, w + i] = alpha
+    elif direction == "left":
+        mask[:, :expand_pixels] = 255
+        for i in range(min(feathering, expand_pixels)):
+            alpha = int(255 * (i + 1) / feathering)
+            mask[:, expand_pixels - 1 - i] = alpha
+
+    mask_img = Image.fromarray(mask, mode="L")
+
+    # Save both
+    padded_path = os.path.join(WORKING_DIR, f"outpaint_padded_{uuid.uuid4().hex[:8]}.png")
+    mask_path = os.path.join(WORKING_DIR, f"outpaint_mask_{uuid.uuid4().hex[:8]}.png")
+    padded_img.save(padded_path, "PNG")
+    mask_img.save(mask_path, "PNG")
+
+    print(f"[ai-media] Outpaint pre-process: {w}x{h} → {new_w}x{new_h}, "
+          f"direction={direction}, expand={expand_pixels}px, feathering={feathering}",
+          file=sys.stderr)
+
+    return padded_path, mask_path
+
+
 def build_flux_outpaint_workflow(image_name: str, prompt: str, steps: int = 20,
-                                  denoise: float = 0.85, seed: int = 0,
+                                  denoise: float = 1.0, seed: int = 0,
                                   lora: str = "", lora_strength: float = 0.8,
                                   negative_prompt: str = "",
                                   extra_loras: list | None = None,
+                                  mask_name: str = "",
                                   direction: str = "bottom",
                                   expand_pixels: int = 512,
-                                  feathering: int = 40) -> dict:
+                                  feathering: int = 128) -> dict:
     """Build ComfyUI API workflow for FLUX.1 Dev outpainting.
 
-    Uses ImagePadForOutpaint to extend the image and create a mask,
-    then VAEEncodeForInpaint to properly encode the masked region with
-    noise fill (avoids grey fill issue with SetLatentNoiseMask on FLUX).
+    Uses pre-processed padded image (edge-mirrored + blurred fill) and a
+    separate mask image. VAEEncode (normal) + SetLatentNoiseMask replaces
+    VAEEncodeForInpaint to avoid the grey fill problem where FLUX receives
+    flat grey (0.5) latent in the expansion area and outputs nothing useful.
 
     Node graph:
       [1] UnetLoaderGGUF
       [2] DualCLIPLoaderGGUF
       [3] VAELoader
       [4] LoraLoaderModelOnly ← model[1]
-      [5] LoadImage
-      [20] ImagePadForOutpaint ← image[5], direction padding
-      [6] VAEEncodeForInpaint ← padded_image[20], mask[20], vae[3]
+      [5] LoadImage (pre-padded image with edge-mirrored fill)
+      [6] VAEEncode ← pixels[5], vae[3]
+      [12] LoadImageMask (outpaint mask: white=regenerate)
+      [13] SetLatentNoiseMask ← samples[6], mask[12]
       [7] CLIPTextEncode(+) ← clip[2]
       [8] CLIPTextEncode(-) ← clip[2]
-      [9] KSampler ← model[4+], pos[7], neg[8], latent[6]
+      [9] KSampler ← model[4+], pos[7], neg[8], latent[13], denoise=1.0
       [10] VAEDecode ← samples[9], vae[3]
       [11] SaveImage ← images[10]
     """
-    # Calculate padding per direction
-    pad = {"left": 0, "top": 0, "right": 0, "bottom": 0}
-    if direction in pad:
-        pad[direction] = expand_pixels
-    else:
-        pad["bottom"] = expand_pixels
-
     workflow = {
         "1": {
             "class_type": "UnetLoaderGGUF",
@@ -755,24 +996,25 @@ def build_flux_outpaint_workflow(image_name: str, prompt: str, steps: int = 20,
                 "image": image_name,
             }
         },
-        "20": {
-            "class_type": "ImagePadForOutpaint",
+        "6": {
+            "class_type": "VAEEncode",
             "inputs": {
-                "image": ["5", 0],
-                "left": pad["left"],
-                "top": pad["top"],
-                "right": pad["right"],
-                "bottom": pad["bottom"],
-                "feathering": feathering,
+                "pixels": ["5", 0],
+                "vae": ["3", 0],
             }
         },
-        "6": {
-            "class_type": "VAEEncodeForInpaint",
+        "12": {
+            "class_type": "LoadImageMask",
             "inputs": {
-                "pixels": ["20", 0],  # padded image
-                "vae": ["3", 0],
-                "mask": ["20", 1],  # mask from ImagePadForOutpaint
-                "grow_mask_by": 6,
+                "image": mask_name,
+                "channel": "red",
+            }
+        },
+        "13": {
+            "class_type": "SetLatentNoiseMask",
+            "inputs": {
+                "samples": ["6", 0],
+                "mask": ["12", 0],
             }
         },
         "7": {
@@ -795,10 +1037,10 @@ def build_flux_outpaint_workflow(image_name: str, prompt: str, steps: int = 20,
                 "model": ["4", 0],
                 "positive": ["7", 0],
                 "negative": ["8", 0],
-                "latent_image": ["6", 0],
+                "latent_image": ["13", 0],
                 "seed": seed,
                 "steps": steps,
-                "cfg": 3.5,
+                "cfg": FLUX_OUTPAINT_CFG,
                 "sampler_name": "euler",
                 "scheduler": "simple",
                 "denoise": denoise,
@@ -825,7 +1067,7 @@ def build_flux_outpaint_workflow(image_name: str, prompt: str, steps: int = 20,
     if extra_loras:
         node_id = 14
         for lora_name, strength in extra_loras:
-            # Skip node IDs already used (20)
+            # Skip node IDs already used
             while str(node_id) in workflow:
                 node_id += 1
             workflow[str(node_id)] = {
@@ -921,6 +1163,7 @@ def cmd_animate(args):
         shutil.move(final_output, output)
         final_output = output
 
+    comfyui_free_memory()
     return {"ok": True, "path": final_output, "elapsed": round(elapsed, 1)}
 
 
@@ -964,6 +1207,25 @@ def ensure_comfyui() -> bool:
 
     print("[ai-media] ComfyUI failed to start within 120s", file=sys.stderr)
     return False
+
+
+def comfyui_free_memory():
+    """Unload all models from ComfyUI VRAM to prevent memory pressure.
+    Call between heavy operations (outpaint/edit/animate) to avoid swap thrashing.
+    Uses POST /free with unload_models=true and free_memory=true.
+    """
+    try:
+        payload = json.dumps({"unload_models": True, "free_memory": True}).encode()
+        req = urllib.request.Request(
+            f"{COMFYUI_URL}/free",
+            data=payload,
+            headers={"Content-Type": "application/json"},
+            method="POST"
+        )
+        urllib.request.urlopen(req, timeout=10)
+        print("[ai-media] ComfyUI models unloaded, memory freed", file=sys.stderr)
+    except Exception as e:
+        print(f"[ai-media] ComfyUI free memory failed (non-critical): {e}", file=sys.stderr)
 
 
 def comfyui_upload_image(image_path: str) -> str:
@@ -1422,6 +1684,11 @@ def main():
                          help="Enable automatic face protection mask (disabled by default)")
     p_edit.add_argument("--face-protect", type=float, default=None,
                          help="Face protection level: 0.0=no protect, 1.0=full protect (default 0.35)")
+    p_edit.add_argument("--expand", type=int, default=0,
+                         help="Expand canvas before editing (pixels, 0=disabled)")
+    p_edit.add_argument("--direction", default="bottom",
+                         choices=["bottom", "top", "left", "right"],
+                         help="Direction to expand canvas (default: bottom)")
 
     # outpaint
     p_outpaint = sub.add_parser("outpaint", help="Image outpainting (FLUX.1 Dev + LoRA via ComfyUI)")

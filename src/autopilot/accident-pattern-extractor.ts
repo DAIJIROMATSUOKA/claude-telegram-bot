@@ -187,7 +187,7 @@ export class AccidentPatternExtractor {
         return [];
       }
 
-      const data = await response.json();
+      const data = await response.json() as any;
       const items = data.items || [];
 
       console.log(`[AccidentPatternExtractor] Found ${items.length} incident records`);
@@ -378,7 +378,7 @@ export class AccidentPatternExtractor {
     for (const pattern of patterns) {
       const match = text.match(pattern);
       if (match) {
-        return match[1].trim();
+        return match[1]!.trim();
       }
     }
 
@@ -402,7 +402,7 @@ export class AccidentPatternExtractor {
     for (const pattern of patterns) {
       const matches = text.matchAll(pattern);
       for (const match of matches) {
-        conditions.push(match[1].trim());
+        conditions.push(match[1]!.trim());
       }
     }
 

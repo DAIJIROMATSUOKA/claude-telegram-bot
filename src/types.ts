@@ -80,3 +80,6 @@ export interface PendingMediaGroup {
 
 // Bot context with optional message
 export type BotContext = Context;
+
+// Alias for handler context
+export type MyContext = Context;

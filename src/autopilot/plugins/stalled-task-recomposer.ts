@@ -70,7 +70,7 @@ export class StalledTaskRecomposer implements AutopilotPlugin {
       throw new Error('Invalid task format');
     }
 
-    const originalTaskTitle = match[1];
+    const originalTaskTitle = match[1] ?? '';
 
     // Generate suggestions (in real implementation, this would use LLM)
     const suggestions = this.generateBreakdownSuggestions(originalTaskTitle);
