@@ -108,7 +108,7 @@ export async function analyzeCapabilityGaps(daysBack: number = 7): Promise<Capab
           UPDATE capability_gaps
           SET manual_count = manual_count + ?, last_seen_at = ?, metadata = ?
           WHERE operation_name = ?
-        `).run(capGap.manual_count, capGap.last_seen_at, capGap.metadata, capGap.operation_name);
+        `).run(capGap.manual_count, capGap.last_seen_at, capGap.metadata as any, capGap.operation_name);
 
         return { ...existing, manual_count: existing.manual_count + capGap.manual_count };
       } else {
@@ -117,7 +117,7 @@ export async function analyzeCapabilityGaps(daysBack: number = 7): Promise<Capab
           INSERT INTO capability_gaps
           (gap_id, operation_name, operation_description, manual_count, last_seen_at, automation_suggestion, estimated_time_saved_minutes, priority, status, metadata)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `).run(
+        `).run(...[
           capGap.gap_id,
           capGap.operation_name,
           capGap.operation_description,
@@ -128,7 +128,7 @@ export async function analyzeCapabilityGaps(daysBack: number = 7): Promise<Capab
           capGap.priority,
           capGap.status,
           capGap.metadata
-        );
+        ] as any);
 
         return capGap;
       }

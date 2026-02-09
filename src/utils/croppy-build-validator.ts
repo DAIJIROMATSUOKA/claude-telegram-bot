@@ -61,7 +61,7 @@ function tryBuild(): { success: boolean; error?: string; output?: string } {
 
 function attemptAutoFix(error: string): AutoFixResult | null {
   const exportMatch = error.match(/Export named '(\w+)' not found in module '([^']+)'/);
-  if (exportMatch) return fixWrongExport(exportMatch[1], exportMatch[2]);
+  if (exportMatch) return fixWrongExport(exportMatch[1] ?? '', exportMatch[2] ?? '');
   return null;
 }
 
@@ -81,7 +81,7 @@ function fixWrongExport(exportName: string, wrongModuleFullPath: string): AutoFi
   const wrongBasename = wrongModuleFullPath.split('/').pop()?.replace('.ts', '').replace('.js', '') || '';
   const grepImport = spawnSync('grep', ['-rn', `import.*${exportName}.*from`, 'src/', '--include=*.ts'], { cwd: PROJECT_ROOT, encoding: 'utf-8' });
   const allImportLines = grepImport.stdout.trim().split('\n').filter(Boolean);
-  const wrongImportLines = allImportLines.filter(line => { const m = line.match(/from\s+['"]([^'"]+)['"]/); return m ? m[1].includes(wrongBasename) : false; });
+  const wrongImportLines = allImportLines.filter(line => { const m = line.match(/from\s+['"]([^'"]+)['"]/); return m ? m[1]!.includes(wrongBasename) : false; });
 
   if (wrongImportLines.length === 0) { console.log(`[BuildValidator] ❌ 間違ったimportが見つからない`); return null; }
 

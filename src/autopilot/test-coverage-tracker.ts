@@ -257,7 +257,7 @@ export class TestCoverageTracker {
         throw new Error('Failed to query coverage history');
       }
 
-      const data = await response.json();
+      const data = await response.json() as any;
       const items = data.items || [];
 
       if (items.length < 2) {

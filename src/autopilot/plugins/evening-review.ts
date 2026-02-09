@@ -8,11 +8,12 @@
  */
 
 import type { AutopilotPlugin, PluginTrigger, PluginProposal } from '../types';
-import type { AutopilotContext } from '../engine';
+import type { AutopilotContext, AutopilotTask } from '../engine';
 import { ProactiveSecretary } from '../../services/proactive-secretary';
 
 export class EveningReviewPlugin implements AutopilotPlugin {
   name = 'evening-review';
+  version = '1.0.0';
   description = 'Daily evening review with task completion summary';
   private memoryGatewayUrl: string;
   private botToken?: string;
@@ -20,6 +21,13 @@ export class EveningReviewPlugin implements AutopilotPlugin {
   constructor(memoryGatewayUrl: string, botToken?: string) {
     this.memoryGatewayUrl = memoryGatewayUrl;
     this.botToken = botToken;
+  }
+
+  /**
+   * Detect triggers (AutopilotPlugin interface)
+   */
+  async detectTriggers(): Promise<AutopilotTask[]> {
+    return [];
   }
 
   /**

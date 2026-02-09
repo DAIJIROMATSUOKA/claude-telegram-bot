@@ -77,7 +77,7 @@ export async function startPhase(
       session_id: sessionId,
       status: 'planning', // startPhase maps to 'planning'
       phase: phaseName,
-      current_action: null,
+      current_action: undefined,
     });
   } catch (error) {
     console.error('[ControlTowerHelper] Failed to write to D1:', error);
@@ -98,7 +98,7 @@ export async function completePhase(
   const identifier = createTowerIdentifier(ctx);
 
   const state: TowerState = {
-    status: success ? 'completed' : 'error',
+    status: success ? 'completed' : 'failed',
     taskTitle: phaseName,
     startedAt: Date.now() - 1000, // Assume 1s ago for demo
   };
@@ -111,7 +111,7 @@ export async function completePhase(
       session_id: sessionId,
       status: success ? 'completed' : 'error',
       phase: phaseName,
-      current_action: null,
+      current_action: undefined,
     });
   } catch (error) {
     console.error('[ControlTowerHelper] Failed to write to D1:', error);
@@ -148,7 +148,7 @@ export async function updateStatus(
     controlTowerDB.updateControlTower({
       session_id: sessionId,
       status: mappedStatus,
-      current_action: detail,
+      current_action: detail ?? undefined,
     });
   } catch (error) {
     console.error('[ControlTowerHelper] Failed to write to D1:', error);

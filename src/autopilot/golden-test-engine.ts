@@ -122,7 +122,7 @@ export class GoldenTestEngine {
       if (attempt > 0) {
         const delay = this.RETRY_DELAYS_MS[attempt - 1];
         console.log(`[GoldenTestEngine] Retrying test ${test.test_id} after ${delay}ms delay`);
-        await this.sleep(delay);
+        await this.sleep(delay ?? 0);
       }
 
       const result = await this.executeSingleTest(test, planBundleId, attempt);
@@ -321,7 +321,7 @@ export class GoldenTestEngine {
     const decision: KillSwitchDecision = {
       decision_id: `kill_${bundle.plan_id}_${Date.now()}`,
       triggered_by: 'test_failure',
-      test_id: failedTests[0].test_id,
+      test_id: failedTests[0]!.test_id,
       plan_bundle_id: bundle.plan_id,
       action,
       reason: `${failedTests.length} Golden Test(s) failed with severity ${highestSeverity}`,
@@ -390,7 +390,7 @@ export class GoldenTestEngine {
         return 0;
       }
 
-      const data = await response.json();
+      const data = await response.json() as any;
       return data.items?.length || 0;
     } catch (error) {
       console.error('[GoldenTestEngine] Error querying recent failures:', error);

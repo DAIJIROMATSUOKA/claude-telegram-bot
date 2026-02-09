@@ -134,48 +134,48 @@ export async function deliverBufferedNotifications(ctx: Context, userId: string 
     };
 
     for (const notif of notifications) {
-      grouped[notif.notification_type].push(notif.message);
+      grouped[notif.notification_type]!.push(notif.message);
     }
 
     // Format and send
     let message = `📬 **Focus Mode バッファ** (${notifications.length}件)\n\n`;
 
-    if (grouped.success.length > 0) {
-      message += `✅ **成功** (${grouped.success.length}件)\n`;
-      for (const msg of grouped.success.slice(0, 5)) {
+    if (grouped.success!.length > 0) {
+      message += `✅ **成功** (${grouped.success!.length}件)\n`;
+      for (const msg of grouped.success!.slice(0, 5)) {
         message += `  • ${msg}\n`;
       }
-      if (grouped.success.length > 5) {
-        message += `  ... 他${grouped.success.length - 5}件\n`;
+      if (grouped.success!.length > 5) {
+        message += `  ... 他${grouped.success!.length - 5}件\n`;
       }
       message += '\n';
     }
 
-    if (grouped.info.length > 0) {
-      message += `ℹ️ **情報** (${grouped.info.length}件)\n`;
-      for (const msg of grouped.info.slice(0, 5)) {
+    if (grouped.info!.length > 0) {
+      message += `ℹ️ **情報** (${grouped.info!.length}件)\n`;
+      for (const msg of grouped.info!.slice(0, 5)) {
         message += `  • ${msg}\n`;
       }
-      if (grouped.info.length > 5) {
-        message += `  ... 他${grouped.info.length - 5}件\n`;
+      if (grouped.info!.length > 5) {
+        message += `  ... 他${grouped.info!.length - 5}件\n`;
       }
       message += '\n';
     }
 
-    if (grouped.warning.length > 0) {
-      message += `⚠️ **警告** (${grouped.warning.length}件)\n`;
-      for (const msg of grouped.warning.slice(0, 5)) {
+    if (grouped.warning!.length > 0) {
+      message += `⚠️ **警告** (${grouped.warning!.length}件)\n`;
+      for (const msg of grouped.warning!.slice(0, 5)) {
         message += `  • ${msg}\n`;
       }
-      if (grouped.warning.length > 5) {
-        message += `  ... 他${grouped.warning.length - 5}件\n`;
+      if (grouped.warning!.length > 5) {
+        message += `  ... 他${grouped.warning!.length - 5}件\n`;
       }
       message += '\n';
     }
 
-    if (grouped.error.length > 0) {
-      message += `❌ **エラー** (${grouped.error.length}件)\n`;
-      for (const msg of grouped.error) {
+    if (grouped.error!.length > 0) {
+      message += `❌ **エラー** (${grouped.error!.length}件)\n`;
+      for (const msg of grouped.error!) {
         message += `  • ${msg}\n`;
       }
       message += '\n';

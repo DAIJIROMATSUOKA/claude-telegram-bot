@@ -22,7 +22,7 @@ async function exportFromLogs() {
   console.log("📝 Attempting to export from logs...");
 
   const messages: ExportedMessage[] = [];
-  const today = new Date().toISOString().split("T")[0];
+  const today = new Date().toISOString().split("T")[0] ?? '';
 
   // ログファイルから抽出を試みる
   const logPaths = [

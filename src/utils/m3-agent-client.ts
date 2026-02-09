@@ -72,7 +72,7 @@ export class M3AgentClient {
         return { ok: false, error: `HTTP ${response.status}: ${errorText}` };
       }
 
-      const result = await response.json();
+      const result = await response.json() as M3AgentResponse;
       return result;
     } catch (error: any) {
       if (error.name === 'AbortError') {
@@ -113,7 +113,7 @@ export class M3AgentClient {
         return { ok: false, error: `HTTP ${response.status}: ${errorText}` };
       }
 
-      const result = await response.json();
+      const result = await response.json() as M3AgentResponse;
       return result;
     } catch (error: any) {
       if (error.name === 'AbortError') {
@@ -155,7 +155,7 @@ export class M3AgentClient {
         return { ok: false, error: `HTTP ${response.status}: ${errorText}` };
       }
 
-      const result = await response.json();
+      const result = await response.json() as M3AgentResponse;
       return result;
     } catch (error: any) {
       if (error.name === 'AbortError') {

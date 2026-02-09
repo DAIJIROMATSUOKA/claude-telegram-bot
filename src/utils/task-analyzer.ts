@@ -68,7 +68,7 @@ export function parseTasksFromMemory(memoryContent: string): {
     const taskMatch = line.match(/^-\s*(✅\s*)?(.+)$/);
     if (taskMatch && currentSection !== 'none') {
       const completed = !!taskMatch[1];
-      const content = taskMatch[2].trim();
+      const content = taskMatch[2]!.trim();
 
       if (!content) continue;
 
@@ -147,7 +147,7 @@ export function calculateDaysElapsed(taskDate: string): number {
   }
 
   const [year, month, day] = parts;
-  const date = new Date(year, month - 1, day);
+  const date = new Date(year ?? 0, (month ?? 1) - 1, day ?? 1);
   date.setHours(0, 0, 0, 0);
 
   const diffTime = today.getTime() - date.getTime();

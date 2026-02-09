@@ -55,7 +55,7 @@ export class TestSelectionEngine {
 
     // Force include critical/high severity (AI Council consensus)
     const forceIncluded = patterns.filter((p) =>
-      this.criteria.force_include_severity.includes(p.severity)
+      (this.criteria.force_include_severity as string[]).includes(p.severity)
     );
 
     // Filter by minimum score

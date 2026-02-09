@@ -101,7 +101,7 @@ describe('Control Tower DB', () => {
 
     const traces = db.getActionTraces('test-session-1');
     expect(traces.length).toBeGreaterThan(0);
-    const trace = traces[0];
+    const trace = traces[0]!;
     expect(trace.action_type).toBe('tool');
     expect(trace.action_name).toBe('Read');
     expect(trace.status).toBe('completed');

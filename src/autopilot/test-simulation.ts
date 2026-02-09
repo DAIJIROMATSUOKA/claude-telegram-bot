@@ -227,43 +227,40 @@ export class TestSimulationEngine {
 
       evidence: {
         rationale: `Simulating accident pattern: ${pattern.root_cause}`,
-        supporting_data: {
-          pattern_id: pattern.pattern_id,
-          trigger_conditions: pattern.trigger_conditions,
-        },
-        alternative_approaches: [],
-        cost_benefit_analysis: 'Simulation - no real cost',
+        supporting_data: [
+          `pattern_id: ${pattern.pattern_id}`,
+          ...pattern.trigger_conditions.map((c: string) => `trigger: ${c}`),
+        ],
       },
 
       actions: [
         {
           action_id: `sim-action-${pattern.pattern_id}`,
-          type: 'custom',
+          type: 'notify' as const,
           description: `Simulate: ${pattern.description}`,
+          parameters: {},
           idempotency_key: `sim-${pattern.pattern_id}`,
-          expected_outcome: 'Test should catch this accident',
-          reversible: true,
+          rollback_plan: {
+            can_rollback: true,
+            automatic_steps: ['No rollback needed for simulation'],
+            manual_instructions: [],
+          },
         },
       ],
 
       risk: {
-        identified_risks: [
+        level: pattern.severity as 'low' | 'medium' | 'high' | 'critical',
+        risks: [
           {
-            risk_id: `sim-risk-${pattern.pattern_id}`,
             description: pattern.root_cause,
-            likelihood: 'high',
-            severity: pattern.severity,
-            mitigation_strategy: 'Golden Test should prevent this',
+            likelihood: 'high' as const,
+            impact: pattern.severity as 'low' | 'medium' | 'high' | 'critical',
+            mitigation: 'Golden Test should prevent this',
           },
         ],
-        overall_risk_score: 0.8,
-        acceptable_risk_threshold: 0.3,
-        mitigation_plan: 'Golden Test validation',
-        rollback_plan: {
-          rollback_steps: ['Test simulation - no real rollback needed'],
-          estimated_rollback_time: '0s',
-          data_preservation_strategy: 'N/A - simulation only',
-        },
+        mitigations: ['Golden Test validation'],
+        worst_case: 'Accident pattern recurs',
+        blast_radius: 'project' as const,
       },
 
       created_at: new Date().toISOString(),
@@ -290,30 +287,28 @@ export class TestSimulationEngine {
         impact: 'low',
         evidence: {
           rationale: 'Routine maintenance task',
-          supporting_data: {},
-          alternative_approaches: [],
-          cost_benefit_analysis: 'Low risk, high benefit',
+          supporting_data: [],
         },
         actions: [
           {
             action_id: 'safe-action-1',
-            type: 'custom',
+            type: 'notify' as const,
             description: 'Perform safe maintenance',
+            parameters: {},
             idempotency_key: 'safe-maint-1',
-            expected_outcome: 'Successful completion',
-            reversible: true,
+            rollback_plan: {
+              can_rollback: true,
+              automatic_steps: ['Revert if needed'],
+              manual_instructions: [],
+            },
           },
         ],
         risk: {
-          identified_risks: [],
-          overall_risk_score: 0.1,
-          acceptable_risk_threshold: 0.7,
-          mitigation_plan: 'Standard monitoring',
-          rollback_plan: {
-            rollback_steps: ['Revert if needed'],
-            estimated_rollback_time: '1 min',
-            data_preservation_strategy: 'Full backup',
-          },
+          level: 'low' as const,
+          risks: [],
+          mitigations: ['Standard monitoring'],
+          worst_case: 'Minor disruption',
+          blast_radius: 'project' as const,
         },
         created_at: new Date().toISOString(),
       },

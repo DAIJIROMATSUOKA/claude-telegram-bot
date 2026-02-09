@@ -45,7 +45,7 @@ export function detectImplementationStart(message: string): DetectionResult {
   const match1 = message.match(pattern1);
   if (match1) {
     detected = true;
-    taskDescription = match1[1].trim();
+    taskDescription = match1![1]!.trim();
     confidence = 0.95;
   }
 
@@ -54,7 +54,7 @@ export function detectImplementationStart(message: string): DetectionResult {
   const match2 = message.match(pattern2);
   if (!detected && match2) {
     detected = true;
-    taskDescription = match2[1].trim();
+    taskDescription = match2![1]!.trim();
     confidence = 0.90;
   }
 
@@ -63,7 +63,7 @@ export function detectImplementationStart(message: string): DetectionResult {
   const match3 = message.match(pattern3);
   if (!detected && match3) {
     detected = true;
-    taskDescription = match3[1].trim();
+    taskDescription = match3![1]!.trim();
     confidence = 0.92;
   }
 
@@ -106,8 +106,8 @@ export function detectPhaseStart(message: string): DetectionResult {
   const match1 = message.match(pattern1);
   if (match1) {
     detected = true;
-    phase = `Phase ${match1[1]}`;
-    taskDescription = match1[2].trim();
+    phase = `Phase ${match1![1]}`;
+    taskDescription = match1![2]!.trim();
     confidence = 0.90;
   }
 
@@ -116,8 +116,8 @@ export function detectPhaseStart(message: string): DetectionResult {
   const match2 = message.match(pattern2);
   if (!detected && match2) {
     detected = true;
-    phase = `Phase ${match2[1]}/${match2[2]}`;
-    taskDescription = match2[3].trim();
+    phase = `Phase ${match2![1]}/${match2![2]}`;
+    taskDescription = match2![3]!.trim();
     confidence = 0.92;
   }
 
@@ -126,8 +126,8 @@ export function detectPhaseStart(message: string): DetectionResult {
   const match3 = message.match(pattern3);
   if (!detected && match3) {
     detected = true;
-    phase = `Phase ${match3[1]}`;
-    taskDescription = match3[2].trim();
+    phase = `Phase ${match3![1]}`;
+    taskDescription = match3![2]!.trim();
     confidence = 0.88;
   }
 
@@ -155,7 +155,7 @@ export function detectCouncilConsultation(message: string): DetectionResult {
     // Extract question from "council: question text"
     const questionMatch = message.match(/council:\s*(.+)/i);
     const taskDescription = questionMatch
-      ? `AI Council相談: ${questionMatch[1].substring(0, 100)}...`
+      ? `AI Council相談: ${questionMatch[1]!.substring(0, 100)}...`
       : 'AI Council相談中';
 
     return {

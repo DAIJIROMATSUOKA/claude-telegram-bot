@@ -133,7 +133,7 @@ export class LearningLog {
         return [];
       }
 
-      const data = await response.json();
+      const data = await response.json() as any;
       const events = data.results || [];
 
       // Filter by plugin name
@@ -206,7 +206,7 @@ export class LearningLog {
 
       // Phase 4: Advanced recommendations with trend analysis
       const recommendations = this.generateAdvancedRecommendations(
-        records[0].task_type,
+        records[0]!.task_type,
         successRate,
         avgExecutionTime,
         commonErrors,
@@ -216,9 +216,9 @@ export class LearningLog {
       learningPatterns.push({
         pattern_type: successRate >= 0.8 ? 'success' : 'failure',
         plugin_name: pluginName,
-        task_type: records[0].task_type,
-        confidence_range: this.getConfidenceRange(records[0].confidence),
-        impact_level: records[0].impact,
+        task_type: records[0]!.task_type,
+        confidence_range: this.getConfidenceRange(records[0]!.confidence),
+        impact_level: records[0]!.impact,
         occurrences: records.length,
         success_rate: successRate,
         avg_execution_time_ms: avgExecutionTime,
@@ -345,14 +345,14 @@ export class LearningLog {
         throw new Error(`Failed to fetch statistics: ${response.statusText}`);
       }
 
-      const data = await response.json();
+      const data = await response.json() as any;
       const events = data.results || [];
       const records = events.map((e: any) => e.data as ExecutionRecord);
 
       const stats = {
         total_executions: records.length,
-        success_count: records.filter(r => r.success).length,
-        failure_count: records.filter(r => !r.success).length,
+        success_count: records.filter((r: any) => r.success).length,
+        failure_count: records.filter((r: any) => !r.success).length,
         success_rate: 0,
         avg_execution_time_ms: 0,
         by_plugin: {} as Record<string, { success: number; failure: number; success_rate: number }>,
@@ -361,7 +361,7 @@ export class LearningLog {
 
       if (records.length > 0) {
         stats.success_rate = stats.success_count / stats.total_executions;
-        stats.avg_execution_time_ms = records.reduce((sum, r) => sum + r.execution_time_ms, 0) / records.length;
+        stats.avg_execution_time_ms = records.reduce((sum: any, r: any) => sum + r.execution_time_ms, 0) / records.length;
       }
 
       // Group by plugin
@@ -370,16 +370,16 @@ export class LearningLog {
           stats.by_plugin[record.plugin_name] = { success: 0, failure: 0, success_rate: 0 };
         }
         if (record.success) {
-          stats.by_plugin[record.plugin_name].success++;
+          stats.by_plugin[record.plugin_name]!.success++;
         } else {
-          stats.by_plugin[record.plugin_name].failure++;
+          stats.by_plugin[record.plugin_name]!.failure++;
         }
       }
 
       // Calculate success rates by plugin
       for (const plugin in stats.by_plugin) {
-        const total = stats.by_plugin[plugin].success + stats.by_plugin[plugin].failure;
-        stats.by_plugin[plugin].success_rate = stats.by_plugin[plugin].success / total;
+        const total = stats.by_plugin[plugin]!.success + stats.by_plugin[plugin]!.failure;
+        stats.by_plugin[plugin]!.success_rate = stats.by_plugin[plugin]!.success / total;
       }
 
       // Group by task type
@@ -388,16 +388,16 @@ export class LearningLog {
           stats.by_task_type[record.task_type] = { success: 0, failure: 0, success_rate: 0 };
         }
         if (record.success) {
-          stats.by_task_type[record.task_type].success++;
+          stats.by_task_type[record.task_type]!.success++;
         } else {
-          stats.by_task_type[record.task_type].failure++;
+          stats.by_task_type[record.task_type]!.failure++;
         }
       }
 
       // Calculate success rates by task type
       for (const type in stats.by_task_type) {
-        const total = stats.by_task_type[type].success + stats.by_task_type[type].failure;
-        stats.by_task_type[type].success_rate = stats.by_task_type[type].success / total;
+        const total = stats.by_task_type[type]!.success + stats.by_task_type[type]!.failure;
+        stats.by_task_type[type]!.success_rate = stats.by_task_type[type]!.success / total;
       }
 
       return stats;

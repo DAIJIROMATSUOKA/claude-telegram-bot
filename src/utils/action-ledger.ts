@@ -100,7 +100,7 @@ export class ActionLedger {
         throw new Error(`Memory Gateway query failed: ${response.status}`);
       }
 
-      const data = await response.json();
+      const data = await response.json() as any;
       const items = data.items || [];
 
       let restoredCount = 0;
@@ -211,7 +211,7 @@ export class ActionLedger {
           throw new Error(`Memory Gateway append failed: ${response.status}`);
         }
 
-        const data = await response.json();
+        const data = await response.json() as any;
 
         // Check action field: "created" = new, "updated" = duplicate
         if (data.action === 'updated') {

@@ -25,7 +25,7 @@ async function main() {
   }
 
   // TELEGRAM_ALLOWED_USERSから最初のユーザーIDを取得
-  const chatId = allowedUsers.split(',')[0].trim();
+  const chatId = allowedUsers.split(',')[0]!.trim();
 
   const secretary = new ProactiveSecretary(botToken, chatId);
 

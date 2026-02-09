@@ -61,8 +61,8 @@ export class ContextManager {
     // v2.2: Use token budget management
     if (tokenBudget > 0) {
       return this.getContextWithBudget({
-        scope,
-        scopePrefix,
+        scope: scope ?? '',
+        scopePrefix: scopePrefix ?? '',
         maxItems,
         includePinned,
         queryKeywords,
@@ -142,7 +142,7 @@ export class ContextManager {
         throw new Error(`Snapshot request failed: ${response.status} ${response.statusText}`);
       }
 
-      const data = await response.json();
+      const data = await response.json() as any;
 
       // Return markdown snapshot
       return data.snapshot || '';
@@ -186,7 +186,7 @@ export class ContextManager {
         throw new Error(`Query request failed: ${response.status} ${response.statusText}`);
       }
 
-      const data = await response.json();
+      const data = await response.json() as any;
       return data.items || [];
     } catch (error) {
       console.error('[ContextManager] Error querying memory:', error);
@@ -209,7 +209,7 @@ export class ContextManager {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
+        const errorData = await response.json() as any;
         throw new Error(
           `Append request failed: ${response.status} ${errorData.error?.message || response.statusText}`
         );

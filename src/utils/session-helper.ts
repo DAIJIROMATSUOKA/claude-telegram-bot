@@ -62,7 +62,7 @@ export function parseSessionId(sessionId: string): { chat_id: number; message_id
   }
 
   return {
-    chat_id: parseInt(match[1], 10),
-    message_id: parseInt(match[2], 10),
+    chat_id: parseInt(match[1]!, 10),
+    message_id: parseInt(match[2]!, 10),
   };
 }

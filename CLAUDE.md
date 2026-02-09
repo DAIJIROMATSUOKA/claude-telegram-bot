@@ -369,13 +369,33 @@ tail -f /tmp/claude-telegram-bot-ts.log
 tail -f /tmp/claude-telegram-bot-ts.err
 ```
 
-### 4. 文脈を必ず確認して使う
-- [SYSTEM]ブロック内のjarvis_contextに現在のタスクが書いてある
-- 「状況は？」と聞かれたらjarvis_contextの内容を答える
-- chat_historyに直近の会話がある。必ず読んで会話を継続する
-- プロジェクトパスは /Users/daijiromatsuokam1/claude-telegram-bot
-- 「こんにちは」「何かお手伝いできますか」等の初回挨拶は禁止。文脈に基づいて返答する
+---
 
-### 5. Bot再起動方法
-- 必ず ~/claude-telegram-bot/scripts/start-bot.sh を使用
-- pkillやbunを直接呼ばないこと
+## 📝 学習済みナレッジ（セッション横断の運用知見）
+
+### DJ方針
+- **スピードは重視しない。記憶すること、効率化、自動化を重視**
+- 安易な結論を出さず、前提を疑い、反論も含めて段階的に深く考える
+- 自分で判断して実行。選択肢を出すな
+
+### 環境情報
+- **マシン**: MacBook Pro M3 Max（macOS Sequoia 15.3.1）、メモリ36GB
+- **ランタイム**: Bun 1.2.x（TypeScript直接実行）
+- **Bot起動**: LaunchAgent経由（`com.claude-telegram-ts`）
+- **ComfyUI**: `/Users/daijiromatsuokam1/ComfyUI/` に設置。FLUX系モデルで画像生成・編集
+- **mflux**: Apple Silicon最適化のFLUX推論。`--low-ram` `--8-bit` オプション必須（36GBメモリ制約）
+
+### /edit（画像編集）の知見
+- FLUX Kontext Edit使用。ComfyUIワークフロー経由
+- **顔保護マスク**: denoise 0.85で顔部分を保護するが、合成ズレ（顔が背中に出る等）が発生する場合あり
+- **outpaint**: 外側に拡張する機能。patch-outpaint.pyで制御
+- 画像リサイズ: 1024x1024に統一してからFLUXに渡す
+
+### 解決済みの問題
+- **型エラー258個**: 2025-02-09に全て修正済み（65ファイル変更）。ロジック変更なし、型アノテーション追加のみ
+- **Error 409**: Telegram getUpdates競合。start-bot.shで解決済み
+- **OpenAI/Anthropic API課金**: AI Router導入で従量課金API完全排除済み
+
+### 既知の未解決課題
+- **Voice transcription**: OpenAI API依存のため現在無効。Whisper.cppローカル化が候補
+- **/edit画像品質**: FLUX Editで顔合成ズレが発生する場合がある。マスク戦略の改善が必要

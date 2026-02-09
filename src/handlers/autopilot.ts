@@ -10,6 +10,7 @@ import { MEMORY_GATEWAY_URL, AUTOPILOT_ENABLED, TELEGRAM_TOKEN } from "../config
 
 const TELEGRAM_BOT_TOKEN = TELEGRAM_TOKEN;
 import { AutopilotEngine } from "../autopilot/engine";
+import type { AutopilotPlugin } from "../autopilot/types";
 import { PredictiveTaskGenerator } from "../autopilot/plugins/predictive-task-generator";
 import { StalledTaskRecomposer } from "../autopilot/plugins/stalled-task-recomposer";
 import { ReverseScheduler } from "../autopilot/plugins/reverse-scheduler";
@@ -47,8 +48,8 @@ export async function handleAutopilot(ctx: CommandContext<MyContext>) {
     engine.registerPlugin(new PredictiveTaskGenerator(MEMORY_GATEWAY_URL));
     engine.registerPlugin(new StalledTaskRecomposer(MEMORY_GATEWAY_URL));
     engine.registerPlugin(new ReverseScheduler(MEMORY_GATEWAY_URL));
-    engine.registerPlugin(new MorningBriefingPlugin(MEMORY_GATEWAY_URL, TELEGRAM_BOT_TOKEN));
-    engine.registerPlugin(new EveningReviewPlugin(MEMORY_GATEWAY_URL, TELEGRAM_BOT_TOKEN));
+    engine.registerPlugin(new MorningBriefingPlugin(MEMORY_GATEWAY_URL, TELEGRAM_BOT_TOKEN) as AutopilotPlugin);
+    engine.registerPlugin(new EveningReviewPlugin(MEMORY_GATEWAY_URL, TELEGRAM_BOT_TOKEN) as AutopilotPlugin);
     engine.registerPlugin(new WeeklyReviewPlugin(MEMORY_GATEWAY_URL, TELEGRAM_BOT_TOKEN));
 
     // Run pipeline

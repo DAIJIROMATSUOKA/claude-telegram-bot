@@ -23,7 +23,7 @@
 import type { Api } from 'grammy';
 import { ContextManager } from './context-manager';
 import { ActionLedger } from '../utils/action-ledger';
-import type { AutopilotPlugin } from './types';
+import type { AutopilotPlugin, KillSwitchDecision, TestExecutionResult, GoldenTestResult } from './types';
 import { ConfidenceRouter } from '../utils/confidence-router';
 import { RedTeamValidator } from '../utils/red-team';
 import { LearningLog } from '../utils/learning-log';
@@ -83,7 +83,7 @@ export class AutopilotEngine {
     this.chatId = chatId;
     this.memoryGatewayUrl = memoryGatewayUrl;
     this.contextManager = new ContextManager(memoryGatewayUrl);
-    this.actionLedger = new ActionLedger(undefined, undefined, memoryGatewayUrl);
+    this.actionLedger = new ActionLedger({ memoryGatewayUrl });
 
     // Phase 2: Proof-Carrying Autopilot
     this.policyEngine = new PolicyEngine();
@@ -447,24 +447,24 @@ export class AutopilotEngine {
         this.logger.error(`Golden Tests failed for ${proposal.task.title}`, {
           failed: testResult.failed_tests,
           total: testResult.total_tests,
-        });
+        } as any);
 
         // Check Kill Switch decision
-        if (testResult.kill_switch_decision && testResult.kill_switch_decision.activated) {
+        if (testResult.kill_switch_decision && testResult.kill_switch_decision.activated_at) {
           await this.bot.sendMessage(
             this.chatId,
             `🚨 **Kill Switch Activated**\n\n` +
               `Task: ${proposal.task.title}\n` +
               `Reason: ${testResult.kill_switch_decision.reason}\n` +
               `Severity: ${testResult.kill_switch_decision.severity}\n\n` +
-              `**Failed Tests:**\n${testResult.test_results
+              `**Failed Tests:**\n${testResult.results
                 .filter((r) => r.status === 'failed')
-                .map((r) => `• ${r.test_id}: ${r.error_message || 'Failed'}`)
+                .map((r) => `• ${r.test_id}: ${(r as any).message || 'Failed'}`)
                 .join('\n')}\n\n` +
               `Execution has been blocked to prevent past accidents from recurring.`
           );
 
-          this.logger.error(`Kill Switch activated for ${proposal.task.title}`, testResult.kill_switch_decision);
+          this.logger.error(`Kill Switch activated for ${proposal.task.title}`, String(testResult.kill_switch_decision));
           continue;
         }
 
@@ -478,7 +478,7 @@ export class AutopilotEngine {
         );
       } else {
         this.logger.info(`Golden Tests passed for ${proposal.task.title}`, {
-          passed: testResult.passed_tests,
+          passed: testResult.results.filter((r) => r.status === 'passed').length,
           total: testResult.total_tests,
         });
       }
@@ -555,7 +555,7 @@ export class AutopilotEngine {
           errorMsg
         );
 
-        taskLogger.error(`Execution failed for ${proposal.task.title}`, error, { duration_ms: executionTime });
+        taskLogger.error(`Execution failed for ${proposal.task.title}`, error as string | Error | undefined, { duration_ms: executionTime });
 
         // Record failure and check if we should retry
         const retryInfo = await this.actionLedger.recordFailure(
@@ -809,40 +809,37 @@ export class AutopilotEngine {
 
       evidence: {
         rationale: task.reason,
-        supporting_data: {
-          task_type: task.type,
-          source_plugin: task.source_plugin,
-          description: task.description,
-        },
-        alternative_approaches: [],
-        cost_benefit_analysis: `Estimated duration: ${this.estimateDuration(task)}`,
+        supporting_data: [
+          `task_type: ${task.type}`,
+          `source_plugin: ${task.source_plugin}`,
+          `description: ${task.description}`,
+        ],
       },
 
       actions: action_plan.map((step, index) => ({
         action_id: `${task.id}_action_${index}`,
-        type: 'custom',
+        type: 'notify' as const,
         description: step,
+        parameters: {},
         idempotency_key: `${task.id}_${index}`,
-        expected_outcome: 'Task step completed',
-        reversible: true,
+        rollback_plan: {
+          can_rollback: true,
+          automatic_steps: ['Revert step'],
+          manual_instructions: ['Manually revert step'],
+        },
       })),
 
       risk: {
-        identified_risks: risks.map((risk, index) => ({
-          risk_id: `${task.id}_risk_${index}`,
+        level: task.impact as 'low' | 'medium' | 'high' | 'critical',
+        risks: risks.map((risk, index) => ({
           description: risk,
-          likelihood: task.confidence < 0.5 ? 'high' : task.confidence < 0.8 ? 'medium' : 'low',
-          severity: task.impact,
-          mitigation_strategy: 'Action Ledger deduplication + retry logic',
+          likelihood: (task.confidence < 0.5 ? 'high' : task.confidence < 0.8 ? 'medium' : 'low') as 'low' | 'medium' | 'high',
+          impact: task.impact as 'low' | 'medium' | 'high' | 'critical',
+          mitigation: 'Action Ledger deduplication + retry logic',
         })),
-        overall_risk_score: task.confidence < 0.5 ? 0.8 : task.confidence < 0.8 ? 0.5 : 0.2,
-        acceptable_risk_threshold: 0.7,
-        mitigation_plan: 'Automatic retry with exponential backoff, M3 Agent notification',
-        rollback_plan: {
-          rollback_steps: ['Log failure to Memory Gateway', 'Notify user', 'Mark task as failed'],
-          estimated_rollback_time: '< 1 minute',
-          data_preservation_strategy: 'All state persisted in Memory Gateway',
-        },
+        mitigations: ['Automatic retry with exponential backoff', 'M3 Agent notification'],
+        worst_case: 'Task fails and requires manual intervention',
+        blast_radius: 'project' as const,
       },
 
       created_at: task.created_at,

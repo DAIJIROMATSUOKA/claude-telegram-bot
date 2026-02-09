@@ -90,3 +90,9 @@ export interface LockInfo {
   acquiredAt: number;
   expiresAt: number;
 }
+
+export interface SessionInfo {
+  session_id: string;
+  chat_id: number;
+  message_id: number;
+}

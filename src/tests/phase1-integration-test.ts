@@ -39,14 +39,14 @@ async function main() {
 
   // Test 3: Device routing for open_url (should route to M3)
   console.log('\n[Test 3] Device Routing - open_url');
-  const openProposal: AutopilotProposal = {
+  const openProposal = {
     title: 'Open URL in browser',
     rationale: 'User requested to open URL https://example.com',
     actions: [],
     confidence: 0.95,
     impact: 'low',
     risks: [],
-  };
+  } as any as AutopilotProposal;
 
   const openDecision = await router.route(openProposal);
   console.log(`  Should execute: ${openDecision.shouldExecute}`);
@@ -59,14 +59,14 @@ async function main() {
 
   // Test 4: Device routing for notify (should route to M3 or iPhone)
   console.log('\n[Test 4] Device Routing - notify');
-  const notifyProposal: AutopilotProposal = {
+  const notifyProposal = {
     title: 'Send notification',
     rationale: 'Send notification to user',
     actions: [],
     confidence: 0.95,
     impact: 'low',
     risks: [],
-  };
+  } as any as AutopilotProposal;
 
   const notifyDecision = await router.route(notifyProposal);
   console.log(`  Should execute: ${notifyDecision.shouldExecute}`);
@@ -79,14 +79,14 @@ async function main() {
 
   // Test 5: Device routing for planning (should route to M1)
   console.log('\n[Test 5] Device Routing - planning (unknown action)');
-  const planProposal: AutopilotProposal = {
+  const planProposal = {
     title: 'Plan next steps',
     rationale: 'Planning next implementation steps',
     actions: [],
     confidence: 0.95,
     impact: 'low',
     risks: [],
-  };
+  } as any as AutopilotProposal;
 
   const planDecision = await router.route(planProposal);
   console.log(`  Should execute: ${planDecision.shouldExecute}`);

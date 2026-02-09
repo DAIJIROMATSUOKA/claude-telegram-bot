@@ -129,6 +129,13 @@ ${pathsList}
 
 4. For any destructive or irreversible action, ALWAYS ask for confirmation first.
 
+5. REPLY CONTEXT: Messages may contain a [返信元メッセージ（name）]...[/返信元] block.
+   This is the message the user is replying to. You MUST:
+   - Read and understand the reply context BEFORE responding
+   - Treat it as critical conversation context (the user is referring to this content)
+   - Base your response on BOTH the reply context AND the user's new message
+   - If the user says "これ" "この" "それ" "さっきの", they are referring to the reply context
+
 You are running via Telegram, so the user cannot easily undo mistakes. Be extra careful!
 `;
 }
@@ -220,6 +227,11 @@ if (ALLOWED_USERS.length === 0) {
   );
   process.exit(1);
 }
+
+// ============== Memory Gateway & Autopilot ==============
+
+export const MEMORY_GATEWAY_URL = process.env.MEMORY_GATEWAY_URL || 'https://jarvis-memory-gateway.jarvis-matsuoka.workers.dev';
+export const AUTOPILOT_ENABLED = (process.env.AUTOPILOT_ENABLED || 'true').toLowerCase() === 'true';
 
 console.log(
   `Config loaded: ${ALLOWED_USERS.length} allowed users, working dir: ${WORKING_DIR}`

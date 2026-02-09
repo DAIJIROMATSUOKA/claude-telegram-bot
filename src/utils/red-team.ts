@@ -101,7 +101,7 @@ export class RedTeamValidator {
     }
 
     // Check for vague risk descriptions
-    const vagueRisks = risks.filter(r => r.length < 20);
+    const vagueRisks = risks.filter((r: any) => r.length < 20);
     if (vagueRisks.length > 0) {
       issues.push({
         severity: 'info',
@@ -138,7 +138,7 @@ export class RedTeamValidator {
     }
 
     // Check for verification steps
-    const hasVerification = plan.some(step =>
+    const hasVerification = plan.some((step: any) =>
       step.toLowerCase().includes('verify') ||
       step.toLowerCase().includes('test') ||
       step.toLowerCase().includes('check')

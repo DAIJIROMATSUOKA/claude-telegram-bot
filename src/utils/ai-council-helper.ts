@@ -88,7 +88,7 @@ function generateSummary(
 
   // 各AIの応答から最初の段落または最初の100文字を抽出
   const summaries = validResponses.map((r) => {
-    const firstParagraph = r.content.split('\n\n')[0];
+    const firstParagraph = r.content.split('\n\n')[0]!;
     const truncated =
       firstParagraph.length > 100
         ? firstParagraph.substring(0, 100) + '...'
