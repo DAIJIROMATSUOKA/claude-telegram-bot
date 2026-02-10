@@ -422,15 +422,8 @@ tail -f /tmp/claude-telegram-bot-ts.err
 <!-- SESSION_STATE_START -->
 ## 🧠 現在の状態
 
-### 完了タスク
-- CLAUDE.md の SESSION_STATE セクションにテスト文字列 PINEAPPLE2026 を完了タスクとして記録
-
-### 残タスク
-- なし
-
-### 学んだこと
-- なし
-
-### 現在の問題
-- なし
+### セッション情報
+- AI: 🧠 Claude Opus 4.5
+- メッセージ数: 0
+- 時間: 1分
 <!-- SESSION_STATE_END -->
