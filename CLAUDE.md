@@ -423,7 +423,7 @@ tail -f /tmp/claude-telegram-bot-ts.err
 ## 🧠 現在の状態
 
 ### 完了タスク
-- なし（echo testの疎通確認のみ）
+- なし（疎通確認のみ）
 
 ### 残タスク
 - なし（タスク依頼なし）
