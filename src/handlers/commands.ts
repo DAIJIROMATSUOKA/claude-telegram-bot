@@ -5,6 +5,7 @@
  */
 
 import type { Context } from "grammy";
+import { Keyboard } from "grammy";
 import { session } from "../session";
 import { WORKING_DIR, ALLOWED_USERS, RESTART_FILE } from "../config";
 import { isAuthorized } from "../security";
@@ -65,6 +66,11 @@ export async function handleStart(ctx: Context): Promise<void> {
   const status = session.isActive ? "Active session" : "No active session";
   const workDir = WORKING_DIR;
 
+  const keyboard = new Keyboard()
+    .text("/ai").text("/imagine").row()
+    .text("/debate").text("/status")
+    .resized().persistent();
+
   await ctx.reply(
     `🤖 <b>Claude Telegram Bot</b>\n\n` +
       `Status: ${status}\n` +
@@ -80,7 +86,7 @@ export async function handleStart(ctx: Context): Promise<void> {
       `• Prefix with <code>!</code> to interrupt current query\n` +
       `• Use "think" keyword for extended reasoning\n` +
       `• Send photos, voice, or documents`,
-    { parse_mode: "HTML" }
+    { parse_mode: "HTML", reply_markup: keyboard }
   );
 }
 
@@ -824,7 +830,8 @@ export async function handleRecall(ctx: Context): Promise<void> {
     }
   } catch (e) {
     // git grepで何もヒットしないとexit code 1になるので、それは無視
-    if ((e as any)?.stderr && !(e as any).stderr.includes('')) {
+    const stderr = (e as any)?.stderr || '';
+    if (stderr.trim().length > 0) {
       console.error('[Recall] git log error:', e);
     }
   }
