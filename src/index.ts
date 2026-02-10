@@ -59,6 +59,7 @@ import {
 import { handleAISession } from "./handlers/ai-session";
 import { registerMediaCommands } from "./handlers/media-commands";
 import { handleNightshift } from "./handlers/nightshift";
+import { handleAutopilot } from "./handlers/autopilot";
 import { startTaskPoller } from './utils/task-poller';
 import { ensureLearnedMemoryTable } from './utils/learned-memory';
 import { ensureSessionSummaryTable } from './utils/session-summary';
@@ -213,6 +214,9 @@ bot.command("ai", handleAISession);
 
 // Nightshift — 夜間バッチモード
 bot.command("nightshift", handleNightshift);
+
+// Autopilot — 自動タスク実行エンジン
+bot.command("autopilot", handleAutopilot);
 
 registerMediaCommands(bot);
 bot.on("message:text", handleText);
