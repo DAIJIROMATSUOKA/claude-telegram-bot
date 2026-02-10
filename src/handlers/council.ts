@@ -212,7 +212,7 @@ async function runCouncilDebate(
     ROLES[role].prompt + R1_PROMPT_TEMPLATE.replace("{topic}", t);
 
   const r1Results = await Promise.allSettled(
-    ROLE_ORDER.map((role) => ROLES[role].askFn(r1Prompt(role, enrichedTopic), 120_000)),
+    ROLE_ORDER.map((role) => ROLES[role].askFn(r1Prompt(role, enrichedTopic), 600_000)),
   );
 
   const round1: RoundEntry[] = [];
@@ -264,7 +264,7 @@ async function runCouncilDebate(
     ROLES[role].prompt + R2_PROMPT_TEMPLATE.replace("{topic}", topic).replace("{r1Summary}", () => r1Summary);
 
   const r2Results = await Promise.allSettled(
-    r1Success.map((entry) => ROLES[entry.role].askFn(r2Prompt(entry.role), 120_000)),
+    r1Success.map((entry) => ROLES[entry.role].askFn(r2Prompt(entry.role), 600_000)),
   );
 
   const round2: RoundEntry[] = [];
@@ -305,7 +305,7 @@ async function runCouncilDebate(
     .replace("{topic}", topic)
     .replace("{allRoundsText}", () => allRoundsText.join("\n"));
 
-  const synthesis = await askClaude(synthPrompt, 150_000);
+  const synthesis = await askClaude(synthPrompt, 600_000);
 
   return {
     topic,
@@ -478,7 +478,7 @@ async function handleDirectAI(
 
   try {
     const enrichedPrompt = await maybeEnrichWithWebSearch(prompt);
-    const r = await askFn(enrichedPrompt, 180_000);
+    const r = await askFn(enrichedPrompt, 600_000);
 
     let output: string;
     if (r.error) {
