@@ -13,7 +13,7 @@
  */
 
 import { spawn } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync, appendFileSync, renameSync } from "node:fs";
 import { join } from "node:path";
 
 // ========================================
@@ -123,6 +123,12 @@ const CLAUDE_MD_PATH = join(
 const SESSION_STATE_START = "<!-- SESSION_STATE_START -->";
 const SESSION_STATE_END = "<!-- SESSION_STATE_END -->";
 
+const SESSION_LOG_PATH = require("node:path").join(
+  process.env.HOME || "/Users/daijiromatsuokam1",
+  ".jarvis",
+  "session_state.log",
+);
+
 /**
  * セッション終了時にCLAUDE.mdのSESSION_STATEセクションを自動更新
  * Claude: --resume で要約プロンプトを送り、出力をCLAUDE.mdに書き込む
@@ -146,13 +152,23 @@ export async function saveSessionState(session: AISession): Promise<void> {
       return;
     }
 
-    // CLAUDE.md のマーカー間を置換
+    // CLAUDE.md のマーカー間を置換（一意検証 + 原子書込み）
     const claudeMd = readFileSync(CLAUDE_MD_PATH, "utf-8");
+    const startCount = claudeMd.split(SESSION_STATE_START).length - 1;
+    const endCount = claudeMd.split(SESSION_STATE_END).length - 1;
+
+    if (startCount !== 1 || endCount !== 1) {
+      console.error("[Session State] Marker count invalid (START=" + startCount + ", END=" + endCount + "), skipping to protect CLAUDE.md");
+      appendFileSync(SESSION_LOG_PATH, new Date().toISOString() + " FAIL: marker count invalid\n");
+      return;
+    }
+
     const startIdx = claudeMd.indexOf(SESSION_STATE_START);
     const endIdx = claudeMd.indexOf(SESSION_STATE_END);
 
-    if (startIdx === -1 || endIdx === -1) {
-      console.log("[Session State] Markers not found in CLAUDE.md, skipping");
+    if (startIdx >= endIdx) {
+      console.error("[Session State] START marker after END marker, skipping");
+      appendFileSync(SESSION_LOG_PATH, new Date().toISOString() + " FAIL: marker order invalid\n");
       return;
     }
 
@@ -160,25 +176,29 @@ export async function saveSessionState(session: AISession): Promise<void> {
     const after = claudeMd.slice(endIdx);
     const newContent = before + "\n## 🧠 現在の状態\n\n" + summary.trim() + "\n" + after;
 
-    writeFileSync(CLAUDE_MD_PATH, newContent, "utf-8");
-    console.log("[Session State] CLAUDE.md updated");
+    // 原子書込み: tmp → rename（書込み中クラッシュでもCLAUDE.md破壊を防ぐ）
+    const tmpPath = CLAUDE_MD_PATH + ".tmp";
+    writeFileSync(tmpPath, newContent, "utf-8");
+    renameSync(tmpPath, CLAUDE_MD_PATH);
+    console.log("[Session State] CLAUDE.md updated (atomic write)");
+    appendFileSync(SESSION_LOG_PATH, new Date().toISOString() + " OK: session state saved\n");
 
-    // git commit（失敗しても無視）
-    await spawnCLI(
+    // git commit --only CLAUDE.md（他のステージ済みファイル混入防止）
+    const cwd = CLAUDE_MD_PATH.replace("/CLAUDE.md", "");
+    await spawnCLI("git", ["add", "CLAUDE.md"], null, 10_000, cwd);
+    const commitResult = await spawnCLI(
       "git",
-      ["add", "CLAUDE.md"],
+      ["commit", "-m", "auto: update session state", "--only", "CLAUDE.md", "--no-verify"],
       null,
       10_000,
-      CLAUDE_MD_PATH.replace("/CLAUDE.md", ""),
+      cwd,
     );
-    await spawnCLI(
-      "git",
-      ["commit", "-m", "auto: update session state"],
-      null,
-      10_000,
-      CLAUDE_MD_PATH.replace("/CLAUDE.md", ""),
-    );
-    console.log("[Session State] Git commit done");
+    if (commitResult.exitCode === 0) {
+      console.log("[Session State] Git commit done");
+    } else {
+      console.error("[Session State] Git commit failed (non-fatal):", commitResult.stderr?.slice(-200));
+      appendFileSync(SESSION_LOG_PATH, new Date().toISOString() + " WARN: git commit failed\n");
+    }
   } catch (e) {
     // セッション終了をブロックしない
     console.error("[Session State] Failed to save:", e);
