@@ -19,6 +19,7 @@ import {
   getSession,
   hasActiveSession,
   sendToSession,
+  saveSessionState,
   splitTelegramMessage,
   AI_INFO,
   type AIBackend,
@@ -145,6 +146,13 @@ export async function handleAISession(ctx: Context): Promise<void> {
         return;
       }
 
+      // セッション情報を取得（endSession前に）
+      const sessionToSave = getSession(userId!)!;
+
+      // CLAUDE.mdに状態を自動保存（バックグラウンド、失敗しても続行）
+      await ctx.reply("💾 セッション記憶を保存中...");
+      await saveSessionState(sessionToSave);
+
       const ended = endSession(userId!)!;
       const info = AI_INFO[ended.ai];
       const duration = Math.round(
@@ -160,7 +168,8 @@ export async function handleAISession(ctx: Context): Promise<void> {
           ended.messageCount +
           "\u30E1\u30C3\u30BB\u30FC\u30B8 / " +
           duration +
-          "\u5206\n\n" +
+          "\u5206\n" +
+          "💾 セッション記憶をCLAUDE.mdに保存済み\n\n" +
           "\u901A\u5E38\u306EJarvis\u30E2\u30FC\u30C9\u306B\u623B\u308A\u307E\u3057\u305F\u3002",
         { parse_mode: "HTML" },
       );

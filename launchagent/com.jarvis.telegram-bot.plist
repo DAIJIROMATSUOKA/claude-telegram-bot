@@ -3,12 +3,14 @@
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.croppy.watchdog</string>
+    <string>com.jarvis.telegram-bot</string>
 
     <key>ProgramArguments</key>
     <array>
-        <string>/bin/bash</string>
-        <string>/Users/daijiromatsuokam1/claude-telegram-bot/scripts/watchdog-bot.sh</string>
+        <string>/Users/daijiromatsuokam1/.bun/bin/bun</string>
+        <string>--env-file=.env</string>
+        <string>run</string>
+        <string>src/index.ts</string>
     </array>
 
     <key>WorkingDirectory</key>
@@ -17,7 +19,7 @@
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>
-        <string>/Users/daijiromatsuokam1/.bun/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <string>/Users/daijiromatsuokam1/.bun/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
         <key>HOME</key>
         <string>/Users/daijiromatsuokam1</string>
     </dict>
@@ -26,14 +28,18 @@
     <key>RunAtLoad</key>
     <true/>
 
-    <!-- watchdog自体が死んでも自動復旧 -->
+    <!-- プロセス死亡時に自動再起動 -->
     <key>KeepAlive</key>
     <true/>
 
+    <!-- 再起動間隔の最小秒数（クラッシュループ防止） -->
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
     <!-- ログ出力 -->
     <key>StandardOutPath</key>
-    <string>/Users/daijiromatsuokam1/claude-telegram-bot/logs/watchdog-launchd.log</string>
+    <string>/Users/daijiromatsuokam1/claude-telegram-bot/logs/bot-launchd.log</string>
     <key>StandardErrorPath</key>
-    <string>/Users/daijiromatsuokam1/claude-telegram-bot/logs/watchdog-launchd.err</string>
+    <string>/Users/daijiromatsuokam1/claude-telegram-bot/logs/bot-launchd.err</string>
 </dict>
 </plist>

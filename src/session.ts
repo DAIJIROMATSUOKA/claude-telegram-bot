@@ -27,8 +27,10 @@ import {
 import { formatToolStatus } from "./formatting";
 import { checkPendingAskUserRequests } from "./handlers/streaming";
 import { checkCommandSafety, isPathAllowed } from "./security";
+import { updatePendingTaskSessionId } from "./utils/pending-task";
 import { getLearnedMemories, formatLearnedMemoryForPrompt, filterRelevantMemories } from "./utils/learned-memory";
 import { getRecentSessionSummaries, formatSessionSummariesForPrompt } from "./utils/session-summary";
+import { getWorkState, formatWorkStateForContext } from "./utils/work-state";
 import { memoryGatewayBreaker } from "./utils/circuit-breaker";
 import type {
   SavedSession,
@@ -38,43 +40,11 @@ import type {
 } from "./types";
 
 /**
- * Fetch context from memory-gateway API or fallback to local file.
+ * Fetch context from local jarvis_context file.
+ * (Previously tried /api/memory/jarvis_context on MemoryGateway, but that endpoint
+ *  doesn't exist and caused recurring 404 errors. Local file works fine.)
  */
 async function fetchJarvisContext(): Promise<string> {
-  const MEMORY_GATEWAY_URL = process.env.MEMORY_GATEWAY_URL || 'https://jarvis-memory-gateway.jarvis-matsuoka.workers.dev';
-  const GATEWAY_API_KEY = process.env.GATEWAY_API_KEY || '';
-
-  // Try memory-gateway API first (Circuit Breaker経由)
-  const apiResult = await memoryGatewayBreaker.execute(async () => {
-    const response = await fetch(`${MEMORY_GATEWAY_URL}/api/memory/jarvis_context`, {
-      headers: {
-        'Authorization': `Bearer ${GATEWAY_API_KEY}`,
-      },
-      signal: AbortSignal.timeout(1000)
-    });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
-    const data = await response.json() as {
-      current_task?: string;
-      current_phase?: string;
-      current_assumption?: string;
-      important_decisions?: string[];
-    };
-
-    const parts: string[] = [];
-    if (data.current_task) parts.push(`タスク: ${data.current_task}`);
-    if (data.current_phase) parts.push(`Phase: ${data.current_phase}`);
-    if (data.current_assumption) parts.push(`前提: ${data.current_assumption}`);
-    if (data.important_decisions?.length) {
-      parts.push(`重要な決定: ${data.important_decisions.join(", ")}`);
-    }
-
-    return parts.length > 0 ? parts.join("\n") : "";
-  }, "" /* fallback: empty string */);
-
-  if (apiResult) return apiResult;
-
-  // Fallback to local jarvis_context file
   try {
     const contextPath = `${WORKING_DIR}/claude-telegram-bot/jarvis_context`;
     console.log(`[fetchJarvisContext] Reading fallback file: ${contextPath}`);
@@ -386,6 +356,14 @@ class ClaudeSession {
       contextParts.push(jarvisContext);
       contextParts.push("");
     }
+
+    // Work State (Layer 2: 長時間作業プランの永続化)
+    const workState = getWorkState();
+    if (workState && !workState.tasks.every(t => t.status === "completed" || t.status === "failed")) {
+      contextParts.push(formatWorkStateForContext(workState));
+      contextParts.push("");
+    }
+
     if (chatHistory) {
       contextParts.push("[RECENT CONVERSATION]");
       contextParts.push(chatHistory);
@@ -487,6 +465,8 @@ class ClaudeSession {
           this.sessionId = event.session_id;
           console.log(`GOT session_id: ${this.sessionId!.slice(0, 8)}...`);
           this.saveSession();
+          // Update pending task with confirmed session_id for resume after restart
+          updatePendingTaskSessionId(this.sessionId);
         }
 
         // Handle different message types

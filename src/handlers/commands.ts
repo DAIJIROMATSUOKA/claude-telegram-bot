@@ -10,6 +10,7 @@ import { WORKING_DIR, ALLOWED_USERS, RESTART_FILE } from "../config";
 import { isAuthorized } from "../security";
 import { getChatHistory } from "../utils/chat-history";
 import { saveSessionSummary } from "../utils/session-summary";
+import { callMemoryGateway } from "./ai-router";
 import { exec, execSync } from "child_process";
 import { promisify } from "util";
 import { readFileSync, writeFileSync, existsSync } from "fs";
@@ -711,4 +712,138 @@ export async function handleAlarm(ctx: Context): Promise<void> {
   } catch (error) {
     await ctx.reply(`❌ アラーム設定エラー: ${error}`);
   }
+}
+
+/**
+ * /recall - 過去の会話・決定・学習内容を横断検索
+ * Usage: /recall キーワード
+ */
+export async function handleRecall(ctx: Context): Promise<void> {
+  const userId = ctx.from?.id;
+
+  if (!isAuthorized(userId, ALLOWED_USERS)) {
+    await ctx.reply("Unauthorized.");
+    return;
+  }
+
+  const keyword = (ctx.message?.text || "").replace(/^\/recall\s*/, "").trim();
+  if (!keyword) {
+    await ctx.reply("使い方: /recall キーワード\n例: /recall outpaint, /recall 従量課金");
+    return;
+  }
+
+  await ctx.reply(`🔍 "${keyword}" を検索中...`);
+
+  const userIdStr = String(userId);
+  const sections: string[] = [];
+  sections.push(`🔍 "<b>${escapeHtml(keyword)}</b>" の検索結果:\n`);
+
+  // A) jarvis_chat_history — FULLTEXT検索
+  try {
+    const chatRes = await callMemoryGateway('/v1/db/query', 'POST', {
+      sql: `SELECT role, content, timestamp FROM jarvis_chat_history
+            WHERE user_id = ? AND content LIKE ?
+            ORDER BY timestamp DESC LIMIT 3`,
+      params: [userIdStr, `%${keyword}%`],
+    });
+    const chatResults = chatRes.data?.results || [];
+    if (chatResults.length > 0) {
+      sections.push(`📝 <b>会話履歴</b> (${chatResults.length}件)`);
+      for (const r of chatResults) {
+        const date = (r.timestamp || '').slice(0, 10);
+        const role = r.role === 'user' ? 'DJ' : 'Jarvis';
+        const snippet = truncate(r.content, 100);
+        sections.push(`  [${date}] ${role}: ${escapeHtml(snippet)}`);
+      }
+      sections.push('');
+    }
+  } catch (e) {
+    console.error('[Recall] chat_history search error:', e);
+  }
+
+  // B) jarvis_session_summaries — 要約・トピック・決定事項を検索
+  try {
+    const sumRes = await callMemoryGateway('/v1/db/query', 'POST', {
+      sql: `SELECT summary, topics, key_decisions, created_at FROM jarvis_session_summaries
+            WHERE user_id = ? AND (summary LIKE ? OR topics LIKE ? OR key_decisions LIKE ?)
+            ORDER BY created_at DESC LIMIT 3`,
+      params: [userIdStr, `%${keyword}%`, `%${keyword}%`, `%${keyword}%`],
+    });
+    const sumResults = sumRes.data?.results || [];
+    if (sumResults.length > 0) {
+      sections.push(`📊 <b>セッション要約</b> (${sumResults.length}件)`);
+      for (const r of sumResults) {
+        const date = (r.created_at || '').slice(0, 10);
+        const snippet = truncate(r.summary, 100);
+        sections.push(`  [${date}] ${escapeHtml(snippet)}`);
+      }
+      sections.push('');
+    }
+  } catch (e) {
+    console.error('[Recall] session_summaries search error:', e);
+  }
+
+  // C) jarvis_learned_memory — 学習記憶を検索
+  try {
+    const memRes = await callMemoryGateway('/v1/db/query', 'POST', {
+      sql: `SELECT category, content, created_at FROM jarvis_learned_memory
+            WHERE user_id = ? AND active = 1 AND content LIKE ?
+            ORDER BY created_at DESC LIMIT 3`,
+      params: [userIdStr, `%${keyword}%`],
+    });
+    const memResults = memRes.data?.results || [];
+    if (memResults.length > 0) {
+      sections.push(`🧠 <b>学習記憶</b> (${memResults.length}件)`);
+      for (const r of memResults) {
+        const date = (r.created_at || '').slice(0, 10);
+        const cat = r.category || 'unknown';
+        const snippet = truncate(r.content, 100);
+        sections.push(`  [${date}] (${cat}) ${escapeHtml(snippet)}`);
+      }
+      sections.push('');
+    }
+  } catch (e) {
+    console.error('[Recall] learned_memory search error:', e);
+  }
+
+  // D) git log --grep — コミットメッセージ検索
+  try {
+    const { stdout } = await execAsync(
+      `git log --grep="${keyword.replace(/"/g, '\\"')}" --format="%ad|%s" --date=short -3`,
+      { cwd: WORKING_DIR, timeout: 5000 }
+    );
+    const lines = stdout.trim().split('\n').filter(Boolean);
+    if (lines.length > 0) {
+      sections.push(`📦 <b>Git</b> (${lines.length}件)`);
+      for (const line of lines) {
+        const [date, ...msgParts] = line.split('|');
+        const msg = msgParts.join('|');
+        sections.push(`  [${date}] ${escapeHtml(truncate(msg, 100))}`);
+      }
+      sections.push('');
+    }
+  } catch (e) {
+    // git grepで何もヒットしないとexit code 1になるので、それは無視
+    if ((e as any)?.stderr && !(e as any).stderr.includes('')) {
+      console.error('[Recall] git log error:', e);
+    }
+  }
+
+  // 結果なしの場合
+  if (sections.length <= 1) {
+    await ctx.reply(`🔍 "${keyword}" — 該当なし`);
+    return;
+  }
+
+  await ctx.reply(sections.join('\n'), { parse_mode: "HTML" });
+}
+
+function truncate(s: string, max: number): string {
+  if (!s) return '';
+  const oneLine = s.replace(/\n/g, ' ');
+  return oneLine.length > max ? oneLine.slice(0, max) + '...' : oneLine;
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }

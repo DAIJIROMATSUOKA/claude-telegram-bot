@@ -265,7 +265,7 @@ All config via `.env` (copy from `.env.example`). Key variables:
 - `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ALLOWED_USERS` (required)
 - `CLAUDE_WORKING_DIR` - Working directory for Claude
 - `ALLOWED_PATHS` - Directories Claude can access
-- `GEMINI_API_KEY` - For AI features (free tier, 1500 req/day)
+- Gemini AI features use `gemini` CLI (Google AI Pro subscription, no API key needed)
 
 MCP servers defined in `mcp-config.ts`.
 
@@ -277,7 +277,7 @@ MCP servers defined in `mcp-config.ts`.
 
 | API | 用途 | 制限 |
 |-----|------|------|
-| `GEMINI_API_KEY` | AI機能 | 無料枠: 5 req/min, 1,500 req/day |
+| `gemini` CLI | AI機能 | Google AI Pro定額サブスク（API KEY不要） |
 | `TELEGRAM_BOT_TOKEN` | Bot通信 | 完全無料 |
 | `GATEWAY_API_KEY` | Memory Gateway | 内部認証（無料） |
 | `M3_AGENT_TOKEN` | M3 Agent | 内部認証（無料） |
@@ -288,6 +288,7 @@ MCP servers defined in `mcp-config.ts`.
 |-----|------|
 | `ANTHROPIC_API_KEY` | 従量課金のみ（無料枠なし） |
 | `OPENAI_API_KEY` | 従量課金（$5トライアル後は課金） |
+| `GEMINI_API_KEY` | CLI化済み。`gemini` CLIを使うこと |
 
 #### 🔧 AI呼び出し方法（従量課金回避）
 
@@ -377,11 +378,21 @@ tail -f /tmp/claude-telegram-bot-ts.err
 - **スピードは重視しない。記憶すること、効率化、自動化を重視**
 - 安易な結論を出さず、前提を疑い、反論も含めて段階的に深く考える
 - 自分で判断して実行。選択肢を出すな
+- **ネガティブなことも含めて報告する**。都合の良いことだけ報告するな
+  - ❌ 「修正完了しました！」（エラーや未テスト事項を隠す）
+  - ✅ 「修正完了。ただし〇〇は未テスト / △△のデメリットあり」
+  - 失敗・エラー・副作用・デメリット・未検証事項を必ず正直に含めろ
+- **報告フォーマット**: 見やすく、詳細に、訳わからない記号は使わない
+  - 改善前/改善後の表形式で変更内容を明示
+  - 番号付きセクションで構造化
+  - 技術的な詳細（パラメータ値、ファイル名等）を具体的に記載
+  - 「大幅改善」のような曖昧な表現ではなく、何を何に変えたかを書く
+  - 例: 「サンプラー: euler+simple から dpmpp_2m+karras に変更」
 
 ### 環境情報
 - **マシン**: MacBook Pro M3 Max（macOS Sequoia 15.3.1）、メモリ36GB
 - **ランタイム**: Bun 1.2.x（TypeScript直接実行）
-- **Bot起動**: LaunchAgent経由（`com.claude-telegram-ts`）
+- **Bot起動**: `start-bot.sh` → `bun --watch` で起動（ソース変更で自動再起動）。Watchdog (`watchdog-bot.sh`) が30秒間隔で監視
 - **ComfyUI**: `/Users/daijiromatsuokam1/ComfyUI/` に設置。FLUX系モデルで画像生成・編集
 - **mflux**: Apple Silicon最適化のFLUX推論。`--low-ram` `--8-bit` オプション必須（36GBメモリ制約）
 
@@ -389,13 +400,39 @@ tail -f /tmp/claude-telegram-bot-ts.err
 - FLUX Kontext Edit使用。ComfyUIワークフロー経由
 - **顔保護マスク**: denoise 0.85で顔部分を保護するが、合成ズレ（顔が背中に出る等）が発生する場合あり
 - **outpaint**: 外側に拡張する機能。patch-outpaint.pyで制御
-- 画像リサイズ: 1024x1024に統一してからFLUXに渡す
+- 画像リサイズ: 最大1024px（長辺）にリサイズしてからFLUXに渡す（MPS互換性のため）
+- 画像送信: 写真プレビュー（圧縮, インライン表示）+ ドキュメント（原寸PNG）の両方を送信
 
 ### 解決済みの問題
 - **型エラー258個**: 2025-02-09に全て修正済み（65ファイル変更）。ロジック変更なし、型アノテーション追加のみ
 - **Error 409**: Telegram getUpdates競合。start-bot.shで解決済み
 - **OpenAI/Anthropic API課金**: AI Router導入で従量課金API完全排除済み
+- **再起動忘れ**: `bun --watch` を start-bot.sh に導入。ソース変更で自動再起動
+- **Watchdog誤検知**: サイレント死亡チェックをログサイズ比較方式に改善（mtimeだけでなくサイズ変化で判定）
+- **画像送信の画質劣化**: `/imagine`, `/edit`, `/outpaint` で写真プレビュー + ドキュメント原寸の両方を送信
+- **MPS convolution_overrideable**: 入力画像を1024pxにリサイズ（1536→1024）。ComfyUIは `--force-fp32` + `PYTORCH_ENABLE_MPS_FALLBACK=1` で起動済み
 
 ### 既知の未解決課題
 - **Voice transcription**: OpenAI API依存のため現在無効。Whisper.cppローカル化が候補
 - **/edit画像品質**: FLUX Editで顔合成ズレが発生する場合がある。マスク戦略の改善が必要
+- **MPS convolution**: `--force-fp32` + 1024pxリサイズで軽減したが、完全に防げるか未検証。Python 3.14 + PyTorch互換性の可能性あり
+
+---
+
+<!-- SESSION_STATE_START -->
+## 🧠 現在の状態
+
+### 完了タスク
+- なし（このセッションではタスク実行していない）
+
+### 残タスク
+- なし（タスク依頼なし）
+
+### 学んだこと
+- なし（技術的作業なし）
+
+### 現在の問題
+- なし
+
+このセッションはping/echoの疎通確認のみだった。
+<!-- SESSION_STATE_END -->

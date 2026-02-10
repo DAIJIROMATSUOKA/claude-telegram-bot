@@ -7,7 +7,7 @@
  * Philosophy: "Automate test creation, maintain human oversight"
  */
 
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { askGemini } from '../utils/multi-ai';
 import type { AccidentPattern, GoldenTest } from './golden-test-types';
 
 /**
@@ -52,10 +52,8 @@ export interface ValidationIssue {
  * Generates Golden Tests from Accident Patterns using Gemini (free tier)
  */
 export class TestGeneratorEngine {
-  private geminiClient: GoogleGenerativeAI;
-
-  constructor(apiKey: string) {
-    this.geminiClient = new GoogleGenerativeAI(apiKey);
+  constructor(_apiKey?: string) {
+    // apiKeyは互換性のため残すが使用しない（CLI経由のため不要）
   }
 
   /**
@@ -112,19 +110,20 @@ export class TestGeneratorEngine {
   }
 
   /**
-   * Generate test function using Gemini
+   * Generate test function using Gemini CLI
    */
   private async generateTestFunction(
     pattern: AccidentPattern
   ): Promise<string> {
     const prompt = this.buildPrompt(pattern);
 
-    const model = this.geminiClient.getGenerativeModel({
-      model: 'gemini-2.5-flash',
-    });
+    const result = await askGemini(prompt, 60_000);
 
-    const result = await model.generateContent(prompt);
-    const text = result.response.text().trim();
+    if (result.error) {
+      throw new Error(`Gemini CLI error: ${result.error}`);
+    }
+
+    const text = result.output.trim();
 
     // Remove markdown code blocks if present
     return text.replace(/^```typescript\n/, '').replace(/^```\n/, '').replace(/\n```$/, '');

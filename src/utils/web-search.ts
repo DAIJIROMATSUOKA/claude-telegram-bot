@@ -81,42 +81,29 @@ const MAX_SEARCH_RESULT_LENGTH = 1000;
 
 /**
  * ジェミー💎にWeb検索だけさせて結果を返す。
+ * Gemini CLI経由（Google AI Pro定額サブスク）。従量課金ゼロ。
+ * CLIのGeminiはデフォルトでGoogle Search Groundingが有効。
  * 失敗時はnull（メイン処理を止めない）。
  */
 export async function searchWithGemini(query: string): Promise<string | null> {
   try {
-    const { GoogleGenerativeAI } = await import('@google/generative-ai');
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      console.warn('[Web Search] GEMINI_API_KEY未設定、スキップ');
-      return null;
-    }
-
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({
-      model: 'gemini-2.5-flash',
-      tools: [{ googleSearchRetrieval: {} } as any],
-    });
+    const { askGemini } = await import('./multi-ai');
 
     const searchPrompt = `以下の質問に答えるためにWeb検索し、検索で見つかった事実・データ・情報源のみを箇条書きで返せ。
 自分の意見や分析は不要。検索結果の要点のみ。${MAX_SEARCH_RESULT_LENGTH}文字以内。
 
 質問: ${query}`;
 
-    // タイムアウト付き
-    const timeoutPromise = new Promise<null>((resolve) =>
-      setTimeout(() => resolve(null), SEARCH_TIMEOUT_MS)
-    );
+    const result = await askGemini(searchPrompt, SEARCH_TIMEOUT_MS);
 
-    const searchPromise = (async () => {
-      const result = await model.generateContent(searchPrompt);
-      const text = result.response.text();
-      return text ? text.slice(0, MAX_SEARCH_RESULT_LENGTH) : null;
-    })();
+    if (result.error) {
+      console.warn('[Web Search] Gemini CLI検索失敗:', result.error);
+      return null;
+    }
 
-    return await Promise.race([searchPromise, timeoutPromise]);
+    return result.output ? result.output.slice(0, MAX_SEARCH_RESULT_LENGTH) : null;
   } catch (error: any) {
-    console.warn('[Web Search] Gemini検索失敗:', error?.message || error);
+    console.warn('[Web Search] Gemini CLI検索失敗:', error?.message || error);
     return null;
   }
 }

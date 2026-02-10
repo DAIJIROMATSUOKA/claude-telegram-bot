@@ -1,8 +1,11 @@
 /**
  * Google (Gemini) LLM Provider for AI Council
+ *
+ * Gemini CLI経由（Google AI Pro定額サブスク）。
+ * GEMINI_API_KEY不要、従量課金ゼロ。
  */
 
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { askGemini } from "../../../utils/multi-ai";
 import type {
   LlmProvider,
   LlmGenerateOptions,
@@ -11,24 +14,13 @@ import type {
 
 export class GoogleProvider implements LlmProvider {
   name: "google" = "google";
-  private client: GoogleGenerativeAI;
 
-  constructor(apiKey?: string) {
-    const key = apiKey || process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
-    if (!key) {
-      throw new Error(
-        "GEMINI_API_KEY or GOOGLE_API_KEY is required for Google provider"
-      );
-    }
-    this.client = new GoogleGenerativeAI(key);
+  constructor(_apiKey?: string) {
+    // apiKeyは互換性のため残すが使用しない（CLI経由のため不要）
   }
 
   async generate(options: LlmGenerateOptions): Promise<LlmGenerateResponse> {
     try {
-      const model = this.client.getGenerativeModel({
-        model: options.model || "gemini-2.5-flash",
-      });
-
       // Build prompt from system + messages
       const parts: string[] = [];
 
@@ -44,21 +36,18 @@ export class GoogleProvider implements LlmProvider {
 
       const prompt = parts.join("\n");
 
-      const result = await model.generateContent({
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-        generationConfig: {
-          temperature: options.temperature ?? 0.7,
-          maxOutputTokens: options.maxTokens ?? 1000,
-        },
-      });
+      const result = await askGemini(prompt, 120_000);
 
-      const content = result.response.text() || "";
+      if (result.error) {
+        throw new Error(`Gemini CLI error: ${result.error}`);
+      }
 
       return {
-        content,
+        content: result.output,
         usage: {
-          input_tokens: result.response.usageMetadata?.promptTokenCount,
-          output_tokens: result.response.usageMetadata?.candidatesTokenCount,
+          // CLI経由ではトークン数が取得できないためundefined
+          input_tokens: undefined,
+          output_tokens: undefined,
         },
       };
     } catch (error) {

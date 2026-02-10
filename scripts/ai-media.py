@@ -64,8 +64,10 @@ WAN22_CLIP_FP16 = os.environ.get("WAN22_CLIP_FP16", "umt5_xxl_fp16.safetensors")
 # VAE
 WAN22_VAE = "wan2.2_vae.safetensors"
 
-# ModelSamplingSD3 shift parameter (default 3.0, range 0-100, typical 3.0-5.0)
+# ModelSamplingSD3 shift parameter (range 0-100, typical 3.0-8.0)
+# T2V: 3.0 (default), I2V: 5.0 (higher = more faithful to start_image while allowing motion)
 WAN22_SHIFT = float(os.environ.get("WAN22_SHIFT", "3.0"))
+WAN22_SHIFT_I2V = float(os.environ.get("WAN22_SHIFT_I2V", "5.0"))
 
 # UNET GGUF option (if using quantized UNET instead of fp16)
 WAN22_USE_GGUF_UNET = os.environ.get("WAN22_USE_GGUF_UNET", "0") == "1"
@@ -84,10 +86,25 @@ FLUX_DEV_LORA = os.environ.get("FLUX_DEV_LORA", "roundassv16_FLUX.safetensors")
 FLUX_DEV_LORA_STRENGTH = float(os.environ.get("FLUX_DEV_LORA_STRENGTH", "0.8"))
 FLUX_DEV_EXTRA_LORAS = os.environ.get("FLUX_DEV_EXTRA_LORAS", "flux-lora-uncensored.safetensors:0.9,undressing_flux_v3.safetensors:1.3")
 
-# --- Edit-specific defaults (conservative to preserve original image) ---
-FLUX_EDIT_LORA_STRENGTH = float(os.environ.get("FLUX_EDIT_LORA_STRENGTH", "0.4"))
-FLUX_EDIT_EXTRA_LORAS = os.environ.get("FLUX_EDIT_EXTRA_LORAS", "")  # No extra LoRA by default for edit
+# --- Edit-specific defaults ---
+# NSFW LoRAs enabled: uncensored (safety bypass) + undressing (clothing removal)
+FLUX_EDIT_LORA_STRENGTH = float(os.environ.get("FLUX_EDIT_LORA_STRENGTH", "0.8"))
+FLUX_EDIT_EXTRA_LORAS = os.environ.get("FLUX_EDIT_EXTRA_LORAS", "flux-lora-uncensored.safetensors:0.9,undressing_flux_v3.safetensors:1.3")
 FLUX_EDIT_CFG = float(os.environ.get("FLUX_EDIT_CFG", "3.5"))
+
+# --- FLUX.1 Kontext Dev config (image editing with reference preservation) ---
+FLUX_KONTEXT_UNET = os.environ.get("FLUX_KONTEXT_UNET", "flux1-kontext-dev-Q5_K_S.gguf")
+FLUX_KONTEXT_GUIDANCE = float(os.environ.get("FLUX_KONTEXT_GUIDANCE", "30.0"))
+FLUX_KONTEXT_STEPS = int(os.environ.get("FLUX_KONTEXT_STEPS", "28"))
+FLUX_KONTEXT_CFG = float(os.environ.get("FLUX_KONTEXT_CFG", "1.0"))
+# Use Kontext model by default for /edit (better at preserving identity during edits)
+FLUX_USE_KONTEXT = os.environ.get("FLUX_USE_KONTEXT", "1") == "1"
+
+# --- FLUX.1 Fill Dev config (inpainting-specific model, best for masked region replacement) ---
+FLUX_FILL_UNET = os.environ.get("FLUX_FILL_UNET", "flux1-fill-dev-Q5_K_S.gguf")
+FLUX_FILL_STEPS = int(os.environ.get("FLUX_FILL_STEPS", "28"))
+FLUX_FILL_CFG = float(os.environ.get("FLUX_FILL_CFG", "1.0"))
+FLUX_FILL_GUIDANCE = float(os.environ.get("FLUX_FILL_GUIDANCE", "30.0"))
 
 # --- Outpaint-specific defaults (prioritize natural image continuation) ---
 FLUX_OUTPAINT_LORA_STRENGTH = float(os.environ.get("FLUX_OUTPAINT_LORA_STRENGTH", "0.3"))
@@ -108,7 +125,9 @@ def get_mflux_bin(cmd: str) -> str:
     return cmd
 
 
-MAX_IMAGE_DIMENSION = 1536  # Max pixels on longest side (FLUX works at 1024, extra margin for quality)
+MAX_IMAGE_DIMENSION = 1024  # Max pixels on longest side (FLUX native resolution = 1024x1024)
+# Previously 1536 but MPS convolution_overrideable errors still occurred at that size.
+# 1024 matches FLUX native resolution, so no quality loss from downscaling further.
 
 
 def convert_and_resize(input_path: str) -> str:
@@ -292,12 +311,241 @@ def detect_faces_and_create_mask(image_path: str, face_protect: float = 0.35) ->
 
 
 # ===========================================================================
+# PERSON DETECTION (OpenCV HOG — for multi-person SegFormer, Modification C)
+# ===========================================================================
+# ROLLBACK: Remove this entire section and _detect_persons_hog function to revert to single-pass SegFormer
+
+def _detect_persons_hog(image_path: str, padding: float = 0.15) -> list[tuple[int, int, int, int]]:
+    """Detect person bounding boxes using OpenCV HOG descriptor.
+
+    Returns list of (x, y, w, h) tuples for each detected person.
+    padding: fractional padding to add around each detection (0.15 = 15% on each side).
+    """
+    try:
+        import cv2
+        import numpy as np
+        from PIL import Image
+
+        img = Image.open(image_path).convert("RGB")
+        img_w, img_h = img.size
+        frame = np.array(img)
+        frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+
+        hog = cv2.HOGDescriptor()
+        hog.setSVMDetector(cv2.HOGDescriptor_getDefaultPeopleDetector())
+
+        # detectMultiScale: winStride=(8,8) for accuracy, padding=(8,8), scale=1.05
+        boxes, weights = hog.detectMultiScale(frame_bgr, winStride=(8, 8), padding=(8, 8), scale=1.05)
+
+        if len(boxes) == 0:
+            print("[ai-media] HOG: no persons detected", file=sys.stderr)
+            return []
+
+        # Add padding and clamp to image bounds
+        result = []
+        for (x, y, w, h) in boxes:
+            pad_x = int(w * padding)
+            pad_y = int(h * padding)
+            x1 = max(0, x - pad_x)
+            y1 = max(0, y - pad_y)
+            x2 = min(img_w, x + w + pad_x)
+            y2 = min(img_h, y + h + pad_y)
+            result.append((x1, y1, x2 - x1, y2 - y1))
+
+        # Non-maximum suppression to remove overlapping detections
+        if len(result) > 1:
+            rects = np.array([[x, y, x + w, y + h] for (x, y, w, h) in result])
+            pick = cv2.dnn.NMSBoxes(
+                [(x, y, w, h) for (x, y, w, h) in result],
+                weights.flatten().tolist(),
+                score_threshold=0.3,
+                nms_threshold=0.4
+            )
+            if len(pick) > 0:
+                pick = pick.flatten()
+                result = [result[i] for i in pick]
+
+        print(f"[ai-media] HOG: detected {len(result)} person(s)", file=sys.stderr)
+        return result
+
+    except Exception as e:
+        print(f"[ai-media] HOG person detection error: {e}", file=sys.stderr)
+        return []
+
+
+# CLOTHING SEGMENTATION MASK (SegFormer B2 - ATR dataset)
+# ===========================================================================
+_segformer_model = None
+_segformer_processor = None
+
+def _load_segformer():
+    """Lazy-load SegFormer model for clothing segmentation."""
+    global _segformer_model, _segformer_processor
+    if _segformer_model is not None:
+        return _segformer_processor, _segformer_model
+    try:
+        from transformers import SegformerImageProcessor, AutoModelForSemanticSegmentation
+        model_path = os.path.join(os.path.expanduser("~/ComfyUI/models/segformer_b2_clothes"))
+        if not os.path.exists(model_path):
+            print("[ai-media] SegFormer model not found, falling back to face mask", file=sys.stderr)
+            return None, None
+        _segformer_processor = SegformerImageProcessor.from_pretrained(model_path)
+        _segformer_model = AutoModelForSemanticSegmentation.from_pretrained(model_path)
+        print("[ai-media] SegFormer clothing model loaded", file=sys.stderr)
+        return _segformer_processor, _segformer_model
+    except Exception as e:
+        print(f"[ai-media] SegFormer load failed: {e}", file=sys.stderr)
+        return None, None
+
+
+def detect_clothing_and_create_mask(image_path: str, dilate_px: int = 5) -> str | None:
+    """Detect clothing regions and create an inpainting mask using SegFormer.
+
+    Returns path to mask image where:
+      - WHITE (255) = clothing region (to be edited/replaced with skin)
+      - BLACK (0)   = everything else (face, hair, background, limbs — protected)
+
+    SegFormer ATR labels:
+      0: Background, 1: Hat, 2: Hair, 3: Sunglasses, 4: Upper-clothes,
+      5: Skirt, 6: Pants, 7: Dress, 8: Belt, 9: Left-shoe, 10: Right-shoe,
+      11: Face, 12: Left-leg, 13: Right-leg, 14: Left-arm, 15: Right-arm,
+      16: Bag, 17: Scarf
+
+    Clothing labels selected: 4 (Upper-clothes), 5 (Skirt), 6 (Pants), 7 (Dress), 8 (Belt), 17 (Scarf)
+    """
+    proc, model = _load_segformer()
+    if proc is None or model is None:
+        return None
+
+    try:
+        import torch
+        import torch.nn as nn
+        import numpy as np
+        from PIL import Image
+
+        img = Image.open(image_path).convert("RGB")
+        w, h = img.size
+
+        # Clothing labels: Upper-clothes(4), Skirt(5), Pants(6), Dress(7), Belt(8), Scarf(17)
+        clothing_labels = [4, 5, 6, 7, 8, 17]
+
+        def _run_segformer_on_image(pil_img):
+            """Run SegFormer on a single PIL image, return pred_seg array at original size."""
+            iw, ih = pil_img.size
+            inp = proc(images=pil_img, return_tensors="pt")
+            with torch.no_grad():
+                out = model(**inp)
+            lg = out.logits.cpu()
+            up = nn.functional.interpolate(lg, size=(ih, iw), mode="bilinear", align_corners=False)
+            return up.argmax(dim=1)[0].numpy()
+
+        # ROLLBACK: Remove Modification C block below, keep only single-pass SegFormer
+        # Modification C: Multi-person support via HOG detection + per-person SegFormer
+        # Problem: SegFormer B2 is optimized for single-person; accuracy drops with 2+ people
+        # Solution: Detect persons first, run SegFormer on each crop, merge masks
+        persons = _detect_persons_hog(image_path)
+        if len(persons) >= 2:
+            print(f"[ai-media] SegFormer: multi-person mode ({len(persons)} persons detected)", file=sys.stderr)
+            clothing_mask = np.zeros((h, w), dtype=np.uint8)
+
+            for i, (px, py, pw, ph) in enumerate(persons):
+                # Crop person region from original image
+                person_crop = img.crop((px, py, px + pw, py + ph))
+                # Run SegFormer on cropped person
+                crop_seg = _run_segformer_on_image(person_crop)
+                crop_clothing = np.isin(crop_seg, clothing_labels).astype(np.uint8) * 255
+                crop_pct = np.sum(crop_clothing > 0) / crop_clothing.size * 100
+                print(f"[ai-media] SegFormer: person {i+1} crop clothing={crop_pct:.1f}%", file=sys.stderr)
+                # Place crop mask back into full-size mask
+                clothing_mask[py:py+ph, px:px+pw] = np.maximum(
+                    clothing_mask[py:py+ph, px:px+pw], crop_clothing
+                )
+
+            # Also run full-image SegFormer and merge (catches anything HOG missed)
+            full_seg = _run_segformer_on_image(img)
+            full_clothing = np.isin(full_seg, clothing_labels).astype(np.uint8) * 255
+            clothing_mask = np.maximum(clothing_mask, full_clothing)
+            print(f"[ai-media] SegFormer: multi-person masks merged with full-image pass", file=sys.stderr)
+        else:
+            # Single person or no detection: standard single-pass SegFormer
+            pred_seg = _run_segformer_on_image(img)
+            clothing_mask = np.isin(pred_seg, clothing_labels).astype(np.uint8) * 255
+
+        # Log segmentation stats
+        total = h * w
+        clothing_pct = np.sum(clothing_mask > 0) / total * 100
+        print(f"[ai-media] SegFormer: clothing={clothing_pct:.1f}% of image", file=sys.stderr)
+
+        if clothing_pct < 1.0:
+            print("[ai-media] SegFormer: no significant clothing detected", file=sys.stderr)
+            return None
+
+        # ROLLBACK: Remove convex hull block below to revert to pixel-only mask
+        # Modification A: Fill mask gaps using Convex Hull
+        # Problem: SegFormer leaves gaps (e.g., obi belt in kimono) between upper/lower clothing
+        # Solution: Compute convex hull of clothing contours to fill interior gaps
+        try:
+            import cv2
+            contours, _ = cv2.findContours(clothing_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            if contours:
+                # Merge all contours into one point set, compute convex hull, fill
+                all_points = np.vstack(contours)
+                hull = cv2.convexHull(all_points)
+                hull_mask = np.zeros_like(clothing_mask)
+                cv2.fillConvexPoly(hull_mask, hull, 255)
+                # Combine: original mask OR hull (hull fills gaps but doesn't shrink original)
+                clothing_mask = np.maximum(clothing_mask, hull_mask)
+                hull_pct = np.sum(hull_mask > 0) / total * 100
+                print(f"[ai-media] SegFormer: convex hull filled gaps (hull={hull_pct:.1f}% vs clothing={clothing_pct:.1f}%)", file=sys.stderr)
+        except ImportError:
+            pass  # Skip if OpenCV not available
+        except Exception as e_hull:
+            print(f"[ai-media] Convex hull failed (non-fatal): {e_hull}", file=sys.stderr)
+
+        # ROLLBACK: Change dilate_px back to original value (was 5 default, 10 for undress)
+        # Modification B: Stronger dilation to cover clothing edges and small gaps
+        # Original: dilate_px=5/10, now caller passes 30 for undress
+        if dilate_px > 0:
+            try:
+                import cv2
+                kernel = np.ones((dilate_px * 2 + 1, dilate_px * 2 + 1), np.uint8)
+                clothing_mask = cv2.dilate(clothing_mask, kernel, iterations=1)
+                # Slight blur for smooth transitions
+                clothing_mask = cv2.GaussianBlur(clothing_mask, (7, 7), 2.0)
+            except ImportError:
+                pass  # Skip dilation if OpenCV not available
+
+        # For ComfyUI SetLatentNoiseMask: BLACK=edit, WHITE=protect
+        # Our mask: WHITE=clothing (edit), BLACK=other (protect)
+        # Need to INVERT for ComfyUI
+        inverted_mask = 255 - clothing_mask
+
+        mask_image = Image.fromarray(inverted_mask)
+        mask_path = os.path.join(WORKING_DIR, f"clothmask_{uuid.uuid4().hex[:8]}.png")
+        mask_image.save(mask_path)
+        print(f"[ai-media] Clothing mask saved: {mask_path} (inverted for ComfyUI)", file=sys.stderr)
+        return mask_path
+
+    except Exception as e:
+        print(f"[ai-media] SegFormer clothing detection error: {e}", file=sys.stderr)
+        return None
+
+
+# ===========================================================================
 # IMAGE EDITING (FLUX.1 Dev + LoRA via ComfyUI API)
 # ===========================================================================
 def cmd_edit(args):
     """Image editing using FLUX.1 Dev gguf + LoRA via ComfyUI img2img.
     Automatically detects faces and protects them with an inpainting mask.
+    Supports --engine kontext to use FLUX Kontext Dev for higher quality edits.
     """
+    # Route to appropriate engine
+    engine = getattr(args, 'engine', None) or ('kontext' if FLUX_USE_KONTEXT else 'dev')
+    if engine == 'fill':
+        return cmd_edit_fill(args)
+    if engine == 'kontext':
+        return cmd_edit_kontext(args)
+
     ensure_workdir()
 
     if not ensure_comfyui():
@@ -455,7 +703,9 @@ def build_flux_img2img_workflow(image_name: str, prompt: str, steps: int = 20,
                                  mask_name: str | None = None,
                                  negative_prompt: str = "",
                                  extra_loras: list | None = None,
-                                 cfg: float = 3.5) -> dict:
+                                 cfg: float = 3.5,
+                                 sampler_name: str = "euler",
+                                 scheduler: str = "simple") -> dict:
     """Build ComfyUI API workflow for FLUX.1 Dev img2img with LoRA chain.
 
     LoRA chain: [1] UnetLoaderGGUF → [4] LoRA1 → [14] LoRA2 → [15] LoRA3 → ... → KSampler
@@ -540,8 +790,8 @@ def build_flux_img2img_workflow(image_name: str, prompt: str, steps: int = 20,
                 "seed": seed,
                 "steps": steps,
                 "cfg": cfg,
-                "sampler_name": "euler",
-                "scheduler": "simple",
+                "sampler_name": sampler_name,
+                "scheduler": scheduler,
                 "denoise": denoise,
             }
         },
@@ -602,6 +852,733 @@ def build_flux_img2img_workflow(image_name: str, prompt: str, steps: int = 20,
         workflow["9"]["inputs"]["latent_image"] = ["13", 0]
 
     return workflow
+
+
+# ===========================================================================
+# FLUX.1 Kontext Dev Workflow (image editing with InpaintModelConditioning)
+# ===========================================================================
+def build_flux_kontext_workflow(image_name: str, prompt: str, steps: int = 28,
+                                 seed: int = 0, lora: str = "",
+                                 lora_strength: float = 0.8,
+                                 extra_loras: list | None = None,
+                                 guidance: float = 30.0,
+                                 cfg: float = 1.0) -> dict:
+    """Build ComfyUI API workflow for FLUX.1 Kontext Dev image editing.
+
+    Kontext is specifically designed for image editing — it preserves the
+    identity/structure of the input image while applying text-guided edits.
+    Uses InpaintModelConditioning with a full white mask (edit everything)
+    to allow Kontext to decide what to change based on the prompt.
+
+    Node graph:
+      [1] UnetLoaderGGUF (flux1-kontext-dev-Q5_K_S.gguf)
+      [2] DualCLIPLoaderGGUF (clip_l + t5)
+      [3] VAELoader (ae.safetensors)
+      [4] LoraLoaderModelOnly (primary LoRA) <- model[1]
+      [5] LoadImage (input image)
+      [6] FluxKontextImageScale <- image[5]
+      [7] CLIPTextEncode (prompt) <- clip[2]
+      [8] FluxGuidance <- conditioning[7]
+      [9] CLIPTextEncode (empty negative) <- clip[2]
+      [10] SolidMask (white=1.0, full edit)
+      [11] InpaintModelConditioning <- positive[8], negative[9], vae[3], pixels[6], mask[10]
+      [12] KSampler <- model[4+], pos[11:0], neg[11:1], latent[11:2]
+      [13] VAEDecode <- samples[12], vae[3]
+      [14] SaveImage <- images[13]
+    """
+    workflow = {
+        "1": {
+            "class_type": "UnetLoaderGGUF",
+            "inputs": {"unet_name": FLUX_KONTEXT_UNET}
+        },
+        "2": {
+            "class_type": "DualCLIPLoaderGGUF",
+            "inputs": {
+                "clip_name1": FLUX_DEV_CLIP_L,
+                "clip_name2": FLUX_DEV_T5,
+                "type": "flux",
+            }
+        },
+        "3": {
+            "class_type": "VAELoader",
+            "inputs": {"vae_name": FLUX_DEV_VAE}
+        },
+        "4": {
+            "class_type": "LoraLoaderModelOnly",
+            "inputs": {
+                "model": ["1", 0],
+                "lora_name": lora,
+                "strength_model": lora_strength,
+            }
+        },
+        "5": {
+            "class_type": "LoadImage",
+            "inputs": {"image": image_name}
+        },
+        "6": {
+            "class_type": "FluxKontextImageScale",
+            "inputs": {"image": ["5", 0]}
+        },
+        "7": {
+            "class_type": "CLIPTextEncode",
+            "inputs": {"text": prompt, "clip": ["2", 0]}
+        },
+        "8": {
+            "class_type": "FluxGuidance",
+            "inputs": {"conditioning": ["7", 0], "guidance": guidance}
+        },
+        "9": {
+            "class_type": "CLIPTextEncode",
+            "inputs": {"text": "", "clip": ["2", 0]}
+        },
+        "10": {
+            "class_type": "SolidMask",
+            "inputs": {"value": 1.0, "width": 1024, "height": 1024}
+        },
+        "11": {
+            "class_type": "InpaintModelConditioning",
+            "inputs": {
+                "positive": ["8", 0],
+                "negative": ["9", 0],
+                "vae": ["3", 0],
+                "pixels": ["6", 0],
+                "mask": ["10", 0],
+                "noise_mask": False,
+            }
+        },
+        "12": {
+            "class_type": "KSampler",
+            "inputs": {
+                "model": ["4", 0],
+                "positive": ["11", 0],
+                "negative": ["11", 1],
+                "latent_image": ["11", 2],
+                "seed": seed,
+                "steps": steps,
+                "cfg": cfg,
+                "sampler_name": "euler",
+                "scheduler": "simple",
+                "denoise": 1.0,
+            }
+        },
+        "13": {
+            "class_type": "VAEDecode",
+            "inputs": {"samples": ["12", 0], "vae": ["3", 0]}
+        },
+        "14": {
+            "class_type": "SaveImage",
+            "inputs": {"images": ["13", 0], "filename_prefix": "flux_kontext_edit"}
+        },
+    }
+
+    # Chain extra LoRAs after the primary LoRA (node 4)
+    last_model_node = "4"
+    if extra_loras:
+        node_id = 20
+        for lora_name, strength in extra_loras:
+            workflow[str(node_id)] = {
+                "class_type": "LoraLoaderModelOnly",
+                "inputs": {
+                    "model": [last_model_node, 0],
+                    "lora_name": lora_name,
+                    "strength_model": strength,
+                }
+            }
+            last_model_node = str(node_id)
+            node_id += 1
+        workflow["12"]["inputs"]["model"] = [last_model_node, 0]
+
+    return workflow
+
+
+# ===========================================================================
+# FLUX.1 Fill Dev Workflow (inpainting-specific model)
+# ===========================================================================
+def build_flux_fill_workflow(image_name: str, prompt: str, steps: int = 28,
+                              seed: int = 0, lora: str = "",
+                              lora_strength: float = 0.8,
+                              mask_name: str | None = None,
+                              negative_prompt: str = "",
+                              extra_loras: list | None = None,
+                              guidance: float = 30.0,
+                              cfg: float = 1.0) -> dict:
+    """Build ComfyUI API workflow for FLUX.1 Fill Dev inpainting.
+
+    FLUX Fill Dev is specifically trained for inpainting — it fills masked
+    regions with high-quality content guided by the text prompt. Unlike Kontext
+    which edits the entire image, Fill Dev only modifies the masked area while
+    perfectly preserving everything else.
+
+    Key differences from Kontext:
+    - Uses Fill Dev model (flux1-Fill-dev-Q5_K_S.gguf) — purpose-built for inpainting
+    - Mask defines exact area to regenerate (not SolidMask like Kontext)
+    - denoise=1.0 always (Fill Dev expects full regeneration of masked area)
+    - No FluxKontextImageScale needed
+
+    Node graph:
+      [1] UnetLoaderGGUF (flux1-Fill-dev-Q5_K_S.gguf)
+      [2] DualCLIPLoaderGGUF (clip_l + t5)
+      [3] VAELoader (ae.safetensors)
+      [4] LoraLoaderModelOnly (primary LoRA) <- model[1]
+      [5] LoadImage (input image)
+      [7] CLIPTextEncode (prompt) <- clip[2]
+      [8] FluxGuidance <- conditioning[7]
+      [9] CLIPTextEncode (empty negative) <- clip[2]
+      [10] LoadImageMask (SegFormer mask) or SolidMask (fallback)
+      [11] InpaintModelConditioning <- positive[8], negative[9], vae[3], pixels[5], mask[10]
+      [12] KSampler <- model[4+], pos[11:0], neg[11:1], latent[11:2]
+      [13] VAEDecode <- samples[12], vae[3]
+      [14] SaveImage <- images[13]
+    """
+    workflow = {
+        "1": {
+            "class_type": "UnetLoaderGGUF",
+            "inputs": {"unet_name": FLUX_FILL_UNET}
+        },
+        "2": {
+            "class_type": "DualCLIPLoaderGGUF",
+            "inputs": {
+                "clip_name1": FLUX_DEV_CLIP_L,
+                "clip_name2": FLUX_DEV_T5,
+                "type": "flux",
+            }
+        },
+        "3": {
+            "class_type": "VAELoader",
+            "inputs": {"vae_name": FLUX_DEV_VAE}
+        },
+        "4": {
+            "class_type": "LoraLoaderModelOnly",
+            "inputs": {
+                "model": ["1", 0],
+                "lora_name": lora,
+                "strength_model": lora_strength,
+            }
+        },
+        "5": {
+            "class_type": "LoadImage",
+            "inputs": {"image": image_name}
+        },
+        "7": {
+            "class_type": "CLIPTextEncode",
+            "inputs": {"text": prompt, "clip": ["2", 0]}
+        },
+        "8": {
+            "class_type": "FluxGuidance",
+            "inputs": {"conditioning": ["7", 0], "guidance": guidance}
+        },
+        "9": {
+            "class_type": "CLIPTextEncode",
+            "inputs": {"text": negative_prompt, "clip": ["2", 0]}
+        },
+    }
+
+    # Mask: use provided mask (SegFormer clothing mask) or SolidMask fallback
+    if mask_name:
+        workflow["10"] = {
+            "class_type": "LoadImageMask",
+            "inputs": {
+                "image": mask_name,
+                "channel": "red",
+            }
+        }
+    else:
+        # Fallback: full white mask (edit everything, same as Kontext)
+        workflow["10"] = {
+            "class_type": "SolidMask",
+            "inputs": {"value": 1.0, "width": 1024, "height": 1024}
+        }
+
+    workflow["11"] = {
+        "class_type": "InpaintModelConditioning",
+        "inputs": {
+            "positive": ["8", 0],
+            "negative": ["9", 0],
+            "vae": ["3", 0],
+            "pixels": ["5", 0],
+            "mask": ["10", 0],
+            "noise_mask": True,  # Fill Dev: noise_mask=True for proper inpainting
+        }
+    }
+    workflow["12"] = {
+        "class_type": "KSampler",
+        "inputs": {
+            "model": ["4", 0],
+            "positive": ["11", 0],
+            "negative": ["11", 1],
+            "latent_image": ["11", 2],
+            "seed": seed,
+            "steps": steps,
+            "cfg": cfg,
+            "sampler_name": "euler",
+            "scheduler": "simple",
+            "denoise": 1.0,  # Fill Dev: always 1.0 (full regeneration of masked area)
+        }
+    }
+    workflow["13"] = {
+        "class_type": "VAEDecode",
+        "inputs": {"samples": ["12", 0], "vae": ["3", 0]}
+    }
+    workflow["14"] = {
+        "class_type": "SaveImage",
+        "inputs": {"images": ["13", 0], "filename_prefix": "flux_fill_edit"}
+    }
+
+    # Chain extra LoRAs after the primary LoRA (node 4)
+    last_model_node = "4"
+    if extra_loras:
+        node_id = 20
+        for lora_name, strength in extra_loras:
+            while str(node_id) in workflow:
+                node_id += 1
+            workflow[str(node_id)] = {
+                "class_type": "LoraLoaderModelOnly",
+                "inputs": {
+                    "model": [last_model_node, 0],
+                    "lora_name": lora_name,
+                    "strength_model": strength,
+                }
+            }
+            last_model_node = str(node_id)
+            node_id += 1
+        workflow["12"]["inputs"]["model"] = [last_model_node, 0]
+
+    return workflow
+
+
+def cmd_edit_fill(args):
+    """Image editing using FLUX Fill Dev (inpainting-specific model).
+
+    Fill Dev is purpose-built for inpainting — it replaces masked regions
+    with high-quality content while perfectly preserving unmasked areas.
+    Best used with SegFormer clothing mask for targeted edits like undressing.
+
+    Uses InpaintModelConditioning with denoise=1.0 for full masked region
+    regeneration. The SegFormer mask precisely targets clothing pixels only.
+    """
+    ensure_workdir()
+
+    if not ensure_comfyui():
+        return {"ok": False, "error": "ComfyUI failed to start automatically."}
+
+    if not args.image or not os.path.exists(args.image):
+        return {"ok": False, "error": f"Input image not found: {args.image}"}
+
+    image_path = convert_and_resize(args.image)
+    output = args.output or os.path.join(WORKING_DIR, f"fill_edit_{uuid.uuid4().hex[:8]}.png")
+
+    try:
+        uploaded_name = comfyui_upload_image(image_path)
+        if not uploaded_name:
+            return {"ok": False, "error": "Failed to upload image to ComfyUI"}
+
+        steps = args.steps or FLUX_FILL_STEPS
+        seed = args.seed if args.seed is not None else int(time.time()) % (2**32)
+        lora = args.lora or FLUX_DEV_LORA
+        lora_strength = args.lora_strength if hasattr(args, 'lora_strength') and args.lora_strength else 0.8
+        negative_prompt = args.negative_prompt if hasattr(args, 'negative_prompt') and args.negative_prompt else ""
+        guidance = args.guidance if hasattr(args, 'guidance') and args.guidance is not None else FLUX_FILL_GUIDANCE
+
+        # Parse extra LoRAs
+        extra_loras = []
+        extra_loras_str = args.extra_loras if hasattr(args, 'extra_loras') and args.extra_loras else ""
+        if extra_loras_str:
+            for entry in extra_loras_str.split(","):
+                entry = entry.strip()
+                if not entry:
+                    continue
+                if ":" in entry:
+                    name, strength = entry.rsplit(":", 1)
+                    extra_loras.append((name.strip(), float(strength)))
+                else:
+                    extra_loras.append((entry.strip(), 0.8))
+
+        # Mask: SegFormer clothing mask (primary), face mask (fallback), or none
+        mask_name = None
+        use_face_mask = hasattr(args, 'face_mask') and args.face_mask
+        face_protect = float(args.face_protect) if hasattr(args, 'face_protect') and args.face_protect is not None else 0.35
+
+        # Try SegFormer clothing mask first (ideal for Fill Dev)
+        # ROLLBACK: change dilate_px back to 10 (was 10, now 30 for better gap filling)
+        cloth_mask_path = detect_clothing_and_create_mask(image_path, dilate_px=30)
+        if cloth_mask_path:
+            # For InpaintModelConditioning: WHITE=inpaint, BLACK=keep
+            # detect_clothing_and_create_mask returns INVERTED (BLACK=clothing, WHITE=other)
+            # Need to re-invert for Fill Dev's InpaintModelConditioning
+            try:
+                from PIL import Image as PILImage
+                import numpy as np
+                mask_img = PILImage.open(cloth_mask_path).convert("L")
+                mask_arr = np.array(mask_img)
+                # Re-invert: the function already inverted for SetLatentNoiseMask
+                # InpaintModelConditioning expects WHITE=edit, BLACK=keep (same convention)
+                # Actually: detect_clothing_and_create_mask inverts for SetLatentNoiseMask
+                # where BLACK=edit. InpaintModelConditioning expects WHITE=edit.
+                # So we need to un-invert (invert again).
+                mask_arr = 255 - mask_arr
+                reinverted_path = os.path.join(WORKING_DIR, f"fill_mask_{uuid.uuid4().hex[:8]}.png")
+                PILImage.fromarray(mask_arr).save(reinverted_path)
+                os.unlink(cloth_mask_path)
+                cloth_mask_path = reinverted_path
+                print(f"[ai-media] Fill Dev: clothing mask re-inverted for InpaintModelConditioning (WHITE=edit)", file=sys.stderr)
+            except Exception as e:
+                print(f"[ai-media] Mask inversion failed: {e}", file=sys.stderr)
+
+            mask_name = comfyui_upload_image(cloth_mask_path)
+            if mask_name:
+                print(f"[ai-media] Fill Dev: SegFormer clothing mask uploaded", file=sys.stderr)
+            try:
+                os.unlink(cloth_mask_path)
+            except OSError:
+                pass
+        elif use_face_mask:
+            # Fallback: face protection mask
+            face_mask_path = detect_faces_and_create_mask(image_path, face_protect=face_protect)
+            if face_mask_path:
+                mask_name = comfyui_upload_image(face_mask_path)
+                try:
+                    os.unlink(face_mask_path)
+                except OSError:
+                    pass
+
+        workflow = build_flux_fill_workflow(
+            image_name=uploaded_name,
+            prompt=args.prompt,
+            steps=steps,
+            seed=seed,
+            lora=lora,
+            lora_strength=lora_strength,
+            mask_name=mask_name,
+            negative_prompt=negative_prompt,
+            extra_loras=extra_loras,
+            guidance=guidance,
+            cfg=FLUX_FILL_CFG,
+        )
+
+        mask_info = f", mask={mask_name}" if mask_name else ", no_mask (SolidMask fallback)"
+        extra_info = f", extra_loras={len(extra_loras)}" if extra_loras else ""
+        print(f"[ai-media] Fill Dev inpainting...", file=sys.stderr)
+        print(f"[ai-media] steps={steps}, guidance={guidance}, cfg={FLUX_FILL_CFG}, lora={lora}@{lora_strength}{mask_info}{extra_info}", file=sys.stderr)
+
+        t0 = time.time()
+        output_files = comfyui_queue_and_wait(workflow)
+        elapsed = time.time() - t0
+
+        if not output_files:
+            return {"ok": False, "error": "No output files from ComfyUI", "elapsed": round(elapsed, 1)}
+
+        fname = output_files[0].get("filename", "")
+        subfolder = output_files[0].get("subfolder", "")
+        ftype = output_files[0].get("type", "output")
+        out_path = comfyui_download_output(fname, subfolder, ftype)
+
+        if out_path:
+            import shutil
+            shutil.move(out_path, output)
+            comfyui_free_memory()
+            return {"ok": True, "path": output, "elapsed": round(elapsed, 1)}
+
+        return {"ok": False, "error": "Could not retrieve image from ComfyUI", "elapsed": round(elapsed, 1)}
+
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+# ===========================================================================
+# UNDRESS via FLUX Fill Dev (inpainting-specific, SegFormer mask)
+# ===========================================================================
+def cmd_undress_fill(args):
+    """Undressing using FLUX Fill Dev with SegFormer clothing mask.
+
+    Fill Dev + SegFormer is the optimal undress pipeline:
+    - SegFormer precisely identifies clothing pixels
+    - Fill Dev completely regenerates those pixels (denoise=1.0)
+    - Everything else (face, hair, background, limbs) is perfectly preserved
+    - No face composite artifacts (face is never touched)
+    """
+    ensure_workdir()
+
+    if not ensure_comfyui():
+        return {"ok": False, "error": "ComfyUI failed to start automatically."}
+
+    if not args.image or not os.path.exists(args.image):
+        return {"ok": False, "error": f"Input image not found: {args.image}"}
+
+    image_path = convert_and_resize(args.image)
+    output = args.output or os.path.join(WORKING_DIR, f"undress_fill_{uuid.uuid4().hex[:8]}.png")
+
+    try:
+        uploaded_name = comfyui_upload_image(image_path)
+        if not uploaded_name:
+            return {"ok": False, "error": "Failed to upload image to ComfyUI"}
+
+        steps = args.steps or FLUX_FILL_STEPS
+        seed = args.seed if args.seed is not None else int(time.time()) % (2**32)
+
+        # LoRA configuration (optimized for undressing + Fill Dev)
+        lora = FLUX_DEV_LORA  # roundassv16_FLUX (body realism)
+        lora_strength = 0.6  # conservative for GGUF Q5
+        extra_loras = [
+            ("flux-lora-uncensored.safetensors", 0.7),
+            ("undressing_flux_v3.safetensors", 0.7),
+        ]
+
+        # Prompt engineering
+        # ORIGINAL (before 2026-02-10): base_keywords did not have NSFW prefix, user_prompt was prepended
+        # ROLLBACK: swap full_prompt lines back to f"{user_prompt}, {base_keywords}" if needed
+        base_keywords = "NSFW, completely nude, fully naked, beautiful woman, female body, feminine figure, zero clothing, bare breasts, bare body, exposed skin, soft smooth skin, realistic skin texture, detailed skin pores, natural lighting, photorealistic"
+        negative_prompt = "clothed, dressed, fabric, textile, swimsuit, bikini, underwear, see-through, sheer, transparent clothing, mesh, lace, masculine, muscular, male body, six pack abs, bodybuilder, man, blurry, deformed, extra limbs, bad anatomy, watermark, text"
+
+        user_prompt = args.prompt or ""
+        if user_prompt:
+            # Nudity keywords FIRST, user prompt appended at end (user prompt was weakening undress effect)
+            full_prompt = f"{base_keywords}, {user_prompt}"
+        else:
+            full_prompt = f"completely nude woman, no clothing at all, {base_keywords}"
+
+        # ORIGINAL guidance: 30.0 — lowered to 20.0 to preserve original image composition
+        # ROLLBACK: change FLUX_FILL_GUIDANCE_UNDRESS back to FLUX_FILL_GUIDANCE
+        guidance = args.guidance if hasattr(args, 'guidance') and args.guidance is not None else 20.0
+
+        # SegFormer clothing mask (the core of Fill Dev undress)
+        mask_name = None
+        # ROLLBACK: change dilate_px back to 10 (was 10, now 30 for better gap filling)
+        cloth_mask_path = detect_clothing_and_create_mask(image_path, dilate_px=30)
+        if cloth_mask_path:
+            # Re-invert for InpaintModelConditioning (WHITE=edit, BLACK=keep)
+            try:
+                from PIL import Image as PILImage
+                import numpy as np
+                mask_img = PILImage.open(cloth_mask_path).convert("L")
+                mask_arr = 255 - np.array(mask_img)
+                reinverted_path = os.path.join(WORKING_DIR, f"undress_fill_mask_{uuid.uuid4().hex[:8]}.png")
+                PILImage.fromarray(mask_arr).save(reinverted_path)
+                os.unlink(cloth_mask_path)
+                cloth_mask_path = reinverted_path
+            except Exception as e:
+                print(f"[ai-media] Mask inversion failed: {e}", file=sys.stderr)
+
+            mask_name = comfyui_upload_image(cloth_mask_path)
+            if mask_name:
+                print(f"[ai-media] Undress Fill: SegFormer clothing mask uploaded (WHITE=clothing=edit)", file=sys.stderr)
+            try:
+                os.unlink(cloth_mask_path)
+            except OSError:
+                pass
+        else:
+            print("[ai-media] SegFormer unavailable — Fill Dev will use SolidMask (full image edit)", file=sys.stderr)
+
+        workflow = build_flux_fill_workflow(
+            image_name=uploaded_name,
+            prompt=full_prompt,
+            steps=steps,
+            seed=seed,
+            lora=lora,
+            lora_strength=lora_strength,
+            mask_name=mask_name,
+            negative_prompt=negative_prompt,
+            extra_loras=extra_loras,
+            guidance=guidance,
+            cfg=FLUX_FILL_CFG,
+        )
+
+        mask_info = f", segformer_mask=ON" if mask_name else ", segformer_mask=OFF (SolidMask)"
+        print(f"[ai-media] Undress Fill Dev inpainting...", file=sys.stderr)
+        print(f"[ai-media] steps={steps}, guidance={guidance}, cfg={FLUX_FILL_CFG}, "
+              f"lora={lora}@{lora_strength}, extra=[uncensored@0.7, undressing@0.7]{mask_info}", file=sys.stderr)
+        print(f"[ai-media] prompt: {full_prompt[:120]}", file=sys.stderr)
+
+        t0 = time.time()
+        output_files = comfyui_queue_and_wait(workflow)
+        elapsed = time.time() - t0
+
+        if not output_files:
+            return {"ok": False, "error": "No output files from ComfyUI", "elapsed": round(elapsed, 1)}
+
+        fname = output_files[0].get("filename", "")
+        subfolder = output_files[0].get("subfolder", "")
+        ftype = output_files[0].get("type", "output")
+        out_path = comfyui_download_output(fname, subfolder, ftype)
+
+        if out_path:
+            import shutil
+            shutil.move(out_path, output)
+            comfyui_free_memory()
+            return {"ok": True, "path": output, "elapsed": round(elapsed, 1)}
+
+        return {"ok": False, "error": "Could not retrieve image from ComfyUI", "elapsed": round(elapsed, 1)}
+
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+# ===========================================================================
+# UNDRESS EDITING (FLUX.1 Dev + LoRA, optimized for nudity)
+# ===========================================================================
+def cmd_undress(args):
+    """Dedicated undressing/nudity image editing with pre-optimized parameters.
+
+    Supports two engines:
+    - fill (default): FLUX Fill Dev — inpainting model, SegFormer mask targets clothing only,
+      denoise=1.0 for complete clothing replacement. Best quality.
+    - dev: FLUX.1 Dev — img2img with LoRA chain, denoise controls strength.
+
+    LoRAs:
+    - roundassv16_FLUX (primary LoRA for body realism)
+    - flux-lora-uncensored (safety bypass)
+    - undressing_flux_v3 (clothing removal)
+
+    Strength presets (dev engine only):
+    - light  (denoise=0.60): Subtle clothing thinning/transparency
+    - medium (denoise=0.80): Full undressing, balanced identity preservation [DEFAULT]
+    - heavy  (denoise=0.92): Maximum transformation, may alter body proportions
+    """
+    # Route to Fill Dev engine if requested (or default for undress)
+    engine = getattr(args, 'engine', None) or 'fill'
+    if engine == 'fill':
+        return cmd_undress_fill(args)
+
+    ensure_workdir()
+
+    if not ensure_comfyui():
+        return {"ok": False, "error": "ComfyUI failed to start automatically. Check ~/start-comfyui.sh"}
+
+    if not args.image or not os.path.exists(args.image):
+        return {"ok": False, "error": f"Input image not found: {args.image}"}
+
+    image_path = convert_and_resize(args.image)
+    output = args.output or os.path.join(WORKING_DIR, f"undress_{uuid.uuid4().hex[:8]}.png")
+
+    try:
+        uploaded_name = comfyui_upload_image(image_path)
+        if not uploaded_name:
+            return {"ok": False, "error": "Failed to upload image to ComfyUI"}
+
+        # --- Denoise: strength preset or explicit value ---
+        # Web research: 0.7-0.8 is the "dramatic change zone" for FLUX img2img
+        # Below 0.7 = subtle, above 0.85 = model's stylization takes over
+        strength_preset = getattr(args, 'strength', None)
+        if strength_preset == 'light':
+            denoise = 0.60
+        elif strength_preset == 'heavy':
+            denoise = 0.92
+        elif strength_preset == 'medium':
+            denoise = 0.80
+        elif args.denoise is not None:
+            denoise = args.denoise
+        else:
+            denoise = 0.80  # default: medium (Web research: 0.8-0.95 = dramatic change zone)
+
+        steps = args.steps or 30  # Web research: Dev 25-30 steps; 30 for better effective steps at partial denoise
+        seed = args.seed if args.seed is not None else int(time.time()) % (2**32)
+
+        # --- LoRA configuration (optimized for undressing) ---
+        # Web research: GGUF Q5 + 3 LoRAs → need 10-15% lower than FP16
+        # Q5 quantization noise compounds with LoRA modifications → lower is cleaner
+        # Total weight budget: 0.6+0.7+0.7=2.0 (was 0.7+0.8+0.8=2.3, too high for Q5)
+        lora = FLUX_DEV_LORA  # roundassv16_FLUX (body realism)
+        lora_strength = 0.6  # lowered for Q5 compat (was 0.7)
+        extra_loras = [
+            ("flux-lora-uncensored.safetensors", 0.7),   # safety bypass (lowered from 0.8 for Q5)
+            ("undressing_flux_v3.safetensors", 0.7),      # clothing removal (lowered from 0.8 for Q5)
+        ]
+
+        # --- Prompt engineering (strengthened based on test results) ---
+        # ORIGINAL (before 2026-02-10): base_keywords did not have NSFW prefix, user_prompt was prepended
+        # ROLLBACK: swap full_prompt lines back to f"{user_prompt}, {base_keywords}" if needed
+        base_keywords = "NSFW, completely nude, fully naked, beautiful woman, female body, feminine figure, zero clothing, bare breasts, bare body, exposed skin, soft smooth skin, realistic skin texture, detailed skin pores, natural lighting, photorealistic"
+        negative_prompt = "clothed, dressed, fabric, textile, swimsuit, bikini, underwear, see-through, sheer, transparent clothing, mesh, lace, masculine, muscular, male body, six pack abs, bodybuilder, man, blurry, deformed, extra limbs, bad anatomy, watermark, text"
+
+        user_prompt = args.prompt or ""
+        if user_prompt:
+            # Nudity keywords FIRST, user prompt appended at end (user prompt was weakening undress effect)
+            full_prompt = f"{base_keywords}, {user_prompt}"
+        else:
+            full_prompt = f"completely nude woman, no clothing at all, {base_keywords}"
+
+        # --- Mask generation: SegFormer clothing mask (preferred) or face mask (fallback) ---
+        mask_name = None
+        use_mask = not getattr(args, 'no_face_mask', False)
+        face_protect = float(args.face_protect) if hasattr(args, 'face_protect') and args.face_protect is not None else 0.5
+
+        if use_mask:
+            # Try SegFormer clothing segmentation first (much more precise)
+            cloth_mask_path = detect_clothing_and_create_mask(image_path, dilate_px=5)
+            if cloth_mask_path:
+                mask_name = comfyui_upload_image(cloth_mask_path)
+                if mask_name:
+                    print(f"[ai-media] Undress: SegFormer clothing mask uploaded (clothing-only edit)", file=sys.stderr)
+                try:
+                    os.unlink(cloth_mask_path)
+                except OSError:
+                    pass
+            else:
+                # Fallback to face-only mask if SegFormer unavailable
+                print("[ai-media] SegFormer unavailable, falling back to face mask", file=sys.stderr)
+                face_mask_path = detect_faces_and_create_mask(image_path, face_protect=face_protect)
+                if face_mask_path:
+                    mask_name = comfyui_upload_image(face_mask_path)
+                    if mask_name:
+                        print(f"[ai-media] Undress: Face mask uploaded (protect={face_protect})", file=sys.stderr)
+                    try:
+                        os.unlink(face_mask_path)
+                    except OSError:
+                        pass
+
+        # --- Build workflow (FLUX Dev engine with full LoRA chain) ---
+        # Web research: FLUX Dev KSampler CFG should be 1.0 (use FluxGuidance for guidance control)
+        # GGUF Q5 is even more sensitive to high CFG → 1.0 is safest
+        cfg = 1.0
+        # dpmpp_2m + karras: sharper textures, better fine detail than euler+simple
+        sampler = "dpmpp_2m"
+        sched = "karras"
+        workflow = build_flux_img2img_workflow(
+            image_name=uploaded_name,
+            prompt=full_prompt,
+            steps=steps,
+            denoise=denoise,
+            seed=seed,
+            lora=lora,
+            lora_strength=lora_strength,
+            mask_name=mask_name,
+            negative_prompt=negative_prompt,
+            extra_loras=extra_loras,
+            cfg=cfg,
+            sampler_name=sampler,
+            scheduler=sched,
+        )
+
+        mask_info = f", face_mask=ON (protect={face_protect})" if mask_name else ", face_mask=OFF"
+        preset_info = f" [{strength_preset}]" if strength_preset else ""
+        print(f"[ai-media] Undress editing{preset_info}...", file=sys.stderr)
+        print(f"[ai-media] denoise={denoise}, steps={steps}, cfg={cfg}, sampler={sampler}+{sched}, "
+              f"lora={lora}@{lora_strength}, "
+              f"extra=[uncensored@0.7, undressing@0.7]{mask_info}", file=sys.stderr)
+        print(f"[ai-media] prompt: {full_prompt[:120]}", file=sys.stderr)
+        print(f"[ai-media] negative: {negative_prompt[:120]}", file=sys.stderr)
+
+        t0 = time.time()
+        output_files = comfyui_queue_and_wait(workflow)
+        elapsed = time.time() - t0
+
+        if not output_files:
+            return {"ok": False, "error": "No output files from ComfyUI", "elapsed": round(elapsed, 1)}
+
+        fname = output_files[0].get("filename", "")
+        subfolder = output_files[0].get("subfolder", "")
+        ftype = output_files[0].get("type", "output")
+        out_path = comfyui_download_output(fname, subfolder, ftype)
+
+        if out_path:
+            import shutil
+            shutil.move(out_path, output)
+            comfyui_free_memory()
+            return {"ok": True, "path": output, "elapsed": round(elapsed, 1)}
+
+        return {"ok": False, "error": "Could not retrieve image from ComfyUI", "elapsed": round(elapsed, 1)}
+
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
 
 
 # ===========================================================================
@@ -1086,6 +2063,275 @@ def build_flux_outpaint_workflow(image_name: str, prompt: str, steps: int = 20,
 
 
 # ===========================================================================
+# IMAGE EDITING via FLUX Kontext Dev (higher quality, prompt-driven editing)
+# ===========================================================================
+def cmd_edit_kontext(args):
+    """Image editing using FLUX Kontext Dev GGUF + LoRA via ComfyUI.
+
+    Kontext is specifically designed for image editing tasks:
+    - Understands image context and makes targeted changes
+    - Better prompt adherence for specific edits
+    - FluxGuidance node controls prompt strength (default 2.5)
+    - KSampler CFG=1.0 (Kontext-specific requirement)
+
+    Workflow:
+      [1] UnetLoaderGGUF (Kontext model)
+      [2] DualCLIPLoaderGGUF
+      [3] VAELoader
+      [4] LoraLoaderModelOnly (primary LoRA)
+      [5] LoadImage (input)
+      [6] VAEEncode ← pixels[5], vae[3]
+      [7] CLIPTextEncode(prompt) → FluxGuidance
+      [20] FluxGuidance ← conditioning[7], guidance=2.5
+      [8] CLIPTextEncode(negative)
+      [9] KSampler ← model[4+], pos[20], neg[8], latent[6], cfg=1.0
+      [10] VAEDecode
+      [11] SaveImage
+    """
+    ensure_workdir()
+
+    if not ensure_comfyui():
+        return {"ok": False, "error": "ComfyUI failed to start automatically."}
+
+    if not args.image or not os.path.exists(args.image):
+        return {"ok": False, "error": f"Input image not found: {args.image}"}
+
+    image_path = convert_and_resize(args.image)
+    output = args.output or os.path.join(WORKING_DIR, f"kontext_edit_{uuid.uuid4().hex[:8]}.png")
+
+    try:
+        uploaded_name = comfyui_upload_image(image_path)
+        if not uploaded_name:
+            return {"ok": False, "error": "Failed to upload image to ComfyUI"}
+
+        denoise = args.denoise if hasattr(args, 'denoise') and args.denoise is not None else 0.75
+        steps = args.steps or 20
+        seed = args.seed if args.seed is not None else int(time.time()) % (2**32)
+        lora = args.lora or FLUX_DEV_LORA
+        lora_strength = args.lora_strength if hasattr(args, 'lora_strength') and args.lora_strength else 0.6
+        negative_prompt = args.negative_prompt if hasattr(args, 'negative_prompt') and args.negative_prompt else ""
+        guidance = args.guidance if hasattr(args, 'guidance') and args.guidance is not None else FLUX_KONTEXT_GUIDANCE
+
+        # Parse extra LoRAs
+        extra_loras = []
+        extra_loras_str = args.extra_loras if hasattr(args, 'extra_loras') and args.extra_loras else ""
+        if extra_loras_str:
+            for entry in extra_loras_str.split(","):
+                entry = entry.strip()
+                if not entry:
+                    continue
+                if ":" in entry:
+                    name, strength = entry.rsplit(":", 1)
+                    extra_loras.append((name.strip(), float(strength)))
+                else:
+                    extra_loras.append((entry.strip(), 0.8))
+
+        # Face mask support (same as cmd_edit)
+        mask_name = None
+        use_face_mask = hasattr(args, 'face_mask') and args.face_mask
+        face_protect = float(args.face_protect) if hasattr(args, 'face_protect') and args.face_protect is not None else 0.35
+        if use_face_mask:
+            face_mask_path = detect_faces_and_create_mask(image_path, face_protect=face_protect)
+            if face_mask_path:
+                mask_name = comfyui_upload_image(face_mask_path)
+                try:
+                    os.unlink(face_mask_path)
+                except OSError:
+                    pass
+
+        workflow = build_flux_kontext_workflow(
+            image_name=uploaded_name,
+            prompt=args.prompt,
+            steps=steps,
+            denoise=denoise,
+            seed=seed,
+            lora=lora,
+            lora_strength=lora_strength,
+            mask_name=mask_name,
+            negative_prompt=negative_prompt,
+            extra_loras=extra_loras,
+            guidance=guidance,
+        )
+
+        extra_info = f", extra_loras={len(extra_loras)}" if extra_loras else ""
+        mask_info = f", face_mask={mask_name}" if mask_name else ", no_mask"
+        print(f"[ai-media] Kontext editing image...", file=sys.stderr)
+        print(f"[ai-media] denoise={denoise}, steps={steps}, guidance={guidance}, lora={lora}, scale={lora_strength}{mask_info}{extra_info}", file=sys.stderr)
+
+        t0 = time.time()
+        output_files = comfyui_queue_and_wait(workflow)
+        elapsed = time.time() - t0
+
+        if not output_files:
+            return {"ok": False, "error": "No output files from ComfyUI", "elapsed": round(elapsed, 1)}
+
+        fname = output_files[0].get("filename", "")
+        subfolder = output_files[0].get("subfolder", "")
+        ftype = output_files[0].get("type", "output")
+        out_path = comfyui_download_output(fname, subfolder, ftype)
+
+        if out_path:
+            import shutil
+            shutil.move(out_path, output)
+            comfyui_free_memory()
+            return {"ok": True, "path": output, "elapsed": round(elapsed, 1)}
+
+        return {"ok": False, "error": "Could not retrieve image from ComfyUI", "elapsed": round(elapsed, 1)}
+
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+def build_flux_kontext_workflow(image_name: str, prompt: str, steps: int = 20,
+                                 denoise: float = 0.75, seed: int = 0,
+                                 lora: str = "", lora_strength: float = 0.6,
+                                 mask_name: str | None = None,
+                                 negative_prompt: str = "",
+                                 extra_loras: list | None = None,
+                                 guidance: float = 2.5) -> dict:
+    """Build ComfyUI API workflow for FLUX Kontext Dev image editing.
+
+    Key differences from standard FLUX Dev img2img:
+    - Uses Kontext model (flux1-kontext-dev-Q5_K_S.gguf)
+    - FluxGuidance node controls prompt influence (default 2.5)
+    - KSampler cfg=1.0 (Kontext requirement — guidance via FluxGuidance instead)
+    - Higher denoise default (0.75) for more dramatic edits
+    """
+    workflow = {
+        "1": {
+            "class_type": "UnetLoaderGGUF",
+            "inputs": {
+                "unet_name": FLUX_KONTEXT_UNET,
+            }
+        },
+        "2": {
+            "class_type": "DualCLIPLoaderGGUF",
+            "inputs": {
+                "clip_name1": FLUX_DEV_CLIP_L,
+                "clip_name2": FLUX_DEV_T5,
+                "type": "flux",
+            }
+        },
+        "3": {
+            "class_type": "VAELoader",
+            "inputs": {
+                "vae_name": FLUX_DEV_VAE,
+            }
+        },
+        "4": {
+            "class_type": "LoraLoaderModelOnly",
+            "inputs": {
+                "model": ["1", 0],
+                "lora_name": lora,
+                "strength_model": lora_strength,
+            }
+        },
+        "5": {
+            "class_type": "LoadImage",
+            "inputs": {
+                "image": image_name,
+            }
+        },
+        "6": {
+            "class_type": "VAEEncode",
+            "inputs": {
+                "pixels": ["5", 0],
+                "vae": ["3", 0],
+            }
+        },
+        "7": {
+            "class_type": "CLIPTextEncode",
+            "inputs": {
+                "text": prompt,
+                "clip": ["2", 0],
+            }
+        },
+        "20": {
+            "class_type": "FluxGuidance",
+            "inputs": {
+                "conditioning": ["7", 0],
+                "guidance": guidance,
+            }
+        },
+        "8": {
+            "class_type": "CLIPTextEncode",
+            "inputs": {
+                "text": negative_prompt,
+                "clip": ["2", 0],
+            }
+        },
+        "9": {
+            "class_type": "KSampler",
+            "inputs": {
+                "model": ["4", 0],
+                "positive": ["20", 0],  # Through FluxGuidance
+                "negative": ["8", 0],
+                "latent_image": ["6", 0],
+                "seed": seed,
+                "steps": steps,
+                "cfg": 1.0,  # Kontext uses FluxGuidance instead of KSampler CFG
+                "sampler_name": "euler",
+                "scheduler": "simple",
+                "denoise": denoise,
+            }
+        },
+        "10": {
+            "class_type": "VAEDecode",
+            "inputs": {
+                "samples": ["9", 0],
+                "vae": ["3", 0],
+            }
+        },
+        "11": {
+            "class_type": "SaveImage",
+            "inputs": {
+                "images": ["10", 0],
+                "filename_prefix": "kontext_edit",
+            }
+        },
+    }
+
+    # Chain extra LoRAs
+    last_model_node = "4"
+    if extra_loras:
+        node_id = 14
+        for lora_name, strength in extra_loras:
+            while str(node_id) in workflow:
+                node_id += 1
+            workflow[str(node_id)] = {
+                "class_type": "LoraLoaderModelOnly",
+                "inputs": {
+                    "model": [last_model_node, 0],
+                    "lora_name": lora_name,
+                    "strength_model": strength,
+                }
+            }
+            last_model_node = str(node_id)
+            node_id += 1
+        workflow["9"]["inputs"]["model"] = [last_model_node, 0]
+
+    # Face mask
+    if mask_name:
+        workflow["12"] = {
+            "class_type": "LoadImageMask",
+            "inputs": {
+                "image": mask_name,
+                "channel": "red",
+            }
+        }
+        workflow["13"] = {
+            "class_type": "SetLatentNoiseMask",
+            "inputs": {
+                "samples": ["6", 0],
+                "mask": ["12", 0],
+            }
+        }
+        workflow["9"]["inputs"]["latent_image"] = ["13", 0]
+
+    return workflow
+
+
+# ===========================================================================
 # VIDEO GENERATION (Wan2.2 TI2V-5B via ComfyUI API)
 # ===========================================================================
 def cmd_animate(args):
@@ -1097,13 +2343,29 @@ def cmd_animate(args):
 
     output = args.output or os.path.join(WORKING_DIR, f"video_{uuid.uuid4().hex[:8]}.mp4")
 
-    width = args.width or 832
-    height = args.height or 480
     frames = args.frames or 33
     steps = args.steps or 30
 
     if args.image and os.path.exists(args.image):
-        # Image-to-Video
+        # Image-to-Video — detect aspect ratio from source image
+        from PIL import Image as PILImage
+        try:
+            src_img = PILImage.open(args.image)
+            src_w, src_h = src_img.size
+            src_img.close()
+            if src_h > src_w:
+                # Portrait (taller than wide) → 480x832
+                width = args.width or 480
+                height = args.height or 832
+            else:
+                # Landscape or square → 832x480
+                width = args.width or 832
+                height = args.height or 480
+            print(f"[ai-media] I2V auto-aspect: source {src_w}x{src_h} → output {width}x{height}", file=sys.stderr)
+        except Exception:
+            width = args.width or 832
+            height = args.height or 480
+
         image_path = convert_and_resize(args.image)
         uploaded_name = comfyui_upload_image(image_path)
         if not uploaded_name:
@@ -1117,7 +2379,9 @@ def cmd_animate(args):
         )
         mode = "I2V"
     else:
-        # Text-to-Video
+        # Text-to-Video — always landscape
+        width = args.width or 832
+        height = args.height or 480
         workflow = build_wan22_t2v_workflow(
             prompt=args.prompt,
             width=width, height=height,
@@ -1126,7 +2390,8 @@ def cmd_animate(args):
         )
         mode = "T2V"
 
-    print(f"[ai-media] {mode}: {width}x{height}, {frames} frames, {steps} steps, shift={WAN22_SHIFT}", file=sys.stderr)
+    shift_used = WAN22_SHIFT_I2V if mode == "I2V" else WAN22_SHIFT
+    print(f"[ai-media] {mode}: {width}x{height}, {frames} frames, {steps} steps, shift={shift_used}", file=sys.stderr)
     t0 = time.time()
 
     try:
@@ -1402,16 +2667,16 @@ def _unet_loader_node():
         }
 
 
-def _model_sampling_node(model_source: str):
+def _model_sampling_node(model_source: str, shift: float = None):
     """ModelSamplingSD3 node — REQUIRED for Wan2.2 (BUG2 fix).
     Applies shift parameter to the diffusion model's noise schedule.
     Without this, generation quality degrades significantly or may crash.
-    Default shift=3.0, typical range 3.0-5.0 for Wan models.
+    T2V: shift=3.0, I2V: shift=5.0 (higher = more motion while preserving start_image).
     """
     return {
         "class_type": "ModelSamplingSD3",
         "inputs": {
-            "shift": WAN22_SHIFT,
+            "shift": shift if shift is not None else WAN22_SHIFT,
             "model": [model_source, 0]
         }
     }
@@ -1510,7 +2775,7 @@ def build_wan22_t2v_workflow(prompt: str, width: int = 832, height: int = 480,
         "10": {
             "class_type": "VHS_VideoCombine",
             "inputs": {
-                "frame_rate": 24,
+                "frame_rate": 8,  # ROLLBACK: was 24 — GIF-animation style (longer playback, choppier motion)
                 "loop_count": 0,
                 "filename_prefix": "wan22_t2v",
                 "format": "video/h264-mp4",
@@ -1533,7 +2798,7 @@ def build_wan22_i2v_workflow(prompt: str, image_name: str, width: int = 832,
 
     Node graph (numeric IDs only for ComfyUI API compatibility):
       1   UNETLoader (fp16)
-      2   ModelSamplingSD3 (shift=3.0) ← model from [1]
+      2   ModelSamplingSD3 (shift=5.0 for I2V) ← model from [1]
       3   CLIPLoaderGGUF (GGUF text encoder)
       4   VAELoader
       5   CLIPTextEncode (positive) ← clip from [3]
@@ -1547,6 +2812,7 @@ def build_wan22_i2v_workflow(prompt: str, image_name: str, width: int = 832,
     NOTE: 5B model does NOT use CLIPVision (BUG3 fix).
     CLIPVisionLoader / CLIPVisionEncode / WanImageToVideoCond are 14B-only.
     The 5B model takes start_image directly via Wan22ImageToVideoLatent.
+    I2V uses shift=5.0 (vs T2V shift=3.0) for better motion while preserving start_image.
     """
     if seed is None:
         import random
@@ -1554,7 +2820,7 @@ def build_wan22_i2v_workflow(prompt: str, image_name: str, width: int = 832,
 
     return {
         "1": _unet_loader_node(),
-        "2": _model_sampling_node("1"),
+        "2": _model_sampling_node("1", shift=WAN22_SHIFT_I2V),
         "3": _text_encoder_node(),
         "4": {
             "class_type": "VAELoader",
@@ -1605,7 +2871,7 @@ def build_wan22_i2v_workflow(prompt: str, image_name: str, width: int = 832,
         "11": {
             "class_type": "VHS_VideoCombine",
             "inputs": {
-                "frame_rate": 24,
+                "frame_rate": 8,  # ROLLBACK: was 24 — GIF-animation style (longer playback, choppier motion)
                 "loop_count": 0,
                 "filename_prefix": "wan22_i2v",
                 "format": "video/h264-mp4",
@@ -1689,6 +2955,11 @@ def main():
     p_edit.add_argument("--direction", default="bottom",
                          choices=["bottom", "top", "left", "right"],
                          help="Direction to expand canvas (default: bottom)")
+    p_edit.add_argument("--engine", default="dev",
+                         choices=["dev", "kontext", "fill"],
+                         help="Edit engine: dev (FLUX Dev img2img), kontext (FLUX Kontext), or fill (FLUX Fill Dev inpainting)")
+    p_edit.add_argument("--guidance", type=float, default=None,
+                         help="FluxGuidance value for Kontext engine (default 2.5)")
 
     # outpaint
     p_outpaint = sub.add_parser("outpaint", help="Image outpainting (FLUX.1 Dev + LoRA via ComfyUI)")
@@ -1726,6 +2997,30 @@ def main():
     p_anim.add_argument("--steps", type=int, default=30)
     p_anim.add_argument("--seed", type=int, default=None)
 
+    # undress — dedicated nude generation with pre-optimized params
+    p_undress = sub.add_parser("undress", help="Undress editing (FLUX.1 Dev + LoRA, optimized for nudity)")
+    p_undress.add_argument("--image", required=True)
+    p_undress.add_argument("--prompt", default=None,
+                            help="Optional extra prompt (auto-prepends nudity keywords)")
+    p_undress.add_argument("--output", default=None)
+    p_undress.add_argument("--steps", type=int, default=30,
+                            help="Sampling steps (default 30, dpmpp_2m+karras needs 25-35)")
+    p_undress.add_argument("--denoise", type=float, default=None,
+                            help="Denoise strength (default 0.80, range 0.5-0.95)")
+    p_undress.add_argument("--seed", type=int, default=None)
+    p_undress.add_argument("--face-protect", type=float, default=None,
+                            help="Face protection level (default 0.5, 0.0=no protect, 1.0=full protect)")
+    p_undress.add_argument("--no-face-mask", action="store_true",
+                            help="Disable automatic face protection")
+    p_undress.add_argument("--strength", default=None,
+                            choices=["light", "medium", "heavy"],
+                            help="Preset: light=0.60, medium=0.80 (default), heavy=0.92 denoise")
+    p_undress.add_argument("--engine", default=None,
+                            choices=["dev", "fill"],
+                            help="Engine: fill (default, FLUX Fill Dev inpainting) or dev (FLUX Dev img2img)")
+    p_undress.add_argument("--guidance", type=float, default=None,
+                            help="FluxGuidance value for Fill engine (default 30.0)")
+
     # status
     sub.add_parser("status", help="Check system status")
 
@@ -1741,6 +3036,8 @@ def main():
         result = cmd_outpaint(args)
     elif args.command == "animate":
         result = cmd_animate(args)
+    elif args.command == "undress":
+        result = cmd_undress(args)
 
     print(json.dumps(result, ensure_ascii=False))
 
@@ -1755,7 +3052,8 @@ def check_status():
         "wan22_config": {
             "text_encoder": WAN22_TEXT_ENCODER_TYPE,
             "unet": "gguf" if WAN22_USE_GGUF_UNET else "fp16",
-            "shift": WAN22_SHIFT,
+            "shift_t2v": WAN22_SHIFT,
+            "shift_i2v": WAN22_SHIFT_I2V,
         },
     }
 
