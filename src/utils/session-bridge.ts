@@ -193,10 +193,10 @@ export async function saveSessionState(session: AISession): Promise<void> {
       10_000,
       cwd,
     );
-    if (commitResult.exitCode === 0) {
+    if (commitResult.code === 0 || commitResult.stdout.includes("nothing to commit") || commitResult.stdout.includes("no changes added to commit")) {
       console.log("[Session State] Git commit done");
     } else {
-      console.error("[Session State] Git commit failed (non-fatal):", commitResult.stderr?.slice(-200));
+      console.error("[Session State] Git commit failed:", JSON.stringify({code: commitResult.code, stdout: commitResult.stdout?.slice(-200), stderr: commitResult.stderr?.slice(-200), timedOut: commitResult.timedOut}));
       appendFileSync(SESSION_LOG_PATH, new Date().toISOString() + " WARN: git commit failed\n");
     }
   } catch (e) {
