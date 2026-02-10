@@ -80,7 +80,7 @@ function spawnCLI(
  * Claude CLI (Max subscription)
  * spawn("claude", ["-p", "-"]) + stdin — shell不使用で安全、"-"始まりのプロンプトも問題なし
  */
-export async function askClaude(prompt: string, timeoutMs = 120_000): Promise<AIResponse> {
+export async function askClaude(prompt: string, timeoutMs = 600_000): Promise<AIResponse> {
   const start = Date.now();
   const r = await spawnCLI("claude", ["--model", "claude-opus-4-6", "-p", "-"], prompt, timeoutMs);
   return {
@@ -96,7 +96,7 @@ export async function askClaude(prompt: string, timeoutMs = 120_000): Promise<AI
  * Gemini CLI (Google AI Pro subscription)
  * stderrのpunycode warningは無視
  */
-export async function askGemini(prompt: string, timeoutMs = 120_000): Promise<AIResponse> {
+export async function askGemini(prompt: string, timeoutMs = 600_000): Promise<AIResponse> {
   const start = Date.now();
   const r = await spawnCLI("gemini", [], prompt, timeoutMs);
   return {
@@ -112,7 +112,7 @@ export async function askGemini(prompt: string, timeoutMs = 120_000): Promise<AI
  * ChatGPT via macOS Shortcuts (Pro subscription)
  * promptはstdin経由で渡す
  */
-export async function askChatGPT(prompt: string, timeoutMs = 120_000): Promise<AIResponse> {
+export async function askChatGPT(prompt: string, timeoutMs = 600_000): Promise<AIResponse> {
   const start = Date.now();
   const r = await spawnCLI("shortcuts", ["run", "Ask ChatGPT"], prompt, timeoutMs);
   return {
@@ -127,7 +127,7 @@ export async function askChatGPT(prompt: string, timeoutMs = 120_000): Promise<A
 /**
  * 3AI並列実行（失敗したAIはスキップ）
  */
-export async function askAll(prompt: string, timeoutMs = 120_000): Promise<AIResponse[]> {
+export async function askAll(prompt: string, timeoutMs = 600_000): Promise<AIResponse[]> {
   const results = await Promise.allSettled([
     askClaude(prompt, timeoutMs),
     askGemini(prompt, timeoutMs),
