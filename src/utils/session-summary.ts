@@ -142,9 +142,9 @@ export function generateSessionSummary(
 }
 
 /**
- * Gemini APIで会話履歴からスマート要約を生成
+ * Gemini CLIで会話履歴からスマート要約を生成
  *
- * 無料枠（5 req/min, 1500 req/day）内で使用。
+ * Gemini CLI経由（Google AI Pro定額サブスク）。従量課金ゼロ。
  * 失敗時はルールベース要約にフォールバック。
  */
 async function generateSummaryWithGemini(
@@ -156,12 +156,7 @@ async function generateSummaryWithGemini(
   unfinishedTasks: string[];
 }> {
   try {
-    const { GoogleGenerativeAI } = await import('@google/generative-ai');
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) throw new Error('GEMINI_API_KEY not set');
-
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+    const { askGemini } = await import('./multi-ai');
 
     // 会話をコンパクトに整形（各メッセージ最大500文字、最大30件）
     const compactHistory = messages
@@ -193,8 +188,11 @@ async function generateSummaryWithGemini(
 ## 会話履歴
 ${compactHistory}`;
 
-    const result = await model.generateContent(prompt);
-    const text = result.response.text();
+    const result = await askGemini(prompt, 60_000);
+
+    if (result.error) throw new Error(`Gemini CLI error: ${result.error}`);
+
+    const text = result.output;
 
     // JSONを抽出（コードブロック内でも対応）
     const jsonMatch = text.match(/\{[\s\S]*\}/);
@@ -207,7 +205,7 @@ ${compactHistory}`;
       unfinished_tasks?: string[];
     };
 
-    console.log('[Session Summary] Gemini summary generated successfully');
+    console.log('[Session Summary] Gemini CLI summary generated successfully');
 
     return {
       summary: parsed.summary || '',
@@ -216,7 +214,7 @@ ${compactHistory}`;
       unfinishedTasks: parsed.unfinished_tasks || [],
     };
   } catch (error) {
-    console.warn('[Session Summary] Gemini failed, falling back to rule-based:', error);
+    console.warn('[Session Summary] Gemini CLI failed, falling back to rule-based:', error);
     return generateSessionSummary(messages);
   }
 }

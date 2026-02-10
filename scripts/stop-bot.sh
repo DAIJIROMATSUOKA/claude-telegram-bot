@@ -3,53 +3,42 @@
 # ============================================
 # Telegram Bot Stop Script
 # ============================================
-# watchdogが動いている場合、先にwatchdogも停止する。
-# そうしないとwatchdogが即座にBotを再起動してしまう。
+# LaunchAgentを停止し、Botプロセスを終了する。
 # ============================================
 
-PROJECT_DIR="$HOME/claude-telegram-bot"
-PID_FILE="$PROJECT_DIR/.bot.pid"
-WATCHDOG_LOCK="/tmp/croppy-watchdog.lock"
+LABEL="com.jarvis.telegram-bot"
+PID_LOCK="/tmp/jarvis-bot.pid"
 
 echo "🛑 Botを停止中..."
 
-# 0. watchdogを先に停止（再起動を防ぐ）
-if [ -f "$WATCHDOG_LOCK" ]; then
-  WATCHDOG_PID=$(cat "$WATCHDOG_LOCK" 2>/dev/null)
-  if [ -n "$WATCHDOG_PID" ] && kill -0 "$WATCHDOG_PID" 2>/dev/null; then
-    echo "🐕 Watchdog (PID $WATCHDOG_PID) を停止中..."
-    kill "$WATCHDOG_PID" 2>/dev/null || true
-    sleep 1
-  fi
-  rm -f "$WATCHDOG_LOCK"
-fi
-# watchdog LaunchAgentも停止
-launchctl bootout "gui/$(id -u)/com.croppy.watchdog" 2>/dev/null || true
+# 1. LaunchAgentを停止（KeepAliveを無効にして再起動を防ぐ）
+echo "📋 LaunchAgent ($LABEL) を停止中..."
+launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true
+sleep 1
 
-# 1. PIDファイルから停止
-if [ -f "$PID_FILE" ]; then
-  PID=$(cat "$PID_FILE")
-  if kill -0 "$PID" 2>/dev/null; then
-    echo "📋 PID $PID を停止中..."
-    kill -9 "$PID" 2>/dev/null || true
-    sleep 1
-  fi
-  rm -f "$PID_FILE"
+# 2. 残存プロセスをGraceful停止
+if pgrep -f "bun.*index.ts" > /dev/null 2>&1; then
+    echo "🔨 残存プロセスをSIGTERM..."
+    pkill -15 -f "bun.*index.ts" 2>/dev/null || true
+    sleep 3
+    if pgrep -f "bun.*index.ts" > /dev/null 2>&1; then
+        echo "⚠️ SIGTERM効かず。SIGKILL..."
+        pkill -9 -f "bun.*index.ts" 2>/dev/null || true
+        sleep 1
+    fi
 fi
 
-# 2. パターンマッチで全プロセスを停止
-echo "🔨 全bun index.tsプロセスを停止中..."
-pkill -9 -f "bun.*index.ts" 2>/dev/null || true
+# 3. PID lockファイル削除
+rm -f "$PID_LOCK"
 
-# 3. 確認
-sleep 2
-if pgrep -f "bun.*index.ts" > /dev/null; then
-  echo "⚠️  一部のプロセスが残っています："
-  pgrep -f "bun.*index.ts" -l
-  exit 1
+# 4. 確認
+if pgrep -f "bun.*index.ts" > /dev/null 2>&1; then
+    echo "❌ 一部のプロセスが残っています："
+    pgrep -f "bun.*index.ts" -l
+    exit 1
 else
-  echo "✅ Botを完全に停止しました"
-  echo ""
-  echo "💡 watchdog付きで再起動するには:"
-  echo "   ./scripts/setup-watchdog.sh"
+    echo "✅ Botを完全に停止しました"
+    echo ""
+    echo "💡 再起動するには:"
+    echo "   ./scripts/start-bot.sh"
 fi

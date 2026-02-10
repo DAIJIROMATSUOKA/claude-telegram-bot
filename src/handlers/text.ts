@@ -35,6 +35,7 @@ import { runPostProcess } from "./pipeline/post-process";
 import { setClaudeStatus } from "../utils/tower-renderer";
 import { updateTower } from "../utils/tower-manager";
 import type { TowerIdentifier } from "../types/control-tower";
+import { savePendingTask, clearPendingTask } from "../utils/pending-task";
 
 /**
  * Handle incoming text messages.
@@ -157,6 +158,16 @@ export async function handleText(ctx: Context): Promise<void> {
     message = enrichResult.message;
 
     // ── Stage 4: Claude Session ──
+    // Save pending task so it can be resumed after restart
+    savePendingTask({
+      user_id: userId,
+      chat_id: chatId,
+      username,
+      original_message: message,
+      session_id: session.sessionId,
+      started_at: startedAt,
+    });
+
     setClaudeStatus('processing', actionName);
     // ピン更新（処理開始）
     try {
@@ -282,6 +293,8 @@ export async function handleText(ctx: Context): Promise<void> {
       await ctx.reply(`❌ Error: ${String(error).slice(0, 200)}`, _errReplyOpts);
     }
   } finally {
+    // Clear pending task (completed or failed - either way, don't auto-resume)
+    clearPendingTask();
     setClaudeStatus('idle');
     // ピン更新（処理完了）
     try {

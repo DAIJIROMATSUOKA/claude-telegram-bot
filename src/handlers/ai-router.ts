@@ -391,42 +391,20 @@ ${memoryPack}
 }
 
 /**
- * Gemini API を呼び出し
+ * Gemini CLI を呼び出し（従量課金API不使用）
+ *
+ * Google AI Pro定額サブスクのgemini CLIコマンド経由。
+ * GEMINI_API_KEY不要。
  */
 export async function callGeminiAPI(
   prompt: string,
   memoryPack: string
 ): Promise<AIResponse> {
   try {
-    console.log('[AI Router] 🔮 Calling Gemini API...');
+    console.log('[AI Router] 🔮 Calling Gemini CLI...');
     console.log('[AI Router] 🔮 memoryPack length:', memoryPack.length);
-    console.log('[AI Router] 🔮 memoryPack preview:', memoryPack.slice(0, 200));
-    console.log('[AI Router DEBUG] process.env.GEMINI_API_KEY:', process.env.GEMINI_API_KEY ? `${process.env.GEMINI_API_KEY.slice(0, 10)}...` : 'NOT FOUND');
 
-    const { GoogleGenerativeAI } = await import('@google/generative-ai');
-
-    const apiKey = process.env.GEMINI_API_KEY;
-    console.log('[AI Router DEBUG] apiKey after assignment:', apiKey ? `${apiKey.slice(0, 10)}...` : 'NOT FOUND');
-
-    if (!apiKey) {
-      console.error('[AI Router DEBUG] GEMINI_API_KEY is missing!');
-      return {
-        provider: 'gemini',
-        content: '',
-        error: 'GEMINI_API_KEY is not set',
-      };
-    }
-
-    console.log('[AI Router DEBUG] Creating GoogleGenerativeAI instance...');
-
-    const genAI = new GoogleGenerativeAI(apiKey);
-    console.log('[AI Router DEBUG] GoogleGenerativeAI instance created');
-
-    const model = genAI.getGenerativeModel({
-      model: 'gemini-2.5-flash',
-      tools: [{ googleSearchRetrieval: {} } as any],
-    });
-    console.log('[AI Router DEBUG] Model created (gemini-2.5-flash + Google Search)');
+    const { askGemini } = await import('../utils/multi-ai');
 
     const systemPrompt = `あなたはジェミー💎（Gemmy）です。
 
@@ -442,45 +420,30 @@ ${memoryPack}
 
 [MEMORY] 追記したい重要な情報`;
 
-    console.log('[AI Router DEBUG] Sending request to Gemini API...');
-    const result = await model.generateContent(systemPrompt + '\n\n' + prompt);
-    console.log('[AI Router DEBUG] Response received from Gemini API');
+    const fullPrompt = systemPrompt + '\n\n' + prompt;
+    const result = await askGemini(fullPrompt, 180_000);
 
-    const response = await result.response;
-    const text = response.text();
-    console.log('[AI Router DEBUG] Response text extracted, length:', text.length);
+    console.log('[AI Router] 🔮 Gemini CLI completed, latency:', result.latency_ms, 'ms');
+
+    if (result.error) {
+      console.error('[AI Router] 🔮 Gemini CLI error:', result.error);
+      return {
+        provider: 'gemini',
+        content: '',
+        error: `Gemini CLI error: ${result.error}`,
+      };
+    }
 
     return {
       provider: 'gemini',
-      content: text,
+      content: result.output,
     };
   } catch (error: any) {
-    console.error('[AI Router] Gemini API error:', error);
-    console.error('[AI Router DEBUG] Error type:', error.constructor.name);
-    console.error('[AI Router DEBUG] Error message:', error.message);
-    console.error('[AI Router DEBUG] Full error object:', JSON.stringify(error, null, 2));
-
-    // エラーの詳細情報を含めてTelegramに返す（プレーンテキスト）
-    const errorDetails = `
-🔮 Gemini API Error Debug Info
-
-Error Type: ${error.constructor.name}
-Error Message: ${error.message}
-
-Stack Trace:
-${error.stack || 'N/A'}
-
-Full Error Object:
-${JSON.stringify(error, null, 2)}
-
-Environment Check:
-- GEMINI_API_KEY: ${process.env.GEMINI_API_KEY ? `Set (${process.env.GEMINI_API_KEY.slice(0, 10)}...)` : 'NOT SET'}
-    `.trim();
-
+    console.error('[AI Router] 🔮 Gemini CLI error:', error.message);
     return {
       provider: 'gemini',
-      content: errorDetails,
-      error: `Gemini API error: ${error.message}`,
+      content: '',
+      error: `Gemini CLI error: ${error.message}`,
     };
   }
 }

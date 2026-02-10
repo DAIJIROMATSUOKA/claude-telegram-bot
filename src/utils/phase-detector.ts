@@ -3,8 +3,6 @@
  */
 
 import type { Context } from 'grammy';
-import { checkPhaseApproval } from './croppy-integration';
-import type { ApprovalInput } from './croppy-approval';
 
 /**
  * Phase完了パターン
@@ -154,35 +152,7 @@ export async function checkPhaseCompletionApproval(
 
   console.log('[Phase Detector] Phase完了検出:', detection.phaseName);
 
-  // 2. 承認入力を構築
-  const input: ApprovalInput = {
-    phase_name: detection.phaseName || 'Unknown Phase',
-    jarvis_context: response,
-    prerequisite_summary: detectPrerequisites(response),
-    implementation_summary: extractImplementationSummary(response),
-    test_results: detectTestResults(response),
-    error_report: detectErrors(response),
-  };
-
-  // 3. croppy判断
-  try {
-    const result = await checkPhaseApproval(ctx, input);
-
-    if (result.approved) {
-      console.log('[Phase Detector] croppy承認 → 続行');
-      return true;
-    } else {
-      console.log('[Phase Detector] croppy停止 → DJ承認待ち');
-      return false;
-    }
-  } catch (error) {
-    console.error('[Phase Detector] croppy判断エラー:', error);
-
-    // エラー時はフェイルセーフでSTOP
-    await ctx.reply(
-      '⚠️ croppy判断エラー\n\n' +
-      'DJの承認が必要です。続行する場合は「GO」と送信してください。'
-    );
-    return false;
-  }
+  // Phase完了 → 常にSTOP（DJ承認待ち）
+  console.log('[Phase Detector] Phase完了 → DJ承認待ち');
+  return false;
 }

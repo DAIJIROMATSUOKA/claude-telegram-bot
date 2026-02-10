@@ -13,6 +13,8 @@
  */
 
 import { spawn } from "node:child_process";
+import { readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 
 // ========================================
 // Types
@@ -106,6 +108,140 @@ export function endSession(userId: number): AISession | undefined {
   const session = activeSessions.get(userId);
   activeSessions.delete(userId);
   return session;
+}
+
+// ========================================
+// Session State Auto-Save to CLAUDE.md
+// ========================================
+
+const CLAUDE_MD_PATH = join(
+  process.env.HOME || "/Users/daijiromatsuokam1",
+  "claude-telegram-bot",
+  "CLAUDE.md",
+);
+
+const SESSION_STATE_START = "<!-- SESSION_STATE_START -->";
+const SESSION_STATE_END = "<!-- SESSION_STATE_END -->";
+
+/**
+ * セッション終了時にCLAUDE.mdのSESSION_STATEセクションを自動更新
+ * Claude: --resume で要約プロンプトを送り、出力をCLAUDE.mdに書き込む
+ * Gemini/GPT: 会話履歴から要約を整形
+ * エラー時は無視して続行（セッション終了をブロックしない）
+ */
+export async function saveSessionState(session: AISession): Promise<void> {
+  try {
+    let summary: string;
+
+    if (session.ai === "claude" && session.cliSessionId) {
+      // Claude: --resume で要約を取得
+      summary = await getClaudeSummary(session.cliSessionId);
+    } else {
+      // Gemini/GPT または Claude CLI session ID なし: 履歴から整形
+      summary = buildSummaryFromHistory(session);
+    }
+
+    if (!summary || summary.trim().length === 0) {
+      console.log("[Session State] No summary generated, skipping save");
+      return;
+    }
+
+    // CLAUDE.md のマーカー間を置換
+    const claudeMd = readFileSync(CLAUDE_MD_PATH, "utf-8");
+    const startIdx = claudeMd.indexOf(SESSION_STATE_START);
+    const endIdx = claudeMd.indexOf(SESSION_STATE_END);
+
+    if (startIdx === -1 || endIdx === -1) {
+      console.log("[Session State] Markers not found in CLAUDE.md, skipping");
+      return;
+    }
+
+    const before = claudeMd.slice(0, startIdx + SESSION_STATE_START.length);
+    const after = claudeMd.slice(endIdx);
+    const newContent = before + "\n## 🧠 現在の状態\n\n" + summary.trim() + "\n" + after;
+
+    writeFileSync(CLAUDE_MD_PATH, newContent, "utf-8");
+    console.log("[Session State] CLAUDE.md updated");
+
+    // git commit（失敗しても無視）
+    await spawnCLI(
+      "git",
+      ["add", "CLAUDE.md"],
+      null,
+      10_000,
+      CLAUDE_MD_PATH.replace("/CLAUDE.md", ""),
+    );
+    await spawnCLI(
+      "git",
+      ["commit", "-m", "auto: update session state"],
+      null,
+      10_000,
+      CLAUDE_MD_PATH.replace("/CLAUDE.md", ""),
+    );
+    console.log("[Session State] Git commit done");
+  } catch (e) {
+    // セッション終了をブロックしない
+    console.error("[Session State] Failed to save:", e);
+  }
+}
+
+/**
+ * Claude CLI --resume で要約プロンプトを送信
+ */
+async function getClaudeSummary(cliSessionId: string): Promise<string> {
+  const summaryPrompt =
+    "このセッションを以下のフォーマットで要約して出力。コードブロックは使わず、マークダウンのみ:\n\n" +
+    "### 完了タスク\n- (箇条書き)\n\n" +
+    "### 残タスク\n- (箇条書き、優先度順)\n\n" +
+    "### 学んだこと\n- (箇条書き)\n\n" +
+    "### 現在の問題\n- (箇条書き、あれば)";
+
+  const args = [
+    "--model", "claude-opus-4-6",
+    "--dangerously-skip-permissions",
+    "--output-format", "json",
+    "--resume", cliSessionId,
+    "-p", "-",
+  ];
+
+  const result = await spawnCLI("claude", args, summaryPrompt, 120_000);
+
+  if (result.stdout) {
+    const parsed = parseClaudeJson(result.stdout);
+    return parsed.text;
+  }
+
+  return "";
+}
+
+/**
+ * 会話履歴から要約を整形（Gemini/GPT用、またはClaude CLIセッションIDなし）
+ */
+function buildSummaryFromHistory(session: AISession): string {
+  const info = AI_INFO[session.ai];
+  const duration = Math.round((Date.now() - session.startedAt) / 1000 / 60);
+  const lines: string[] = [];
+
+  lines.push("### セッション情報");
+  lines.push("- AI: " + info.emoji + " " + info.name);
+  lines.push("- メッセージ数: " + session.messageCount);
+  lines.push("- 時間: " + duration + "分");
+  lines.push("");
+
+  // 会話履歴から最後のやり取りを要約
+  if (session.history.length > 0) {
+    lines.push("### 直近の会話");
+    const recent = session.history.slice(-6); // 最後の3往復
+    for (const h of recent) {
+      const prefix = h.role === "user" ? "User" : "AI";
+      const content = h.content.length > 200
+        ? h.content.slice(0, 197) + "..."
+        : h.content;
+      lines.push("- **" + prefix + "**: " + content);
+    }
+  }
+
+  return lines.join("\n");
 }
 
 // ========================================
