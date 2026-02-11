@@ -1199,8 +1199,8 @@ def cmd_edit_fill(args):
         face_protect = float(args.face_protect) if hasattr(args, 'face_protect') and args.face_protect is not None else 0.35
 
         # Try SegFormer clothing mask first (ideal for Fill Dev)
-        # ROLLBACK: change dilate_px back to 10 (was 10, now 30 for better gap filling)
-        cloth_mask_path = detect_clothing_and_create_mask(image_path, dilate_px=30)
+        # ROLLBACK: change dilate_px back to 10 (was 10→30→15; 30 caused face bleed near neckline)
+        cloth_mask_path = detect_clothing_and_create_mask(image_path, dilate_px=15)
         if cloth_mask_path:
             # For InpaintModelConditioning: WHITE=inpaint, BLACK=keep
             # detect_clothing_and_create_mask returns INVERTED (BLACK=clothing, WHITE=other)
@@ -1326,7 +1326,7 @@ def cmd_undress_fill(args):
         # Prompt engineering
         # ORIGINAL (before 2026-02-10): base_keywords did not have NSFW prefix, user_prompt was prepended
         # ROLLBACK: swap full_prompt lines back to f"{user_prompt}, {base_keywords}" if needed
-        base_keywords = "NSFW, completely nude, fully naked, beautiful woman, female body, feminine figure, zero clothing, bare breasts, bare body, exposed skin, soft smooth skin, realistic skin texture, detailed skin pores, natural lighting, photorealistic"
+        base_keywords = "NSFW, completely nude, fully naked, beautiful woman, female body, feminine figure, zero clothing, bare breasts, detailed nipples, prominent areola, bare body, exposed skin, soft smooth skin, realistic skin texture, detailed skin pores, natural lighting, photorealistic"
         negative_prompt = "clothed, dressed, fabric, textile, swimsuit, bikini, underwear, see-through, sheer, transparent clothing, mesh, lace, masculine, muscular, male body, six pack abs, bodybuilder, man, blurry, deformed, extra limbs, bad anatomy, watermark, text"
 
         user_prompt = args.prompt or ""
@@ -1342,8 +1342,8 @@ def cmd_undress_fill(args):
 
         # SegFormer clothing mask (the core of Fill Dev undress)
         mask_name = None
-        # ROLLBACK: change dilate_px back to 10 (was 10, now 30 for better gap filling)
-        cloth_mask_path = detect_clothing_and_create_mask(image_path, dilate_px=30)
+        # ROLLBACK: change dilate_px back to 10 (was 10→30→15; 30 caused face bleed near neckline)
+        cloth_mask_path = detect_clothing_and_create_mask(image_path, dilate_px=15)
         if cloth_mask_path:
             # Re-invert for InpaintModelConditioning (WHITE=edit, BLACK=keep)
             try:
@@ -1486,7 +1486,7 @@ def cmd_undress(args):
         # --- Prompt engineering (strengthened based on test results) ---
         # ORIGINAL (before 2026-02-10): base_keywords did not have NSFW prefix, user_prompt was prepended
         # ROLLBACK: swap full_prompt lines back to f"{user_prompt}, {base_keywords}" if needed
-        base_keywords = "NSFW, completely nude, fully naked, beautiful woman, female body, feminine figure, zero clothing, bare breasts, bare body, exposed skin, soft smooth skin, realistic skin texture, detailed skin pores, natural lighting, photorealistic"
+        base_keywords = "NSFW, completely nude, fully naked, beautiful woman, female body, feminine figure, zero clothing, bare breasts, detailed nipples, prominent areola, bare body, exposed skin, soft smooth skin, realistic skin texture, detailed skin pores, natural lighting, photorealistic"
         negative_prompt = "clothed, dressed, fabric, textile, swimsuit, bikini, underwear, see-through, sheer, transparent clothing, mesh, lace, masculine, muscular, male body, six pack abs, bodybuilder, man, blurry, deformed, extra limbs, bad anatomy, watermark, text"
 
         user_prompt = args.prompt or ""
@@ -2569,7 +2569,7 @@ def comfyui_queue_and_wait(workflow: dict, timeout: int = 2400) -> list:
                 if msg_type == "progress":
                     d = data.get("data", {})
                     pct = d.get("value", 0) / max(d.get("max", 1), 1) * 100
-                    print(f"\r[ai-media] Progress: {pct:.0f}%", end="", file=sys.stderr)
+                    print(f"\r[ai-media] Progress: {pct:.0f}%", end="", file=sys.stderr, flush=True)
 
                 elif msg_type == "executed":
                     d = data.get("data", {})

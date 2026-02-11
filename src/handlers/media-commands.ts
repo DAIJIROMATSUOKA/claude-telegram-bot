@@ -18,6 +18,22 @@ import { existsSync, mkdirSync, unlinkSync, writeFileSync, statSync } from "fs";
 import { join, basename } from "path";
 import { InputFile } from "grammy";
 
+// Media queue: serialize heavy AI tasks to prevent SIGTERM under memory pressure
+let mediaQueueBusy = false;
+const mediaQueueWaiting: Array<{ run: () => Promise<any>; resolve: (v: any) => void; reject: (e: any) => void }> = [];
+async function withMediaQueue<T>(fn: () => Promise<T>): Promise<T> {
+  if (mediaQueueBusy) {
+    return new Promise<T>((resolve, reject) => { mediaQueueWaiting.push({ run: fn, resolve, reject }); });
+  }
+  mediaQueueBusy = true;
+  try { return await fn(); }
+  finally {
+    const next = mediaQueueWaiting.shift();
+    if (next) { next.run().then(next.resolve, next.reject).finally(() => { mediaQueueBusy = false; }); }
+    else { mediaQueueBusy = false; }
+  }
+}
+
 // HTML escape for Telegram messages
 function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -157,6 +173,7 @@ async function runAiMedia(args: string[], opts: RunOptions): Promise<MediaResult
       env: {
         ...process.env,
         AI_MEDIA_WORKDIR: WORKING_DIR,
+        PYTHONUNBUFFERED: "1",
       },
     });
 
@@ -172,21 +189,29 @@ async function runAiMedia(args: string[], opts: RunOptions): Promise<MediaResult
       const line = data.toString().trim();
       if (line) {
         console.log(`[media] ${line}`);
-        if (onStderr) onStderr(line);
+        if (onStderr) onStderr(line)
+        resetTimeout();;
       }
     });
 
-    // 2-stage kill: SIGTERM first, SIGKILL 5s later (ML processes often ignore SIGTERM)
+    // Activity-based timeout: resets on every stderr output (model loading keeps it alive)
     let timedOut = false;
-    const softTimer = setTimeout(() => {
-      timedOut = true;
-      console.log("[media] ⚠️ TIMEOUT – sending SIGTERM");
-      try { proc.kill("SIGTERM"); } catch {}
-    }, timeout);
-    const hardTimer = setTimeout(() => {
-      console.log("[media] ⚠️ SIGTERM ignored – sending SIGKILL");
-      try { proc.kill("SIGKILL"); } catch {}
-    }, timeout + 5_000);
+    let softTimer: ReturnType<typeof setTimeout> | null = null;
+    let hardTimer: ReturnType<typeof setTimeout> | null = null;
+    const resetTimeout = () => {
+      if (softTimer) clearTimeout(softTimer);
+      if (hardTimer) clearTimeout(hardTimer);
+      softTimer = setTimeout(() => {
+        timedOut = true;
+        console.log(`[media]     TIMEOUT (no activity for ${Math.round(timeout / 60000)}min) -> sending SIGTERM`);
+        try { proc.kill('SIGTERM'); } catch {}
+      }, timeout);
+      hardTimer = setTimeout(() => {
+        console.log(`[media]     SIGTERM ignored -> sending SIGKILL`);
+        try { proc.kill('SIGKILL'); } catch {}
+      }, timeout + 5_000);
+    };
+    resetTimeout();
 
     proc.on("close", (code: number | null, signal: string | null) => {
       clearTimeout(softTimer);
@@ -304,10 +329,10 @@ export async function handleImagine(ctx: Context): Promise<void> {
   const statusMsg = await ctx.reply("🎨 画像生成中... (Z-Image-Turbo, ~2-3分)");
 
   try {
-    const result = await runAiMedia(
+    const result = await withMediaQueue(() => runAiMedia(
       ["generate", "--prompt", prompt],
       { timeout: TIMEOUT_IMAGE }
-    );
+    ));
 
     if (!result.ok || !result.path) {
       await ctx.api.editMessageText(
@@ -496,10 +521,10 @@ export async function handleEdit(ctx: Context): Promise<void> {
 
     editArgs.push("--prompt", cleanPrompt);
 
-    const result = await runAiMedia(
+    const result = await withMediaQueue(() => runAiMedia(
       editArgs,
       { timeout: TIMEOUT_IMAGE, onStderr: debugUpdate }
-    );
+    ));
 
     if (!result.ok || !result.path) {
       await ctx.api.editMessageText(
@@ -656,10 +681,10 @@ export async function handleOutpaint(ctx: Context): Promise<void> {
 
     outpaintArgs.push("--prompt", cleanPrompt);
 
-    const result = await runAiMedia(
+    const result = await withMediaQueue(() => runAiMedia(
       outpaintArgs,
       { timeout: TIMEOUT_VIDEO, onStderr: debugUpdate }
-    );
+    ));
 
     if (!result.ok || !result.path) {
       await ctx.api.editMessageText(
@@ -762,7 +787,7 @@ export async function handleAnimate(ctx: Context): Promise<void> {
       }
     }
 
-    const result = await runAiMedia(args, { timeout: TIMEOUT_VIDEO });
+    const result = await withMediaQueue(() => runAiMedia(args, { timeout: TIMEOUT_VIDEO }));
 
     if (!result.ok || !result.path) {
       await ctx.api.editMessageText(
@@ -924,10 +949,10 @@ export async function handleUndress(ctx: Context): Promise<void> {
       undressArgs.push("--prompt", cleanPrompt);
     }
 
-    const result = await runAiMedia(
+    const result = await withMediaQueue(() => runAiMedia(
       undressArgs,
       { timeout: TIMEOUT_IMAGE, onStderr: debugUpdate }
-    );
+    ));
 
     if (!result.ok || !result.path) {
       await ctx.api.editMessageText(

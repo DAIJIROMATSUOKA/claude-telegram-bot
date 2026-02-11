@@ -60,7 +60,6 @@ import { handleAISession } from "./handlers/ai-session";
 import { registerMediaCommands } from "./handlers/media-commands";
 import { handleNightshift } from "./handlers/nightshift";
 import { handleAutopilot } from "./handlers/autopilot";
-import { startTaskPoller } from './utils/task-poller';
 import { ensureLearnedMemoryTable } from './utils/learned-memory';
 import { ensureSessionSummaryTable } from './utils/session-summary';
 import { startMemoryGCScheduler } from './utils/memory-gc';
@@ -276,9 +275,7 @@ if (existsSync(RESTART_FILE)) {
 const runner = run(bot);
 
 // Start task poller for remote execution
-  startTaskPoller();
-
-  // Initialize memory tables (non-blocking)
+// Initialize memory tables (non-blocking)
   Promise.all([
     ensureLearnedMemoryTable(),
     ensureSessionSummaryTable(),
