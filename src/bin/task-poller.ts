@@ -12,7 +12,7 @@
 
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import { writeFileSync, readFileSync, unlinkSync, existsSync, renameSync } from 'fs';
+import { writeFileSync, readFileSync, unlinkSync, existsSync, renameSync, readdirSync } from 'fs';
 
 const execAsync = promisify(exec);
 
@@ -114,6 +114,12 @@ async function fetchWithTimeout(url: string, opts?: RequestInit): Promise<Respon
   }
 }
 
+
+// === Sleep Utility ===
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 // === Command Execution ===
 async function executeCommand(
   command: string,
@@ -122,30 +128,66 @@ async function executeCommand(
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   const resolvedCwd = cwd.replace(/^~/, process.env.HOME || '/Users/daijiromatsuokam1');
 
-  try {
-    const { stdout, stderr } = await execAsync(command, {
-      cwd: resolvedCwd,
-      timeout: timeoutSeconds * 1000,
-      maxBuffer: 10 * 1024 * 1024,
-      shell: '/bin/zsh',
-      env: {
-        ...process.env,
-        PATH: `/opt/homebrew/bin:/usr/local/bin:${process.env.PATH}`,
-      },
-    });
+  const MAX_RETRIES = 3;
+  const BACKOFF_BASE_MS = 200;
 
-    return {
-      stdout: (stdout || '').substring(0, MAX_OUTPUT),
-      stderr: (stderr || '').substring(0, MAX_OUTPUT),
-      exitCode: 0,
-    };
-  } catch (error: any) {
-    return {
-      stdout: (error.stdout || '').substring(0, MAX_OUTPUT),
-      stderr: (error.stderr || error.message || '').substring(0, MAX_OUTPUT),
-      exitCode: error.code || 1,
-    };
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    // Fallback to /bin/sh on retry 2+
+    const shell = attempt >= 2 ? '/bin/sh' : '/bin/zsh';
+
+    try {
+      const { stdout, stderr } = await execAsync(command, {
+        cwd: resolvedCwd,
+        timeout: timeoutSeconds * 1000,
+        maxBuffer: 10 * 1024 * 1024,
+        shell,
+        env: {
+          ...process.env,
+          PATH: `/opt/homebrew/bin:/usr/local/bin:${process.env.PATH}`,
+        },
+      });
+
+      if (attempt > 0) {
+        log(`ENOENT recovered: attempt=${attempt} shell=${shell}`);
+      }
+
+      return {
+        stdout: (stdout || '').substring(0, MAX_OUTPUT),
+        stderr: (stderr || '').substring(0, MAX_OUTPUT),
+        exitCode: 0,
+      };
+    } catch (error: any) {
+      const isEnoent = error.code === 'ENOENT' ||
+                       (error.message && error.message.includes('ENOENT'));
+
+      if (isEnoent && attempt < MAX_RETRIES) {
+        // Diagnostic: what's really happening?
+        const cwdOk = existsSync(resolvedCwd);
+        const zshOk = existsSync('/bin/zsh');
+        let fdCount = -1;
+        try { fdCount = readdirSync('/dev/fd').length; } catch {}
+        log(`ENOENT retry ${attempt + 1}/${MAX_RETRIES}: shell=${shell} cwd=${resolvedCwd} cwd_ok=${cwdOk} zsh_ok=${zshOk} fd=${fdCount} errno=${error.errno} syscall=${error.syscall} path=${error.path}`);
+
+        // Exponential backoff with jitter (200ms -> 500ms -> 1250ms)
+        const delay = BACKOFF_BASE_MS * Math.pow(2.5, attempt) * (0.7 + Math.random() * 0.6);
+        await sleep(delay);
+        continue;
+      }
+
+      // Final failure or non-ENOENT error
+      if (isEnoent) {
+        logError(`ENOENT persisted after ${MAX_RETRIES} retries. errno=${error.errno} syscall=${error.syscall} path=${error.path}`);
+      }
+
+      return {
+        stdout: (error.stdout || '').substring(0, MAX_OUTPUT),
+        stderr: (error.stderr || error.message || '').substring(0, MAX_OUTPUT),
+        exitCode: error.code || 1,
+      };
+    }
   }
+
+  return { stdout: '', stderr: 'unreachable', exitCode: 1 };
 }
 
 // === Poll and Execute ===
