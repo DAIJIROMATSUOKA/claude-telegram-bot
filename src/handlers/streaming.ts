@@ -210,6 +210,33 @@ export function createStatusCallback(ctx: Context, state: StreamingState): Statu
           state.lastEditTimes.set(segmentId, now);
         }
       } else if (statusType === "segment_end" && segmentId !== undefined) {
+        // If message was never created during streaming (short response), create it now
+        if (!state.textMessages.has(segmentId) && content) {
+          let formatted = convertMarkdownToHtml(content);
+          if (!state.headerSent) {
+            formatted = `<b>🦞 Croppy</b>\n${formatted}`;
+            state.headerSent = true;
+          }
+          const replyOpts: any = { parse_mode: "HTML" };
+          if (segmentId === 0 && state.replyToMessageId) {
+            replyOpts.reply_parameters = { message_id: state.replyToMessageId };
+          }
+          try {
+            const msg = await ctx.reply(formatted, replyOpts);
+            state.textMessages.set(segmentId, msg);
+            state.lastContent.set(segmentId, formatted);
+          } catch (htmlError) {
+            console.debug("HTML reply failed at segment_end, using plain text:", htmlError);
+            const plainOpts: any = {};
+            if (segmentId === 0 && state.replyToMessageId) {
+              plainOpts.reply_parameters = { message_id: state.replyToMessageId };
+            }
+            const msg = await ctx.reply(content, plainOpts);
+            state.textMessages.set(segmentId, msg);
+            state.lastContent.set(segmentId, content);
+          }
+          return;
+        }
         if (state.textMessages.has(segmentId) && content) {
           const msg = state.textMessages.get(segmentId)!;
           // 最初のセグメントの最終テキストにもヘッダーを維持
