@@ -59,6 +59,7 @@ import {
 import { handleAISession } from "./handlers/ai-session";
 import { registerMediaCommands } from "./handlers/media-commands";
 import { handleTaskCommand, handleStopCommand as handleOrchestratorStop, handleTaskStatusCommand } from "./task/task-command";
+import { handleTaskLogCommand } from "./task/tasklog-command";
 import { handleNightshift } from "./handlers/nightshift";
 import { handleAutopilot } from "./handlers/autopilot";
 import { ensureLearnedMemoryTable } from './utils/learned-memory';
@@ -188,6 +189,7 @@ bot.command("meta_start", handleMetaStart);
 bot.command("task", handleTaskCommand);
 bot.command("taskstop", handleOrchestratorStop);
 bot.command("taskstatus", handleTaskStatusCommand);
+bot.command("tasklog", handleTaskLogCommand);
 
 // Croppy auto-approval commands
 bot.command("croppy", async (ctx) => {
