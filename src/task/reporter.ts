@@ -95,10 +95,12 @@ export async function notifyTaskStarted(
   task: MicroTask,
   index: number,
   total: number,
+  runId?: string,
 ): Promise<void> {
   await send(
     `🔄 <b>MicroTask ${index + 1}/${total}:</b> ${escHtml(task.goal)} — 開始\n` +
-    `📋 Plan: ${escHtml(plan.title)}`,
+    `📋 Plan: ${escHtml(plan.title)}` +
+    (runId ? `\n🆔 ${escHtml(runId)}` : ``),
   );
 }
 
@@ -110,6 +112,7 @@ export async function notifyTaskPassed(
   result: TaskResult,
   index: number,
   total: number,
+  runId?: string,
 ): Promise<void> {
   const files = result.validation?.changed_files.length ?? 0;
   const dur = Math.round(result.duration_seconds);
@@ -127,6 +130,7 @@ export async function notifyTaskFailed(
   result: TaskResult,
   index: number,
   total: number,
+  runId?: string,
 ): Promise<void> {
   const violations = result.validation?.violations.slice(0, 3).join("\n• ") || "unknown";
   await send(
@@ -153,6 +157,7 @@ export async function sendCompletionReport(
   let msg =
     `📋 <b>Task ${statusEmoji}: ${escHtml(report.title)}</b>\n` +
     `━━━━━━━━━━━━━━━━\n` +
+    (report.run_id ? `🆔 ${escHtml(report.run_id)}\n` : ``) +
     `📊 結果: ${passed}/${total} MicroTask成功\n` +
     `⏱️ 所要時間: ${dur}秒\n`;
 
@@ -188,11 +193,12 @@ export async function sendCompletionReport(
 /**
  * Notify orchestrator started
  */
-export async function notifyOrchestratorStarted(plan: TaskPlan): Promise<void> {
+export async function notifyOrchestratorStarted(plan: TaskPlan, runId?: string): Promise<void> {
   await send(
     `🚀 <b>Task Orchestrator開始</b>\n` +
     `📋 ${escHtml(plan.title)}\n` +
     `📦 ${plan.micro_tasks.length}個のMicroTask\n` +
+    (runId ? `🆔 ${escHtml(runId)}\n` : ``) +
     `⏱️ 各タスク最大${plan.micro_tasks[0]?.max_time_seconds || 900}秒`,
   );
 }
@@ -200,8 +206,12 @@ export async function notifyOrchestratorStarted(plan: TaskPlan): Promise<void> {
 /**
  * Notify orchestrator stopped by /stop
  */
-export async function notifyOrchestratorStopped(plan: TaskPlan): Promise<void> {
-  await send(`🛑 <b>Task Orchestrator停止</b> (/stop)\n📋 ${escHtml(plan.title)}`);
+export async function notifyOrchestratorStopped(plan: TaskPlan, runId?: string): Promise<void> {
+  await send(
+    `🛑 <b>Task Orchestrator停止</b> (/stop)\n` +
+    `📋 ${escHtml(plan.title)}` +
+    (runId ? `\n🆔 ${escHtml(runId)}` : ``),
+  );
 }
 
 function escHtml(s: string): string {

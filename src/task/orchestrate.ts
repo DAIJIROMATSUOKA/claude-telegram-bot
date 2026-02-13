@@ -30,6 +30,7 @@ import {
   sendCompletionReport,
   notifyOrchestratorStopped,
 } from "./reporter";
+import { RunLogger } from "./run-logger";
 
 // === Config ===
 const MAIN_REPO = process.env.HOME
@@ -231,7 +232,16 @@ async function main(): Promise<void> {
   }
 
   console.log(`[Orchestrator] Plan: ${plan.plan_id} | ${plan.title} | ${plan.micro_tasks.length} tasks`);
-  await notifyOrchestratorStarted(plan);
+  // === Run Logger ===
+  const runLogger = new RunLogger(plan.plan_id);
+  runLogger.logEvent("run_start", {
+    plan_id: plan.plan_id,
+    title: plan.title,
+    task_count: plan.micro_tasks.length,
+  });
+  console.log(`[Orchestrator] RunID: ${runLogger.runId}`);
+
+  await notifyOrchestratorStarted(plan, runLogger.runId);
 
   // Create worktree
   let worktreePath: string;
@@ -256,7 +266,8 @@ async function main(): Promise<void> {
     // Check /stop
     if (isStopRequested()) {
       console.log("[Orchestrator] Stop requested, aborting...");
-      await notifyOrchestratorStopped(plan);
+      runLogger.logEvent("run_stopped", { reason: "/stop before task" });
+      await notifyOrchestratorStopped(plan, runLogger.runId);
       break;
     }
 
@@ -269,9 +280,15 @@ async function main(): Promise<void> {
     }
 
     console.log(`[Orchestrator] Task ${i + 1}/${plan.micro_tasks.length}: ${task.id} - ${task.goal}`);
-    await notifyTaskStarted(plan, task, i, plan.micro_tasks.length);
+    await notifyTaskStarted(plan, task, i, plan.micro_tasks.length, runLogger.runId);
 
     const taskStart = Date.now();
+    runLogger.logEvent("task_start", {
+      task_id: task.id,
+      goal: task.goal,
+      index: i,
+      total: plan.micro_tasks.length,
+    });
 
     // Execute
     const execResult = await executeMicroTask(
@@ -281,6 +298,13 @@ async function main(): Promise<void> {
     );
 
     console.log(`[Orchestrator] Exec done: exit=${execResult.exit_code} timeout=${execResult.timed_out}`);
+    runLogger.logEvent("task_exec_done", {
+      task_id: task.id,
+      exit_code: execResult.exit_code,
+      timed_out: execResult.timed_out,
+      stdout_len: execResult.stdout.length,
+      stderr_preview: maskSecrets(execResult.stderr.slice(0, 300)),
+    });
     console.log(`[Orchestrator] STDOUT (last 1000): ${maskSecrets(execResult.stdout.slice(-1000))}`);
     if (execResult.stderr) {
       console.log(`[Orchestrator] STDERR: ${maskSecrets(execResult.stderr.slice(0, 500))}`);
@@ -301,12 +325,20 @@ async function main(): Promise<void> {
       taskResult.status = "timeout";
       rollback(worktreePath);
       consecutiveFailures++;
-      await notifyTaskFailed(task, taskResult, i, plan.micro_tasks.length);
+      runLogger.logEvent("task_rollback", { task_id: task.id, reason: "timeout" });
+      await notifyTaskFailed(task, taskResult, i, plan.micro_tasks.length, runLogger.runId);
     } else if (isStopRequested()) {
       taskResult.status = "blocked";
       rollback(worktreePath);
-      await notifyOrchestratorStopped(plan);
-      results.push(taskResult);
+      runLogger.logEvent("run_stopped", { task_id: task.id, reason: "/stop" });
+      await notifyOrchestratorStopped(plan, runLogger.runId);
+      runLogger.logEvent("task_done", {
+      task_id: task.id,
+      status: taskResult.status,
+      duration_seconds: taskResult.duration_seconds,
+      exit_code: taskResult.exit_code,
+    });
+    results.push(taskResult);
       break;
     } else {
       // Validate
@@ -314,19 +346,40 @@ async function main(): Promise<void> {
       taskResult.validation = validation;
 
       console.log(`[Orchestrator] Validation: passed=${validation.passed} files=${validation.changed_files.length} violations=${validation.violations.join('; ')}`);
+      runLogger.logEvent("task_validation", {
+        task_id: task.id,
+        passed: validation.passed,
+        changed_files: validation.changed_files,
+        violations: validation.violations,
+      });
       if (validation.passed) {
         taskResult.status = "success";
         gitCommit(worktreePath, task.id, task.goal);
         taskResult.changes_summary = generateChangesSummary(worktreePath);
         consecutiveFailures = 0;
-        await notifyTaskPassed(task, taskResult, i, plan.micro_tasks.length);
+        runLogger.logEvent("task_committed", {
+          task_id: task.id,
+          changed_files: validation.changed_files,
+        });
+        await notifyTaskPassed(task, taskResult, i, plan.micro_tasks.length, runLogger.runId);
       } else {
         taskResult.status = "failed";
         consecutiveFailures++;
-        await notifyTaskFailed(task, taskResult, i, plan.micro_tasks.length);
+        runLogger.logEvent("task_rollback", {
+          task_id: task.id,
+          reason: "validation_failed",
+          violations: validation.violations,
+        });
+        await notifyTaskFailed(task, taskResult, i, plan.micro_tasks.length, runLogger.runId);
       }
     }
 
+    runLogger.logEvent("task_done", {
+      task_id: task.id,
+      status: taskResult.status,
+      duration_seconds: taskResult.duration_seconds,
+      exit_code: taskResult.exit_code,
+    });
     results.push(taskResult);
 
     // Stop conditions
@@ -344,6 +397,7 @@ async function main(): Promise<void> {
   const passed = results.filter((r) => r.status === "success").length;
   const report: CompletionReport = {
     plan_id: plan.plan_id,
+    run_id: runLogger.runId,
     title: plan.title,
     results,
     total_duration_seconds: (Date.now() - startTime) / 1000,
@@ -352,10 +406,35 @@ async function main(): Promise<void> {
       passed > 0 ? "partial" : "failed",
   };
 
+  // Write persistent log summary
+  runLogger.logEvent("run_complete", {
+    final_status: report.final_status,
+    passed,
+    total: plan.micro_tasks.length,
+    duration_seconds: report.total_duration_seconds,
+  });
+  runLogger.writeSummary({
+    plan_id: plan.plan_id,
+    title: plan.title,
+    final_status: report.final_status,
+    total_tasks: plan.micro_tasks.length,
+    passed_tasks: passed,
+    failed_tasks: plan.micro_tasks.length - passed,
+    total_duration_seconds: report.total_duration_seconds,
+    task_results: results.map((r) => ({
+      task_id: r.task_id,
+      status: r.status,
+      duration_seconds: r.duration_seconds,
+      exit_code: r.exit_code,
+      violations: r.validation?.violations || [],
+      changed_files: r.validation?.changed_files || [],
+    })),
+  });
+
   await sendCompletionReport(report);
 
   // Log summary
-  console.log(`[Orchestrator] Done: ${report.final_status} | ${passed}/${plan.micro_tasks.length} passed | ${Math.round(report.total_duration_seconds)}s`);
+  console.log(`[Orchestrator] Done: ${report.final_status} | ${passed}/${plan.micro_tasks.length} passed | ${Math.round(report.total_duration_seconds)}s | RunID: ${runLogger.runId}`);
   console.log(`[Orchestrator] Worktree preserved: ${worktreePath}`);
   console.log(`[Orchestrator] To merge: cd ${MAIN_REPO} && git merge --ff-only $(cd ${worktreePath} && git rev-parse HEAD)`);
 
