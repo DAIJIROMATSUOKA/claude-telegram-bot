@@ -102,8 +102,15 @@ function createWorktree(planId: string): string {
     console.log(`[Orchestrator] node_modules symlinked`);
   } catch {}
 
+  // Record base commit for validator (Claude CLI may auto-commit)
+  let baseCommit = "";
+  try {
+    baseCommit = execSync("git rev-parse HEAD", { cwd: worktreePath, encoding: "utf-8", timeout: 5_000 }).trim();
+    console.log(`[Orchestrator] Base commit: ${baseCommit.slice(0, 8)}`);
+  } catch {}
+
   console.log(`[Orchestrator] Worktree created: ${worktreePath}`);
-  return worktreePath;
+  return { path: worktreePath, baseCommit };
 }
 
 /**
@@ -191,8 +198,11 @@ async function main(): Promise<void> {
 
   // Create worktree
   let worktreePath: string;
+  let baseCommit = "";
   try {
-    worktreePath = createWorktree(plan.plan_id);
+    const wt = createWorktree(plan.plan_id);
+    worktreePath = wt.path;
+    baseCommit = wt.baseCommit;
   } catch (err) {
     console.error("[Orchestrator] Worktree creation failed:", err);
     process.exit(1);
@@ -263,7 +273,7 @@ async function main(): Promise<void> {
       break;
     } else {
       // Validate
-      const validation = validate(task, plan, worktreePath, mainRepoPath);
+      const validation = validate(task, plan, worktreePath, mainRepoPath, baseCommit);
       taskResult.validation = validation;
 
       console.log(`[Orchestrator] Validation: passed=${validation.passed} files=${validation.changed_files.length} violations=${validation.violations.join('; ')}`);
