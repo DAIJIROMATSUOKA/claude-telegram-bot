@@ -74,6 +74,26 @@ function loadEnv(): void {
 }
 
 /**
+ * Mask secrets in text (env var values > 8 chars)
+ */
+const SECRET_KEYS = [
+  "TELEGRAM_BOT_TOKEN", "TELEGRAM_ALLOWED_USERS",
+  "GEMINI_API_KEY", "GOOGLE_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY",
+  "GITHUB_TOKEN", "MEMORY_GATEWAY_URL",
+];
+
+function maskSecrets(text: string): string {
+  if (!text) return text;
+  for (const key of SECRET_KEYS) {
+    const val = process.env[key];
+    if (val && val.length > 8) {
+      text = text.replaceAll(val, `[${key}:***]`);
+    }
+  }
+  return text;
+}
+
+/**
  * Create git worktree for isolated execution
  */
 function createWorktree(planId: string): string {
@@ -176,7 +196,24 @@ async function main(): Promise<void> {
   loadEnv();
   initReporter();
 
-  // Write PID file
+  // === PID Exclusive Lock ===
+  if (existsSync(PID_FILE)) {
+    try {
+      const existingPid = parseInt(readFileSync(PID_FILE, "utf-8").trim(), 10);
+      if (existingPid) {
+        process.kill(existingPid, 0); // throws if not alive
+        console.error(`[Orchestrator] ABORT: Another instance running (PID ${existingPid})`);
+        process.exit(1);
+      }
+    } catch (e: any) {
+      if (e.code !== "ESRCH") {
+        // ESRCH = process not found = stale PID, safe to continue
+        console.error(`[Orchestrator] ABORT: PID check failed:`, e);
+        process.exit(1);
+      }
+      console.log("[Orchestrator] Stale PID file found, cleaning up");
+    }
+  }
   writeFileSync(PID_FILE, String(process.pid));
 
   // Clean stop file from previous run
@@ -244,9 +281,9 @@ async function main(): Promise<void> {
     );
 
     console.log(`[Orchestrator] Exec done: exit=${execResult.exit_code} timeout=${execResult.timed_out}`);
-    console.log(`[Orchestrator] STDOUT (last 1000): ${execResult.stdout.slice(-1000)}`);
+    console.log(`[Orchestrator] STDOUT (last 1000): ${maskSecrets(execResult.stdout.slice(-1000))}`);
     if (execResult.stderr) {
-      console.log(`[Orchestrator] STDERR: ${execResult.stderr.slice(0, 500)}`);
+      console.log(`[Orchestrator] STDERR: ${maskSecrets(execResult.stderr.slice(0, 500))}`);
     }
 
     // Build task result
