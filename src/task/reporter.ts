@@ -27,17 +27,58 @@ export function initReporter(): void {
 }
 
 /**
- * Send message to Telegram
+ * Mask secrets in text
+ */
+const SECRET_KEYS = [
+  "TELEGRAM_BOT_TOKEN", "TELEGRAM_ALLOWED_USERS",
+  "GEMINI_API_KEY", "GOOGLE_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY",
+  "GITHUB_TOKEN", "MEMORY_GATEWAY_URL",
+];
+
+function maskSecrets(text: string): string {
+  if (!text) return text;
+  for (const key of SECRET_KEYS) {
+    const val = process.env[key];
+    if (val && val.length > 8) {
+      text = text.replaceAll(val, `[***]`);
+    }
+  }
+  return text;
+}
+
+const TELEGRAM_MAX = 4000;
+
+/**
+ * Send message to Telegram (with secret masking + long message splitting)
  */
 async function send(text: string): Promise<void> {
   if (!BOT_TOKEN || !CHAT_ID) return;
+  text = maskSecrets(text);
+
+  // If short enough, send directly
+  if (text.length <= TELEGRAM_MAX) {
+    await sendRaw(text);
+    return;
+  }
+
+  // Long message: head + tail + truncation notice
+  const HEAD = 1800;
+  const TAIL = 1600;
+  const truncated =
+    text.slice(0, HEAD) +
+    "\n\n⚠️ <i>...中略 (全文: /tmp/jarvis-orchestrator.log)...</i>\n\n" +
+    text.slice(-TAIL);
+  await sendRaw(truncated.slice(0, TELEGRAM_MAX));
+}
+
+async function sendRaw(text: string): Promise<void> {
   try {
     await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         chat_id: CHAT_ID,
-        text: text.slice(0, 4000),
+        text,
         parse_mode: "HTML",
       }),
     });
