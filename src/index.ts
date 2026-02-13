@@ -279,6 +279,36 @@ if (existsSync(RESTART_FILE)) {
   }
 }
 
+
+// Clear stale Telegram long polling (prevents 409 conflict after restart)
+async function clearStalePolling(): Promise<void> {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  if (!token) return;
+  for (let i = 0; i < 10; i++) {
+    try {
+      const res = await fetch(
+        `https://api.telegram.org/bot${token}/getUpdates?timeout=0&offset=-1`
+      );
+      const data = (await res.json()) as any;
+      if (data.ok) {
+        console.log("[Startup] Telegram polling cleared");
+        return;
+      }
+      if (data.error_code === 409) {
+        console.log(`[Startup] Stale polling detected, clearing... (${i + 1}/10)`);
+        await new Promise((r) => setTimeout(r, 3000));
+        continue;
+      }
+      return; // Other error, proceed anyway
+    } catch {
+      return; // Network error, proceed anyway
+    }
+  }
+  console.warn("[Startup] Could not clear stale polling after 10 retries, proceeding anyway");
+}
+
+await clearStalePolling();
+
 // Start with concurrent runner (commands work immediately)
 const runner = run(bot);
 
