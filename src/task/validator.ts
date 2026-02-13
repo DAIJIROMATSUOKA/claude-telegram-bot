@@ -30,7 +30,7 @@ import {
  * New files created by Claude CLI are UNTRACKED and invisible to git diff.
  * Must also run git ls-files --others to catch new files.
  */
-function getChangedFiles(worktreePath: string): string[] {
+function getChangedFiles(worktreePath: string, baseCommit?: string): string[] {
   const files = new Set<string>();
 
   // 1. Modified tracked files
@@ -57,6 +57,20 @@ function getChangedFiles(worktreePath: string): string[] {
     }
   } catch {}
 
+  // 3. Files committed by Claude CLI (auto-commit via --dangerously-skip-permissions)
+  if (baseCommit) {
+    try {
+      const out = execSync(`git diff ${baseCommit}..HEAD --name-only`, {
+        cwd: worktreePath,
+        encoding: "utf-8",
+        timeout: 10_000,
+      }).trim();
+      if (out) {
+        for (const f of out.split("\n")) if (f) files.add(f);
+      }
+    } catch {}
+  }
+
   return [...files];
 }
 
@@ -66,7 +80,7 @@ function getChangedFiles(worktreePath: string): string[] {
  * CRITICAL: git diff only shows changes to TRACKED files.
  * New files must be read in full — every line is "added".
  */
-function getAddedLines(worktreePath: string): Map<string, string[]> {
+function getAddedLines(worktreePath: string, baseCommit?: string): Map<string, string[]> {
   const result = new Map<string, string[]>();
 
   // 1. Modified tracked files: parse git diff +lines
@@ -290,6 +304,7 @@ export function validate(
   plan: TaskPlan,
   worktreePath: string,
   mainRepoPath: string,
+  baseCommit?: string,
 ): ValidationResult {
   const result: ValidationResult = {
     passed: false,
@@ -304,7 +319,7 @@ export function validate(
   };
 
   // 1. Changed files
-  result.changed_files = getChangedFiles(worktreePath);
+  result.changed_files = getChangedFiles(worktreePath, baseCommit);
   const fileCheck = checkFileCount(
     result.changed_files,
     plan.max_changed_files_per_task,
@@ -323,7 +338,7 @@ export function validate(
   }
 
   // Get added lines for checks 2 and 4
-  const addedLines = getAddedLines(worktreePath);
+  const addedLines = getAddedLines(worktreePath, baseCommit);
 
   // 2. Banned patterns
   const bannedCheck = checkBannedPatterns(
