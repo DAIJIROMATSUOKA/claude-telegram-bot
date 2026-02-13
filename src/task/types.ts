@@ -71,6 +71,7 @@ export interface ExecResult {
 
 export interface CompletionReport {
   plan_id: string;
+  run_id?: string;
   title: string;
   results: TaskResult[];
   total_duration_seconds: number;
