@@ -3,7 +3,7 @@
  *
  * Pipeline:
  *   1. Auth & Rate Limit
- *   2. Routing (Darwin, Croppy debug, AI Session Bridge)
+ *   2. Routing (Croppy debug, AI Session Bridge)
  *   3. Enrichment (X summary, Web search, Croppy, Tool preload)
  *   4. Claude Session (streaming)
  *   5. Post-Process (auto-review, learned memory, session summary, auto-resume)
@@ -17,7 +17,6 @@ import { auditLog, auditLogRateLimit, checkInterrupt, startTypingIndicator } fro
 import { StreamingState, createStatusCallback } from "./streaming";
 import { controlTowerDB } from "../utils/control-tower-db";
 import { redactSensitiveData } from "../utils/redaction-filter";
-import { routeDarwinCommand } from "./darwin-commands";
 import { checkPhaseCompletionApproval } from "../utils/phase-detector";
 import { saveChatMessage, cleanupOldHistory } from "../utils/chat-history";
 import { autoDetectAndUpdateWorkMode } from "../utils/jarvis-context";
@@ -69,13 +68,6 @@ export async function handleText(ctx: Context): Promise<void> {
   }
 
   // ── Stage 2: Routing ──
-  const _lm = message.trim().toLowerCase();
-  if (_lm === 'darwin' || _lm.startsWith('darwin ')) {
-    const args = message.trim().split(/\s+/).slice(1);
-    await routeDarwinCommand(ctx, args);
-    return;
-  }
-
   if (message.trim().toLowerCase() === 'croppy: debug') {
     const { formatCroppyDebugOutput } = await import("../utils/croppy-context");
     const debugOutput = await formatCroppyDebugOutput(userId);

@@ -44,7 +44,6 @@ import {
   deliverBufferedNotifications,
   isFocusModeEnabled,
 } from "../utils/focus-mode";
-import { parseAlarmMessage } from "./auto-rules";
 import { formatMetricsForStatus } from "../utils/metrics";
 import { memoryGatewayBreaker, geminiBreaker } from "../utils/circuit-breaker";
 import { getBgTaskSummary } from "../utils/bg-task-manager";
@@ -661,6 +660,37 @@ export async function handleFocus(ctx: Context): Promise<void> {
  * /alarm - Set iPhone alarm via iMessage
  * Usage: /alarm 7時半 エサ
  */
+
+/**
+ * Parse alarm time from message (e.g., "7時半 エサ", "17:30 テスト")
+ */
+function parseAlarmMessage(message: string): { time: string; label: string } | null {
+  let content = message.startsWith("アラーム") ? message.slice(4) : message;
+  content = content
+    .replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xFEE0))
+    .replace(/：/g, ":")
+    .replace(/\u3000/g, " ")
+    .trim();
+
+  const m1 = content.match(/^(\d{1,2})\s*時\s*(\d{1,2})\s*分\s*(.*)$/);
+  if (m1 && m1[1] && m1[2]) {
+    return { time: `${m1[1].padStart(2, "0")}:${m1[2].padStart(2, "0")}`, label: (m1[3] ?? "").trim() || "アラーム" };
+  }
+  const m2 = content.match(/^(\d{1,2})\s*時\s*半\s*(.*)$/);
+  if (m2 && m2[1]) {
+    return { time: `${m2[1].padStart(2, "0")}:30`, label: (m2[2] ?? "").trim() || "アラーム" };
+  }
+  const m3 = content.match(/^(\d{1,2})\s*:\s*(\d{2})\s*(.*)$/);
+  if (m3 && m3[1] && m3[2]) {
+    return { time: `${m3[1].padStart(2, "0")}:${m3[2]}`, label: (m3[3] ?? "").trim() || "アラーム" };
+  }
+  const m4 = content.match(/^(\d{1,2})\s*時\s*(.*)$/);
+  if (m4 && m4[1]) {
+    return { time: `${m4[1].padStart(2, "0")}:00`, label: (m4[2] ?? "").trim() || "アラーム" };
+  }
+  return null;
+}
+
 export async function handleAlarm(ctx: Context): Promise<void> {
   const userId = ctx.from?.id;
 

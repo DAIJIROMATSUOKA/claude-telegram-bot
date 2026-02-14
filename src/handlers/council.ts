@@ -133,7 +133,6 @@ AI会話: /debate /gpt /gem /why /recall
 タスク管理: /task_start /task_stop /task_pause /todoist /todoist_add /todoist_done
 生活: /focus /alarm
 自動化: /meta /meta_run /meta_audit /meta_review /meta_gaps /meta_stop /meta_start
-Darwin: /darwin_status /darwin_themes /darwin_history /darwin_detail /darwin_feedback /darwin_patterns /darwin_bottlenecks /darwin_analyze
 その他: /croppy /ai /nightshift /autopilot
 技術スタック: Bun+Grammy+Claude CLI/Gemini CLI/ChatGPT Shortcuts+Cloudflare D1+ComfyUI+mflux+M1 MAX
 =====JARVIS関連の提案ではコマンド名・ファイル名を含めること。一般議論では不要=====
@@ -159,7 +158,6 @@ AI会話: /debate /gpt /gem /why /recall
 タスク管理: /task_start /task_stop /task_pause /todoist /todoist_add /todoist_done
 生活: /focus /alarm
 自動化: /meta /meta_run /meta_audit /meta_review /meta_gaps /meta_stop /meta_start
-Darwin: /darwin_status /darwin_themes /darwin_history /darwin_detail /darwin_feedback /darwin_patterns /darwin_bottlenecks /darwin_analyze
 その他: /croppy /ai /nightshift /autopilot
 技術スタック: Bun+Grammy+Claude CLI/Gemini CLI/ChatGPT Shortcuts+Cloudflare D1+ComfyUI+mflux+M1 MAX
 =====JARVIS関連の提案ではコマンド名・ファイル名を含めること。一般議論では不要=====
