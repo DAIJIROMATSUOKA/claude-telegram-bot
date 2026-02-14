@@ -75,7 +75,7 @@ export async function handleTaskCommand(ctx: Context): Promise<void> {
   try {
     const cmd =
       `cd ${process.env.HOME}/claude-telegram-bot && ` +
-      `nohup ${BUN_PATH} run ${TASK_DIR}/orchestrate.ts "${planPath}" ` +
+      `nohup caffeinate -i -s ${BUN_PATH} run ${TASK_DIR}/orchestrate.ts "${planPath}" ` +
       `>> /tmp/jarvis-orchestrator.log 2>&1 &`;
 
     await execAsync(cmd, { timeout: 5000 });

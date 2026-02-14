@@ -542,6 +542,10 @@ async function main(): Promise<void> {
     // Stop conditions
     if (consecutiveFailures >= 2) {
       console.log("[Orchestrator] 2 consecutive failures, stopping.");
+      runLogger.logEvent("consecutive_failure_stop", {
+        task_id: task.id,
+        consecutive_failures: consecutiveFailures,
+      });
       break;
     }
     if (plan.on_failure === "stop" && taskResult.status !== "success") {
