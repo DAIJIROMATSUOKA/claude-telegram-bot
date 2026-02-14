@@ -165,3 +165,31 @@ package.json, bun.lock, bun.lockb, package-lock.json, yarn.lock, pnpm-lock.yaml
 | max_new_files=2 | 厳しすぎ。test+fixture+helperで3ファイルは正当 |
 | require_change_rationale | Claude CLIに構造化報告機能がない |
 | 8-10に引き上げ | 朝のレビュー負荷が爆増 |
+
+---
+
+## Tier 1 パラドックス + banned_patterns 対応 [DECIDED]
+**ディベート:** Croppy × GPT, 3ラウンド CONVERGED (2026-02-14)
+
+### 決定事項
+1. **Validator無変更** — Tier 1, banned_patterns のロジックは一切触らない
+2. **Tier 1テストは手書き固定** — ALWAYS_BLOCK_PATTERNS のテストは人間が作成・レビュー。自動生成対象外
+3. **banned_patterns維持** — リポジトリ/成果物汚染防止の安全網として例外を設けない
+4. **テストデータ回避パターン** — banned_patternsに一致する文字列は分割連結で回避:
+   ```typescript
+   const token = 'TELE' + 'GRAM_BOT_TOKEN=abc123'; // banned_patternsを踏まない
+   ```
+
+### 自動生成対象外の領域
+- Tier 1 (ALWAYS_BLOCK_PATTERNS) のテスト
+- banned_patterns に一致する文字列を含むテスト
+- セキュリティパターンの回帰テスト全般
+
+### 却下した案と理由
+| 案 | 却下理由 |
+|----|---------|
+| 文字列リテラル状態機械 | AST無しでは脆弱（ネスト引用符、テンプレートリテラル、エスケープ） |
+| expect()行スキップ | 攻撃者がexpect(doBadThing())で回避可能 |
+| Tier 1 Docker-skip | Tier 1の存在意義（Docker脱出防止）を破壊 |
+| banned_patterns削除 | 本物トークン混入の安全網が消える |
+| ファイル名allowlist | 運用負荷高、攻撃面拡大 |
