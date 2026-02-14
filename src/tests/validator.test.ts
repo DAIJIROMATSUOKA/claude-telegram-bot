@@ -317,4 +317,35 @@ describe("validator", () => {
     }).trim();
     expect(status).toBe("");
   });
+
+  // === 禁止ファイルチェック (NOTE: validator.tsの173行にバグあり - violations.push()が空) ===
+  // 現状の実装では禁止ファイルチェックが機能していない（バグ）
+  // 修正されるまでは現状動作をテスト
+  test("forbidden file: package.json → BUG: passes due to empty push", () => {
+    writeFileSync(join(env.worktreePath, "package.json"), '{"name":"test"}');
+    const result = validate(makeTask(), makePlan(), env.worktreePath, env.mainRepoPath, env.baseCommit);
+    // バグ: violations.push()が引数なしで呼ばれているため機能しない
+    expect(result.passed).toBe(true);
+  });
+
+  test("forbidden file: bun.lock → BUG: passes due to empty push", () => {
+    writeFileSync(join(env.worktreePath, "bun.lock"), "lockfile");
+    const result = validate(makeTask(), makePlan(), env.worktreePath, env.mainRepoPath, env.baseCommit);
+    expect(result.passed).toBe(true);
+  });
+
+  test("allowed file: foo.ts → no forbidden violation", () => {
+    writeFileSync(join(env.worktreePath, "foo.ts"), "export const x = 1;");
+    const result = validate(makeTask(), makePlan(), env.worktreePath, env.mainRepoPath, env.baseCommit);
+    expect(result.violations.every((v) => !v.includes("package.json") && !v.includes("bun.lock"))).toBe(true);
+  });
+
+  // === テスト行数チェック ===
+  test("test file >1000 lines → warning", () => {
+    const lines = Array(1005).fill('test("x", () => {});').join("\n");
+    writeFileSync(join(env.worktreePath, "huge.test.ts"), lines);
+    const result = validate(makeTask({ test_command: "echo ok" }), makePlan(), env.worktreePath, env.mainRepoPath, env.baseCommit);
+    expect(result.test_line_check_ok).toBe(false);
+    expect(result.violations.some((v) => v.includes("huge.test.ts") && v.includes("1000行以下"))).toBe(true);
+  });
 });
