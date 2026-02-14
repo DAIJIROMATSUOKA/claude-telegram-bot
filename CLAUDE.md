@@ -29,8 +29,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - 「こんにちは」「何かお手伝いできますか」等の初回挨拶は禁止。文脈に基づいて返答する
 
 ### 5. Bot再起動方法
-- 必ず ~/claude-telegram-bot/scripts/start-bot.sh を使用
-- pkillやbunを直接呼ばないこと
+- 必ず ~/claude-telegram-bot/scripts/restart-bot.sh を使用（重複インスタンス防止）
+- pkillやbunやlaunchctl kickstartを直接呼ばないこと
 
 ### 6. タイムトラッキングとステータス更新
 - ステータス変更（START/STOP/PAUSE）時は必ずtimer-sync.shでM3 Agentと同期
@@ -162,10 +162,10 @@ DJ → council: に相談 → 代替案提示
 
 ### 🚨 必ずこのスクリプトを使用
 
-**絶対に以下のスクリプトで起動してください：**
+**絶対に以下のスクリプトで再起動してください：**
 
 ```bash
-~/claude-telegram-bot/scripts/start-bot.sh
+~/claude-telegram-bot/scripts/restart-bot.sh
 ```
 
 ### ⚠️ 重要な注意事項
@@ -206,7 +206,7 @@ DJ → council: に相談 → 代替案提示
 
 **Bot が Error 409 で停止する場合:**
 - 複数のbotインスタンスが起動している可能性があります
-- 必ず `~/claude-telegram-bot/scripts/start-bot.sh` を使用してください
+- 必ず `~/claude-telegram-bot/scripts/restart-bot.sh` を使用してください
 - 手動で起動した場合は、一度全て停止してからスクリプトで起動
 - **絶対にpkillやbunコマンドを直接実行しないでください**
 
@@ -332,7 +332,7 @@ const response = await callGeminiAPI(prompt, memoryPack);
 
 **Type checking**: Run `bun run typecheck` periodically while editing TypeScript files. Fix any type errors before committing.
 
-**After code changes**: Restart the bot so changes can be tested. Use `launchctl kickstart -k gui/$(id -u)/com.claude-telegram-ts` if running as a service, or `bun run start` for manual runs.
+**After code changes**: Restart the bot so changes can be tested. Use `bash scripts/restart-bot.sh` (never use launchctl kickstart directly).
 
 ## Standalone Build
 
@@ -390,7 +390,7 @@ tail -f /tmp/claude-telegram-bot-ts.err
   - 例: 「サンプラー: euler+simple から dpmpp_2m+karras に変更」
 
 ### 環境情報
-- **マシン**: MacBook Pro M3 Max（macOS Sequoia 15.3.1）、メモリ36GB
+- **マシン**: M1 MAX MacBook Pro（macOS Sequoia）、メモリ64GB
 - **ランタイム**: Bun 1.2.x（TypeScript直接実行）
 - **Bot起動**: `start-bot.sh` → `bun --watch` で起動（ソース変更で自動再起動）。Watchdog (`watchdog-bot.sh`) が30秒間隔で監視
 - **ComfyUI**: `/Users/daijiromatsuokam1/ComfyUI/` に設置。FLUX系モデルで画像生成・編集
@@ -405,9 +405,9 @@ tail -f /tmp/claude-telegram-bot-ts.err
 
 ### 解決済みの問題
 - **型エラー258個**: 2025-02-09に全て修正済み（65ファイル変更）。ロジック変更なし、型アノテーション追加のみ
-- **Error 409**: Telegram getUpdates競合。start-bot.shで解決済み
+- **Error 409**: Telegram getUpdates競合。restart-bot.shで解決済み
 - **OpenAI/Anthropic API課金**: AI Router導入で従量課金API完全排除済み
-- **再起動忘れ**: `bun --watch` を start-bot.sh に導入。ソース変更で自動再起動
+- **再起動忘れ**: restart-bot.shで安全に再起動（旧プロセス完全停止→起動→インスタンス確認）
 - **Watchdog誤検知**: サイレント死亡チェックをログサイズ比較方式に改善（mtimeだけでなくサイズ変化で判定）
 - **画像送信の画質劣化**: `/imagine`, `/edit`, `/outpaint` で写真プレビュー + ドキュメント原寸の両方を送信
 - **MPS convolution_overrideable**: 入力画像を1024pxにリサイズ（1536→1024）。ComfyUIは `--force-fp32` + `PYTORCH_ENABLE_MPS_FALLBACK=1` で起動済み
