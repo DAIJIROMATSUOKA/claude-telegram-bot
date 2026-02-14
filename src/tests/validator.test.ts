@@ -250,8 +250,60 @@ describe("validator", () => {
     expect(result.banned_check_ok).toBe(true);
     expect(result.import_check_ok).toBe(true);
     expect(result.symbol_check_ok).toBe(true);
+    expect(result.test_line_check_ok).toBe(true);
     expect(result.test_passed).toBe(true);
     expect(result.violations).toHaveLength(0);
+  });
+
+  test("test file line check: no test files → ok", () => {
+    // テストファイル以外の変更のみ
+    writeFileSync(
+      join(env.worktreePath, "normal.ts"),
+      'export const x = 1;\n',
+    );
+
+    const result = validate(
+      makeTask({ test_command: "echo ok" }),
+      makePlan(),
+      env.worktreePath,
+      env.mainRepoPath,
+      env.baseCommit,
+    );
+    expect(result.test_line_check_ok).toBe(true);
+    expect(result.passed).toBe(true);
+  });
+
+  test("test file line check: 50 lines → ok", () => {
+    // 50行のテストファイル
+    const lines = Array(50).fill('test("x", () => {});').join("\n");
+    writeFileSync(join(env.worktreePath, "good.test.ts"), lines);
+
+    const result = validate(
+      makeTask({ test_command: "echo ok" }),
+      makePlan(),
+      env.worktreePath,
+      env.mainRepoPath,
+      env.baseCommit,
+    );
+    expect(result.test_line_check_ok).toBe(true);
+    expect(result.passed).toBe(true);
+  });
+
+  test("test file line check: 5 lines → warning but passed still true", () => {
+    // 5行の短すぎるテストファイル
+    const lines = "// test\n// 2\n// 3\n// 4\n// 5";
+    writeFileSync(join(env.worktreePath, "short.test.ts"), lines);
+
+    const result = validate(
+      makeTask({ test_command: "echo ok" }),
+      makePlan(),
+      env.worktreePath,
+      env.mainRepoPath,
+      env.baseCommit,
+    );
+    expect(result.test_line_check_ok).toBe(false);
+    expect(result.passed).toBe(true);
+    expect(result.violations.some((v) => v.includes("short.test.ts") && v.includes("5行"))).toBe(true);
   });
 
   test("rollback cleans worktree", () => {

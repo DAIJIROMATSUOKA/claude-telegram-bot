@@ -253,7 +253,47 @@ function checkDangerousSymbols(
 }
 
 /**
- * Check 5: Run test command
+ * Check 5: Test file line count validation (warning only)
+ * Checks *.test.ts files: <10 lines = too few, >1000 lines = too many
+ */
+function checkTestFileLines(
+  changedFiles: string[],
+  worktreePath: string,
+): { ok: boolean; warnings: string[] } {
+  const warnings: string[] = [];
+  const testFiles = changedFiles.filter((f) => f.endsWith(".test.ts"));
+
+  if (testFiles.length === 0) {
+    return { ok: true, warnings: [] };
+  }
+
+  for (const file of testFiles) {
+    const filePath = join(worktreePath, file);
+    if (!existsSync(filePath)) continue;
+
+    try {
+      const content = readFileSync(filePath, "utf-8");
+      const lineCount = content.split("\n").length;
+
+      if (lineCount < 10) {
+        warnings.push(
+          `テストファイル ${file} が ${lineCount}行しかありません（最低10行推奨）`,
+        );
+      } else if (lineCount > 1000) {
+        warnings.push(
+          `テストファイル ${file} が ${lineCount}行あります（1000行以下推奨）`,
+        );
+      }
+    } catch {
+      // ファイル読み取り失敗は無視
+    }
+  }
+
+  return { ok: warnings.length === 0, warnings };
+}
+
+/**
+ * Check 6: Run test command
  */
 function runTestCommand(
   testCommand: string,
@@ -313,6 +353,7 @@ export function validate(
     banned_check_ok: false,
     import_check_ok: false,
     symbol_check_ok: false,
+    test_line_check_ok: true,
     test_passed: false,
     test_output: "",
     violations: [],
@@ -376,7 +417,15 @@ export function validate(
     return result;
   }
 
-  // 5. Run tests (only if all static checks passed)
+  // 5. Test file line count (warning only, does NOT fail validation)
+  const testLineCheck = checkTestFileLines(result.changed_files, worktreePath);
+  result.test_line_check_ok = testLineCheck.ok;
+  if (!testLineCheck.ok) {
+    result.violations.push(...testLineCheck.warnings);
+    // NOTE: passedをfalseにしない。warningのみ
+  }
+
+  // 6. Run tests (only if all static checks passed)
   const testResult = runTestCommand(task.test_command, worktreePath);
   result.test_passed = testResult.passed;
   result.test_output = testResult.output;
