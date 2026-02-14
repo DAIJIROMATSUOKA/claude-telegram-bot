@@ -12,7 +12,7 @@
  */
 
 import { execSync } from "node:child_process";
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type {
   TaskPlan,
@@ -31,6 +31,10 @@ import {
   notifyOrchestratorStopped,
 } from "./reporter";
 import { RunLogger } from "./run-logger";
+import { buildRetryPrompt, summarizeFailureReason } from "./retry";
+import { checkAllLimits } from "./resource-limits";
+import { DEFAULT_RESOURCE_LIMITS } from "./types";
+import { runHealthCheck } from "./health-check";
 
 // === Config ===
 const MAIN_REPO = process.env.HOME
@@ -181,6 +185,46 @@ function isStopRequested(): boolean {
 }
 
 /**
+ * Clean worktrees older than maxAgeMs
+ */
+function cleanOldWorktrees(basePath: string, maxAgeMs: number): void {
+  try {
+    if (!existsSync(basePath)) return;
+    const entries = readdirSync(basePath);
+    const now = Date.now();
+    for (const entry of entries) {
+      const fullPath = join(basePath, entry);
+      try {
+        const stat = statSync(fullPath);
+        if (stat.isDirectory() && (now - stat.mtimeMs) > maxAgeMs) {
+          console.log(`[Orchestrator] Removing stale worktree: ${entry}`);
+          try {
+            execSync(`git worktree remove --force "${fullPath}" 2>/dev/null; rm -rf "${fullPath}"`, {
+              cwd: MAIN_REPO, timeout: 10_000,
+            });
+          } catch {}
+        }
+      } catch {}
+    }
+  } catch (err) {
+    console.error('[Orchestrator] Worktree cleanup error:', err);
+  }
+}
+
+/**
+ * Get git diff output for resource limits check
+ */
+function getDiffOutput(worktreePath: string, baseCommit: string): string {
+  try {
+    return execSync(`git diff ${baseCommit} --no-color`, {
+      cwd: worktreePath, encoding: "utf-8", timeout: 10_000,
+    });
+  } catch {
+    return "";
+  }
+}
+
+/**
  * Main orchestration loop
  */
 async function main(): Promise<void> {
@@ -220,6 +264,15 @@ async function main(): Promise<void> {
   // Clean stop file from previous run
   if (existsSync(STOP_FILE)) {
     try { execSync(`rm -f "${STOP_FILE}"`); } catch {}
+  }
+
+  // Worktree cleanup (Phase 2a)
+  try {
+    execSync("git worktree prune", { cwd: MAIN_REPO, timeout: 10_000 });
+    cleanOldWorktrees(WORKTREE_BASE, 24 * 60 * 60 * 1000); // 24h
+    console.log("[Orchestrator] Worktree cleanup done");
+  } catch (err) {
+    console.warn("[Orchestrator] Worktree cleanup warning:", err);
   }
 
   // Read TaskPlan
@@ -342,7 +395,7 @@ async function main(): Promise<void> {
       break;
     } else {
       // Validate
-      const validation = validate(task, plan, worktreePath, mainRepoPath, baseCommit);
+      let validation = validate(task, plan, worktreePath, mainRepoPath, baseCommit);
       taskResult.validation = validation;
 
       console.log(`[Orchestrator] Validation: passed=${validation.passed} files=${validation.changed_files.length} violations=${validation.violations.join('; ')}`);
@@ -352,6 +405,36 @@ async function main(): Promise<void> {
         changed_files: validation.changed_files,
         violations: validation.violations,
       });
+
+      // Resource limits check (Phase 2a)
+      if (validation.passed) {
+        const limits = plan.resource_limits ?? DEFAULT_RESOURCE_LIMITS;
+        const diffOutput = getDiffOutput(worktreePath, baseCommit);
+        const resourceChecks = checkAllLimits({
+          changedFiles: validation.changed_files,
+          diffOutput,
+          startTime: taskStart,
+          limits,
+        });
+        const resourceFailed = resourceChecks.find(r => !r.passed);
+        if (resourceFailed) {
+          const violation = `リソース上限超過: ${resourceFailed.check} (${resourceFailed.actual}/${resourceFailed.limit})`;
+          validation = {
+            ...validation,
+            passed: false,
+            violations: [...validation.violations, violation],
+          };
+          taskResult.validation = validation;
+          console.log(`[Orchestrator] Resource limit exceeded: ${violation}`);
+          runLogger.logEvent("resource_limit_exceeded", {
+            task_id: task.id,
+            check: resourceFailed.check,
+            actual: resourceFailed.actual,
+            limit: resourceFailed.limit,
+          });
+        }
+      }
+
       if (validation.passed) {
         taskResult.status = "success";
         gitCommit(worktreePath, task.id, task.goal);
@@ -362,7 +445,81 @@ async function main(): Promise<void> {
           changed_files: validation.changed_files,
         });
         await notifyTaskPassed(task, taskResult, i, plan.micro_tasks.length, runLogger.runId);
+      } else if (plan.on_failure === "retry_then_stop") {
+        // Phase 2a: 1回リトライ
+        const failureReason = summarizeFailureReason("failed", validation.violations, execResult.exit_code);
+        console.log(`[Orchestrator] Retrying: ${failureReason}`);
+        runLogger.logEvent("task_retry_start", {
+          task_id: task.id,
+          failure_reason: failureReason,
+        });
+
+        rollback(worktreePath);
+
+        const retryPrompt = buildRetryPrompt(
+          task.prompt,
+          failureReason,
+          validation.violations,
+          validation.test_output,
+        );
+        const retryTask = { ...task, prompt: retryPrompt };
+
+        const retryExecResult = await executeMicroTask(retryTask, worktreePath, abortController.signal);
+
+        if (!retryExecResult.timed_out && !isStopRequested()) {
+          let retryValidation = validate(retryTask, plan, worktreePath, mainRepoPath, baseCommit);
+
+          // Resource limits on retry too
+          if (retryValidation.passed) {
+            const limits = plan.resource_limits ?? DEFAULT_RESOURCE_LIMITS;
+            const retryDiff = getDiffOutput(worktreePath, baseCommit);
+            const retryResourceChecks = checkAllLimits({
+              changedFiles: retryValidation.changed_files,
+              diffOutput: retryDiff,
+              startTime: taskStart,
+              limits,
+            });
+            const retryResourceFailed = retryResourceChecks.find(r => !r.passed);
+            if (retryResourceFailed) {
+              retryValidation = {
+                ...retryValidation,
+                passed: false,
+                violations: [...retryValidation.violations, `リソース上限超過: ${retryResourceFailed.check} (${retryResourceFailed.actual}/${retryResourceFailed.limit})`],
+              };
+            }
+          }
+
+          if (retryValidation.passed) {
+            taskResult.status = "success";
+            taskResult.validation = retryValidation;
+            gitCommit(worktreePath, task.id, task.goal);
+            taskResult.changes_summary = generateChangesSummary(worktreePath);
+            consecutiveFailures = 0;
+            runLogger.logEvent("task_retry_success", { task_id: task.id });
+            await notifyTaskPassed(task, taskResult, i, plan.micro_tasks.length, runLogger.runId);
+          } else {
+            taskResult.status = "failed";
+            taskResult.validation = retryValidation;
+            rollback(worktreePath);
+            consecutiveFailures++;
+            runLogger.logEvent("task_retry_failed", {
+              task_id: task.id,
+              violations: retryValidation.violations,
+            });
+            await notifyTaskFailed(task, taskResult, i, plan.micro_tasks.length, runLogger.runId);
+          }
+        } else {
+          taskResult.status = retryExecResult.timed_out ? "timeout" : "blocked";
+          rollback(worktreePath);
+          consecutiveFailures++;
+          runLogger.logEvent("task_retry_failed", {
+            task_id: task.id,
+            reason: retryExecResult.timed_out ? "timeout" : "stopped",
+          });
+          await notifyTaskFailed(task, taskResult, i, plan.micro_tasks.length, runLogger.runId);
+        }
       } else {
+        // Phase 1: 即停止
         taskResult.status = "failed";
         consecutiveFailures++;
         runLogger.logEvent("task_rollback", {

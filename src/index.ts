@@ -61,7 +61,6 @@ import { registerMediaCommands } from "./handlers/media-commands";
 import { handleTaskCommand, handleStopCommand as handleOrchestratorStop, handleTaskStatusCommand } from "./task/task-command";
 import { handleTaskLogCommand } from "./task/tasklog-command";
 import { handleNightshift } from "./handlers/nightshift";
-import { handleAutopilot } from "./handlers/autopilot";
 import { ensureLearnedMemoryTable } from './utils/learned-memory';
 import { ensureSessionSummaryTable } from './utils/session-summary';
 import { startMemoryGCScheduler } from './utils/memory-gc';
@@ -223,7 +222,6 @@ bot.command("ai", handleAISession);
 bot.command("nightshift", handleNightshift);
 
 // Autopilot — 自動タスク実行エンジン
-bot.command("autopilot", handleAutopilot);
 
 registerMediaCommands(bot);
 bot.on("message:text", handleText);
