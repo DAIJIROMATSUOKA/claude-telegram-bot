@@ -119,6 +119,21 @@ diff --git a/b.ts b/b.ts
     expect(result.actual).toBe(5); // 2 additions + 3 deletions
     expect(result.passed).toBe(true);
   });
+
+  test('additions only (no deletions) → counts correctly', () => {
+    const diff = `diff --git a/new-feature.ts b/new-feature.ts
+--- /dev/null
++++ b/new-feature.ts
++export function newFeature() {
++  return 'hello';
++}
++export const VALUE = 42;
+`;
+    const result = checkLineChanges(diff, 500);
+    expect(result.passed).toBe(true);
+    expect(result.actual).toBe(4); // 4 additions, 0 deletions
+    expect(result.check).toBe('line_changes');
+  });
 });
 
 describe('checkExecutionTime', () => {
@@ -212,5 +227,38 @@ describe('checkAllLimits', () => {
     expect(results[0].violation).toContain('Exceeded by 5');
     expect(results[1].violation).toContain('600 lines');
     expect(results[2].violation).toContain('exceeded limit');
+  });
+
+  test('custom strict limits (maxFiles=1, maxLineChanges=10) enforced', () => {
+    const params: ResourceCheckParams = {
+      changedFiles: ['only-one.ts', 'second.ts'],
+      diffOutput: Array(15).fill('+line').join('\n'),
+      startTime: Date.now(),
+      limits: {
+        maxFiles: 1,
+        maxLineChanges: 10,
+        maxSeconds: 900,
+      },
+    };
+
+    const results = checkAllLimits(params);
+    expect(results).toHaveLength(3);
+
+    // file_count: 2 files > 1 → fail
+    expect(results[0].check).toBe('file_count');
+    expect(results[0].passed).toBe(false);
+    expect(results[0].actual).toBe(2);
+    expect(results[0].limit).toBe(1);
+    expect(results[0].violation).toContain('Exceeded by 1');
+
+    // line_changes: 15 lines > 10 → fail
+    expect(results[1].check).toBe('line_changes');
+    expect(results[1].passed).toBe(false);
+    expect(results[1].actual).toBe(15);
+    expect(results[1].limit).toBe(10);
+
+    // execution_time: just started → pass
+    expect(results[2].check).toBe('execution_time');
+    expect(results[2].passed).toBe(true);
   });
 });
