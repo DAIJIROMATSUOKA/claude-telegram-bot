@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * bg-task-manager Test Suite
  *

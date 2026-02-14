@@ -199,8 +199,8 @@ async function runAiMedia(args: string[], opts: RunOptions): Promise<MediaResult
     let softTimer: ReturnType<typeof setTimeout> | null = null;
     let hardTimer: ReturnType<typeof setTimeout> | null = null;
     const resetTimeout = () => {
-      if (softTimer) clearTimeout(softTimer);
-      if (hardTimer) clearTimeout(hardTimer);
+      if (softTimer) if (softTimer) clearTimeout(softTimer);
+      if (hardTimer) if (hardTimer) clearTimeout(hardTimer);
       softTimer = setTimeout(() => {
         timedOut = true;
         console.log(`[media]     TIMEOUT (no activity for ${Math.round(timeout / 60000)}min) -> sending SIGTERM`);
@@ -213,9 +213,9 @@ async function runAiMedia(args: string[], opts: RunOptions): Promise<MediaResult
     };
     resetTimeout();
 
-    proc.on("close", (code: number | null, signal: string | null) => {
-      clearTimeout(softTimer);
-      clearTimeout(hardTimer);
+    proc.on("close", (code: number | null, signal: NodeJS.Signals | null) => {
+      if (softTimer) clearTimeout(softTimer);
+      if (hardTimer) clearTimeout(hardTimer);
       console.log(`[media-debug] exit=${code} signal=${signal} timedOut=${timedOut} stdout=${stdout.length}B stderr=${stderr.length}B`);
       console.log(`[media-debug] stdout-tail: ${stdout.slice(-300)}`);
       console.log(`[media-debug] stderr-tail: ${stderr.slice(-300)}`);

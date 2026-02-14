@@ -5,7 +5,7 @@
  * PDF extraction uses pdftotext CLI (install via: brew install poppler)
  */
 
-import type { Context } from "grammy";
+import { type Context, InputFile } from "grammy";
 import { session } from "../session";
 import { ALLOWED_USERS, TEMP_DIR } from "../config";
 import { isAuthorized, rateLimiter } from "../security";
@@ -592,16 +592,12 @@ export async function handleDocument(ctx: Context): Promise<void> {
         imagePath = jpegPath;
       }
 
-      // Process as photo using the same flow as photo handler
-      const { processPhotosFromDocument } = await import("./photo");
-      await processPhotosFromDocument(
-        ctx,
-        [imagePath],
-        ctx.message?.caption,
-        userId,
-        username,
-        chatId
-      );
+      // Send image directly (photo handler removed)
+      const { readFileSync } = await import("fs");
+      
+      await ctx.replyWithPhoto(new InputFile(imagePath), {
+        caption: ctx.message?.caption || fileName,
+      });
     } catch (error) {
       console.error("Image processing error:", error);
       await ctx.reply(

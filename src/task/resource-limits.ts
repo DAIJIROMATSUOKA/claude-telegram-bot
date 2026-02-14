@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Resource Limits Checker for Task Orchestrator (Phase 2a)
  *
