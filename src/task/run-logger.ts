@@ -28,7 +28,12 @@ export type RunEventType =
   | "task_done"
   | "run_stopped"
   | "run_complete"
-  | "error";
+  | "error"
+  | "resource_limit_exceeded"
+  | "task_retry_start"
+  | "task_retry_success"
+  | "task_retry_failed"
+  | "consecutive_failure_stop";
 
 export interface RunEvent {
   timestamp: string;
