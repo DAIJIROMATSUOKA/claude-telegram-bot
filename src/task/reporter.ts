@@ -214,6 +214,16 @@ export async function notifyOrchestratorStopped(plan: TaskPlan, runId?: string):
   );
 }
 
+/**
+ * Notify health check failed
+ */
+export async function notifyHealthCheckFailed(result: { errors: string[] }): Promise<void> {
+  await send(
+    `❌ <b>Health Check失敗</b>\n` +
+    `⚠️ ${escHtml(result.errors.join(', '))}`,
+  );
+}
+
 function escHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }

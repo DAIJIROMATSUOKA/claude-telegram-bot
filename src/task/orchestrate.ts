@@ -29,6 +29,7 @@ import {
   notifyTaskFailed,
   sendCompletionReport,
   notifyOrchestratorStopped,
+  notifyHealthCheckFailed,
 } from "./reporter";
 import { RunLogger } from "./run-logger";
 import { buildRetryPrompt, summarizeFailureReason } from "./retry";
@@ -285,6 +286,19 @@ async function main(): Promise<void> {
   }
 
   console.log(`[Orchestrator] Plan: ${plan.plan_id} | ${plan.title} | ${plan.micro_tasks.length} tasks`);
+
+  // Health Check (Phase 2a)
+  if (plan.on_failure === 'retry_then_stop') {
+    console.log('[Orchestrator] Running health check...');
+    const healthResult = runHealthCheck();
+    if (!healthResult.passed) {
+      console.error('[Orchestrator] Health check failed:', healthResult.errors);
+      await notifyHealthCheckFailed(healthResult);
+      throw new Error(`Health check failed: ${healthResult.errors.join(', ')}`);
+    }
+    console.log(`[Orchestrator] Health check passed: Claude ${healthResult.claudeVersion}`);
+  }
+
   // === Run Logger ===
   const runLogger = new RunLogger(plan.plan_id);
   runLogger.logEvent("run_start", {
