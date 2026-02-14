@@ -64,4 +64,66 @@ describe('Consecutive Failure Stop Logic', () => {
     expect(result.stopped).toBe(false);
     expect(result.stoppedAtIndex).toBeNull();
   });
+
+  // === 追加テスト ===
+
+  test('counter reset then count up again - should stop correctly', () => {
+    // 失敗→成功(リセット)→失敗→失敗 → index 3で停止
+    const result = simulateConsecutiveFailures(['failed', 'success', 'failed', 'failed']);
+    expect(result.stopped).toBe(true);
+    expect(result.stoppedAtIndex).toBe(3);
+  });
+
+  test('threshold exactly (2 consecutive failures) - should stop', () => {
+    // 閾値ちょうど2回連続失敗
+    const result = simulateConsecutiveFailures(['failed', 'failed']);
+    expect(result.stopped).toBe(true);
+    expect(result.stoppedAtIndex).toBe(1);
+  });
+
+  test('threshold - 1 (1 consecutive failure) - should not stop', () => {
+    // 閾値-1 = 1回の連続失敗では停止しない
+    const result = simulateConsecutiveFailures(['success', 'failed']);
+    expect(result.stopped).toBe(false);
+    expect(result.stoppedAtIndex).toBeNull();
+  });
+
+  test('alternating success and failure - counter resets each time', () => {
+    // 成功と失敗が交互 → 毎回リセットされるため停止しない
+    const result = simulateConsecutiveFailures(['success', 'failed', 'success', 'failed', 'success', 'failed']);
+    expect(result.stopped).toBe(false);
+    expect(result.stoppedAtIndex).toBeNull();
+  });
+
+  test('initial state with no results - counter is 0', () => {
+    // 空配列の場合、カウンターは0のまま（停止しない）
+    const result = simulateConsecutiveFailures([]);
+    expect(result.stopped).toBe(false);
+    expect(result.stoppedAtIndex).toBeNull();
+  });
+
+  test('multiple reset cycles before final stop', () => {
+    // 複数回リセット後に最終的に停止
+    // 失敗→成功→失敗→成功→失敗→失敗 → index 5で停止
+    const result = simulateConsecutiveFailures(['failed', 'success', 'failed', 'success', 'failed', 'failed']);
+    expect(result.stopped).toBe(true);
+    expect(result.stoppedAtIndex).toBe(5);
+  });
+
+  test('long sequence without consecutive failures - should not stop', () => {
+    // 長いシーケンスでも連続失敗がなければ停止しない
+    const result = simulateConsecutiveFailures([
+      'failed', 'success', 'failed', 'success', 'failed', 'success',
+      'failed', 'success', 'failed', 'success'
+    ]);
+    expect(result.stopped).toBe(false);
+    expect(result.stoppedAtIndex).toBeNull();
+  });
+
+  test('all failures - should stop at second failure', () => {
+    // 全て失敗 → 2番目で停止（index 1）
+    const result = simulateConsecutiveFailures(['failed', 'failed', 'failed', 'failed']);
+    expect(result.stopped).toBe(true);
+    expect(result.stoppedAtIndex).toBe(1);
+  });
 });
