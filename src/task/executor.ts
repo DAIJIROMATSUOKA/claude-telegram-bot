@@ -18,7 +18,7 @@ const SIGKILL_DELAY_MS = 5000;
 /**
  * Build the prompt injected into Claude CLI
  */
-function buildPrompt(task: MicroTask): string {
+export function buildPrompt(task: MicroTask): string {
   const parts: string[] = [
     `## Task: ${task.goal}`,
     "",
