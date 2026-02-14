@@ -237,6 +237,14 @@ export async function updateTower(
       });
     }
 
+    // 9. Update cache status on permission error
+    if (result.errorCode === 'forbidden' || result.errorCode === 'unauthorized') {
+      towerCache.set(key, {
+        ...cached,
+        status: 'permission_error',
+      });
+    }
+
     return result;
   } finally {
     // Always release lock
@@ -323,9 +331,8 @@ async function editTowerMessage(
     }
 
     if (editError.code === 'forbidden' || editError.code === 'unauthorized') {
-      // Permission error - suspend tower
+      // Permission error - suspend tower (status updated by caller)
       console.error(`[TowerManager] Permission error - suspending tower`);
-      // TODO: Update DB status to 'permission_error'
       return {
         success: false,
         action: 'failed',
