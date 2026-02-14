@@ -272,3 +272,103 @@ describe("readRunSummary", () => {
     expect(summary).toBeNull();
   });
 });
+
+// === Additional edge case tests ===
+
+describe("RunLogger edge cases", () => {
+  test("two RunLoggers with same planId generate different runIds", async () => {
+    const logger1 = new RunLogger("SAME-PLAN");
+    // Wait 1001ms to ensure timestamp (second precision) differs
+    await new Promise((resolve) => setTimeout(resolve, 1001));
+    const logger2 = new RunLogger("SAME-PLAN");
+
+    expect(logger1.runId).not.toBe(logger2.runId);
+    expect(logger1.runId).toContain("SAME-PLAN");
+    expect(logger2.runId).toContain("SAME-PLAN");
+  });
+});
+
+describe("logEvent edge cases", () => {
+  test("handles large event data (1000 char stdout)", () => {
+    const logger = new RunLogger("LARGE-001");
+    const largeStdout = "x".repeat(1000);
+
+    logger.logEvent("task_exec_done", { stdout: largeStdout, exit_code: 0 });
+
+    const events = readRunEvents(logger.runId);
+    expect(events).toHaveLength(1);
+    expect(events[0].data.stdout).toBe(largeStdout);
+    expect((events[0].data.stdout as string).length).toBe(1000);
+  });
+
+  test("handles 10 consecutive events", () => {
+    const logger = new RunLogger("MULTI-001");
+
+    for (let i = 0; i < 10; i++) {
+      logger.logEvent("task_start", { task_id: `T-${i}`, index: i });
+    }
+
+    const events = readRunEvents(logger.runId);
+    expect(events).toHaveLength(10);
+
+    for (let i = 0; i < 10; i++) {
+      expect(events[i].event).toBe("task_start");
+      expect(events[i].data.task_id).toBe(`T-${i}`);
+      expect(events[i].data.index).toBe(i);
+    }
+  });
+});
+
+describe("writeSummary edge cases", () => {
+  test("second writeSummary overwrites first", () => {
+    const logger = new RunLogger("OVERWRITE-001");
+
+    logger.writeSummary({
+      plan_id: "OVERWRITE-001",
+      title: "First Summary",
+      final_status: "failed",
+      total_tasks: 1,
+      passed_tasks: 0,
+      failed_tasks: 1,
+      total_duration_seconds: 10,
+      task_results: [],
+    });
+
+    logger.writeSummary({
+      plan_id: "OVERWRITE-001",
+      title: "Second Summary",
+      final_status: "all_passed",
+      total_tasks: 2,
+      passed_tasks: 2,
+      failed_tasks: 0,
+      total_duration_seconds: 20,
+      task_results: [],
+    });
+
+    const summary = readRunSummary(logger.runId);
+    expect(summary).not.toBeNull();
+    expect(summary!.title).toBe("Second Summary");
+    expect(summary!.final_status).toBe("all_passed");
+    expect(summary!.total_tasks).toBe(2);
+    expect(summary!.passed_tasks).toBe(2);
+    expect(summary!.failed_tasks).toBe(0);
+    expect(summary!.total_duration_seconds).toBe(20);
+  });
+});
+
+describe("listRecentRuns edge cases", () => {
+  test("returns empty array when log directory is empty", () => {
+    // Create a fresh empty directory
+    const emptyDir = join(tmpdir(), `empty-logs-${Date.now()}`);
+    mkdirSync(emptyDir, { recursive: true });
+
+    const original = process.env.TASK_RUN_LOGS_DIR;
+    process.env.TASK_RUN_LOGS_DIR = emptyDir;
+
+    const runs = listRecentRuns();
+    expect(runs).toEqual([]);
+
+    process.env.TASK_RUN_LOGS_DIR = original;
+    rmSync(emptyDir, { recursive: true, force: true });
+  });
+});
