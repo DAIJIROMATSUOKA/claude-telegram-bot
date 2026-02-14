@@ -30,8 +30,23 @@ export interface TaskPlan {
   banned_patterns: string[];         // git diffに含まれてはいけないパターン
   allowed_imports: string[];         // 追加許可するimport (デフォルト + ユーザー指定)
   max_changed_files_per_task: number; // 1タスクの変更ファイル上限 (デフォルト5)
-  on_failure: "stop";                // Phase 1は停止のみ
+  on_failure: "stop" | "retry_then_stop"; // "stop": 即停止(Phase 1) / "retry_then_stop": 1回リトライ後停止(Phase 2a)
+  resource_limits?: ResourceLimits;
 }
+
+// === Resource Limits ===
+
+export interface ResourceLimits {
+  maxFiles: number;          // 1タスクの変更ファイル上限 (default 10)
+  maxLineChanges: number;    // 追加+削除行数上限 (default 500)
+  maxSeconds: number;        // 実行時間上限秒 (default 900)
+}
+
+export const DEFAULT_RESOURCE_LIMITS: ResourceLimits = {
+  maxFiles: 10,
+  maxLineChanges: 500,
+  maxSeconds: 900,
+};
 
 // === Validation ===
 
