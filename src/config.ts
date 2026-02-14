@@ -43,26 +43,12 @@ export const ALLOWED_USERS: number[] = (
   .filter((x) => !isNaN(x));
 
 // DJ's chat ID for bot notifications
-export const DJ_CHAT_ID = ALLOWED_USERS[0]; // First user is DJ
 
 export const WORKING_DIR = process.env.CLAUDE_WORKING_DIR || HOME;
 
 // ============== Claude CLI Path ==============
 
 // Auto-detect from PATH, or use environment override
-function findClaudeCli(): string {
-  const envPath = process.env.CLAUDE_CLI_PATH;
-  if (envPath) return envPath;
-
-  // Try to find claude in PATH using Bun.which
-  const whichResult = Bun.which("claude");
-  if (whichResult) return whichResult;
-
-  // Final fallback
-  return "/usr/local/bin/claude";
-}
-
-export const CLAUDE_CLI_PATH = findClaudeCli();
 
 // ============== MCP Configuration ==============
 
@@ -232,7 +218,6 @@ if (ALLOWED_USERS.length === 0) {
 // ============== Memory Gateway & Autopilot ==============
 
 export const MEMORY_GATEWAY_URL = process.env.MEMORY_GATEWAY_URL || 'https://jarvis-memory-gateway.jarvis-matsuoka.workers.dev';
-export const AUTOPILOT_ENABLED = (process.env.AUTOPILOT_ENABLED || 'true').toLowerCase() === 'true';
 
 console.log(
   `Config loaded: ${ALLOWED_USERS.length} allowed users, working dir: ${WORKING_DIR}`

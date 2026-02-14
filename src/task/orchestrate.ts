@@ -102,7 +102,7 @@ function maskSecrets(text: string): string {
 /**
  * Create git worktree for isolated execution
  */
-function createWorktree(planId: string): string {
+function createWorktree(planId: string): { path: string; baseCommit: string } {
   const worktreePath = join(WORKTREE_BASE, planId);
   // Clean up any stale worktree (previous run, crash, etc.)
   try {
@@ -329,6 +329,7 @@ async function main(): Promise<void> {
   // === Main Loop ===
   for (let i = 0; i < plan.micro_tasks.length; i++) {
     const task = plan.micro_tasks[i];
+    if (!task) continue;
 
     // Check /stop
     if (isStopRequested()) {
