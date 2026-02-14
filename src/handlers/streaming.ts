@@ -89,7 +89,7 @@ export class StreamingState {
   lastEditTimes = new Map<number, number>(); // segment_id -> last edit time
   lastContent = new Map<number, string>(); // segment_id -> last sent content
   actionTraceIds = new Map<string, number>(); // action_key -> trace_id for tracking
-  headerSent = false; // クロッピーヘッダーを送信済みか
+  headerSent = false; // Jarvisヘッダーを送信済みか
   replyToMessageId?: number; // 元メッセージへのreply用
 }
 
@@ -154,10 +154,10 @@ export function createStatusCallback(ctx: Context, state: StreamingState): Statu
             content.length > TELEGRAM_SAFE_LIMIT
               ? content.slice(0, TELEGRAM_SAFE_LIMIT) + "..."
               : content;
-          // 最初のセグメントにクロッピーヘッダーを付けて投稿の境界を明確にする
+          // 最初のセグメントにJarvisヘッダーを付けて投稿の境界を明確にする
           let formatted = convertMarkdownToHtml(display);
           if (!state.headerSent) {
-            formatted = `<b>🦞 Croppy</b>\n${formatted}`;
+            formatted = `<b>🤖 Jarvis</b>\n${formatted}`;
             state.headerSent = true;
           }
           // 最初のセグメントは元メッセージへのreplyとして送信
@@ -214,7 +214,7 @@ export function createStatusCallback(ctx: Context, state: StreamingState): Statu
         if (!state.textMessages.has(segmentId) && content) {
           let formatted = convertMarkdownToHtml(content);
           if (!state.headerSent) {
-            formatted = `<b>🦞 Croppy</b>\n${formatted}`;
+            formatted = `<b>🤖 Jarvis</b>\n${formatted}`;
             state.headerSent = true;
           }
           const replyOpts: any = { parse_mode: "HTML" };
@@ -241,7 +241,7 @@ export function createStatusCallback(ctx: Context, state: StreamingState): Statu
           const msg = state.textMessages.get(segmentId)!;
           // 最初のセグメントの最終テキストにもヘッダーを維持
           const formatted = segmentId === 0
-            ? `<b>🦞 Croppy</b>\n${convertMarkdownToHtml(content)}`
+            ? `<b>🤖 Jarvis</b>\n${convertMarkdownToHtml(content)}`
             : convertMarkdownToHtml(content);
 
           // Skip if content unchanged
