@@ -143,3 +143,48 @@ export const DANGEROUS_SYMBOL_PATTERNS: RegExp[] = [
   /Bun\.\.?\$/,
   /Bun\.shell/,
 ];
+
+// === Three-Tier Validator Patterns ===
+// Debate: Croppy × GPT, 4 rounds CONVERGED (2026-02-14)
+// Spec: docs/docker-sandbox-spec.md
+
+/**
+ * TIER 1: ALWAYS_BLOCK - blocked even inside Docker
+ * Purpose: Prevent sandbox escape, build attacks, env bulk dump
+ */
+export const ALWAYS_BLOCK_PATTERNS: RegExp[] = [
+  // Docker escape
+  /docker\.sock/,
+  /\/proc\/(self|\d+)\/(environ|cmdline|fd)/,
+  /\b(nsenter|unshare|setns|ptrace)\b/,
+  /--privileged/,
+  // Build-time attack (network=none blocks these, but defense-in-depth)
+  /\bnpm\s+install\b/,
+  /\bcurl\s*\|\s*bash\b/,
+  /\bwget\s/,
+  /\bpip\s+install\b/,
+  // Env bulk dump (stdout leakage vector)
+  /Object\.(keys|values|entries)\s*\(\s*process\.env/,
+  /JSON\.stringify\s*\(\s*process\.env/,
+  /console\.(log|dir|error|warn)\s*\(\s*process\.env\b/,
+];
+
+/**
+ * TIER 2: DOCKER_BLOCK - blocked in Docker mode (secret exfiltration)
+ * Purpose: Prevent reading secrets and outputting them to stdout
+ */
+export const DOCKER_BLOCK_PATTERNS: RegExp[] = [
+  // dotenv loading
+  /require\s*\(\s*['"]dotenv['"]/,
+  /from\s+['"]dotenv['"]/,
+  // .env file access
+  /readFileSync\s*\(.*\.env/,
+  /Bun\.file\s*\(.*\.env/,
+];
+
+/**
+ * Execution mode for validator
+ * - 'host': No Docker → all 3 tiers active (Tier1 + Tier2 + Tier3/DANGEROUS_SYMBOL_PATTERNS)
+ * - 'docker': Docker available → Tier1 + Tier2 only, Tier3 skipped
+ */
+export type ValidatorMode = 'host' | 'docker';
