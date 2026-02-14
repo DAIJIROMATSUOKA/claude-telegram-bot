@@ -121,3 +121,65 @@ describe('summarizeFailureReason - エッジケース', () => {
     expect(result).toBe('バリデーション失敗: error detected');
   });
 });
+
+// === retryWithExponentialBackoff シミュレーションテスト ===
+// retry.ts には retryWithExponentialBackoff 関数は未実装だが、
+// 将来の実装を想定したリトライロジックのテストケース
+
+describe('buildRetryPrompt - リトライシナリオ', () => {
+  test('maxRetries=0相当: 失敗関数がリトライなしで即失敗', () => {
+    // リトライ回数0 = 最初の失敗でそのまま終了
+    // この場合、buildRetryPromptは呼ばれないが、
+    // 仮に呼ばれた場合のプロンプト構造をテスト
+    const result = buildRetryPrompt(
+      '初回のみ実行',
+      '初回で失敗',
+      ['即時エラー'],
+      'Error: function failed immediately'
+    );
+    expect(result).toContain('初回のみ実行');
+    expect(result).toContain('失敗理由: 初回で失敗');
+    expect(result).toContain('- 即時エラー');
+    expect(result).toContain('Error: function failed immediately');
+  });
+
+  test('即成功: リトライ不要のケース', () => {
+    // 成功時はリトライプロンプトは生成されないが、
+    // 念のため空状態でのプロンプト構造をテスト
+    const result = buildRetryPrompt(
+      '成功したタスク',
+      '',
+      [],
+      ''
+    );
+    // 基本構造は維持される
+    expect(result).toContain('成功したタスク');
+    expect(result).toContain('失敗理由: ');
+    expect(result).not.toContain('バリデーション違反:');
+    expect(result).not.toContain('テスト出力:');
+  });
+
+  test('3回目で成功相当: 2回失敗後のリトライプロンプト', () => {
+    // 2回失敗 → 3回目で成功を想定
+    // 2回目の失敗時に生成されるリトライプロンプトをテスト
+    const attempt2FailureReason = '2回目の失敗: 依存関係エラー';
+    const attempt2Violations = ['テスト失敗', '型エラー'];
+    const attempt2Output = 'FAIL src/module.test.ts\nTypeError: undefined is not a function';
+
+    const result = buildRetryPrompt(
+      '複雑なタスク',
+      attempt2FailureReason,
+      attempt2Violations,
+      attempt2Output
+    );
+
+    expect(result).toContain('複雑なタスク');
+    expect(result).toContain('失敗理由: 2回目の失敗: 依存関係エラー');
+    expect(result).toContain('バリデーション違反:');
+    expect(result).toContain('- テスト失敗');
+    expect(result).toContain('- 型エラー');
+    expect(result).toContain('テスト出力:');
+    expect(result).toContain('TypeError: undefined is not a function');
+    expect(result).toContain('前回と同じミスを繰り返すな');
+  });
+});
