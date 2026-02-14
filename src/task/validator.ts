@@ -18,9 +18,12 @@ import { join } from "node:path";
 import {
   DEFAULT_ALLOWED_IMPORTS,
   DANGEROUS_SYMBOL_PATTERNS,
+  ALWAYS_BLOCK_PATTERNS,
+  DOCKER_BLOCK_PATTERNS,
   type MicroTask,
   type TaskPlan,
   type ValidationResult,
+  type ValidatorMode,
 } from "./types";
 
 /**
@@ -253,6 +256,54 @@ function checkDangerousSymbols(
 }
 
 /**
+ * Check 4a: Always-block patterns (even in Docker)
+ * Tier 1: sandbox escape, build attack, env bulk dump
+ */
+function checkAlwaysBlock(
+  addedLines: Map<string, string[]>,
+): { ok: boolean; violations: string[] } {
+  const violations: string[] = [];
+  for (const [file, lines] of addedLines) {
+    if (!/\.[tj]sx?$/.test(file)) continue;
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (trimmed.startsWith("//") || trimmed.startsWith("*")) continue;
+      for (const pattern of ALWAYS_BLOCK_PATTERNS) {
+        if (pattern.test(line)) {
+          violations.push(`${file}: Tier1ブロック ${pattern.source}`);
+          break;
+        }
+      }
+    }
+  }
+  return { ok: violations.length === 0, violations };
+}
+
+/**
+ * Check 4b: Docker-block patterns (secret exfiltration)
+ * Tier 2: .env access, dotenv loading
+ */
+function checkDockerBlock(
+  addedLines: Map<string, string[]>,
+): { ok: boolean; violations: string[] } {
+  const violations: string[] = [];
+  for (const [file, lines] of addedLines) {
+    if (!/\.[tj]sx?$/.test(file)) continue;
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (trimmed.startsWith("//") || trimmed.startsWith("*")) continue;
+      for (const pattern of DOCKER_BLOCK_PATTERNS) {
+        if (pattern.test(line)) {
+          violations.push(`${file}: Tier2ブロック ${pattern.source}`);
+          break;
+        }
+      }
+    }
+  }
+  return { ok: violations.length === 0, violations };
+}
+
+/**
  * Check 5: Test file line count validation (warning only)
  * Checks *.test.ts files: <10 lines = too few, >1000 lines = too many
  */
@@ -345,6 +396,7 @@ export function validate(
   worktreePath: string,
   mainRepoPath: string,
   baseCommit?: string,
+  mode: ValidatorMode = 'host',
 ): ValidationResult {
   const result: ValidationResult = {
     passed: false,
@@ -408,13 +460,38 @@ export function validate(
     return result;
   }
 
-  // 4. Dangerous symbols
-  const symbolCheck = checkDangerousSymbols(addedLines);
-  result.symbol_check_ok = symbolCheck.ok;
-  if (!symbolCheck.ok) {
-    result.violations.push(...symbolCheck.violations);
+  // 4a. Tier 1: Always-block patterns (even in Docker)
+  const alwaysCheck = checkAlwaysBlock(addedLines);
+  if (!alwaysCheck.ok) {
+    result.symbol_check_ok = false;
+    result.violations.push(...alwaysCheck.violations);
     rollback(worktreePath);
     return result;
+  }
+
+  // 4b. Tier 2: Docker-block patterns (secret exfiltration)
+  if (mode === 'docker') {
+    const dockerCheck = checkDockerBlock(addedLines);
+    if (!dockerCheck.ok) {
+      result.symbol_check_ok = false;
+      result.violations.push(...dockerCheck.violations);
+      rollback(worktreePath);
+      return result;
+    }
+  }
+
+  // 4c. Tier 3: Dangerous symbols (HOST MODE ONLY - skipped in Docker)
+  if (mode === 'host') {
+    const symbolCheck = checkDangerousSymbols(addedLines);
+    result.symbol_check_ok = symbolCheck.ok;
+    if (!symbolCheck.ok) {
+      result.violations.push(...symbolCheck.violations);
+      rollback(worktreePath);
+      return result;
+    }
+  } else {
+    result.symbol_check_ok = true; // Docker sandbox handles this
+    console.log("[Validator] Docker mode: Tier 3 (dangerous symbols) skipped - sandbox provides isolation");
   }
 
   // 5. Test file line count (warning only, does NOT fail validation)

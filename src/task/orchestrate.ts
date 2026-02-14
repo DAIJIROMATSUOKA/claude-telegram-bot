@@ -33,6 +33,8 @@ import {
 } from "./reporter";
 import { RunLogger } from "./run-logger";
 import { buildRetryPrompt, summarizeFailureReason } from "./retry";
+import { checkDockerAvailable, buildDockerImage, runTestInDocker, redactSecrets } from "./docker-runner";
+import type { ValidatorMode } from "./types";
 import { checkAllLimits } from "./resource-limits";
 import { DEFAULT_RESOURCE_LIMITS } from "./types";
 import { runHealthCheck } from "./health-check";
@@ -299,6 +301,15 @@ async function main(): Promise<void> {
     console.log(`[Orchestrator] Health check passed: Claude ${healthResult.claudeVersion}`);
   }
 
+  // === Docker Availability Check ===
+  const dockerCheck = checkDockerAvailable();
+  const validatorMode: ValidatorMode = dockerCheck.available ? 'docker' : 'host';
+  if (dockerCheck.available) {
+    console.log("[Orchestrator] Docker sandbox available - using Three-Tier Validator (Tier 3 skipped)");
+  } else {
+    console.log(`[Orchestrator] Docker unavailable (${dockerCheck.reason}) - using strict Host mode (all tiers active)`);
+  }
+
   // === Run Logger ===
   const runLogger = new RunLogger(plan.plan_id);
   runLogger.logEvent("run_start", {
@@ -410,7 +421,7 @@ async function main(): Promise<void> {
       break;
     } else {
       // Validate
-      let validation = validate(task, plan, worktreePath, mainRepoPath, baseCommit);
+      let validation = validate(task, plan, worktreePath, mainRepoPath, baseCommit, validatorMode);
       taskResult.validation = validation;
 
       console.log(`[Orchestrator] Validation: passed=${validation.passed} files=${validation.changed_files.length} violations=${validation.violations.join('; ')}`);
@@ -482,7 +493,7 @@ async function main(): Promise<void> {
         const retryExecResult = await executeMicroTask(retryTask, worktreePath, abortController.signal);
 
         if (!retryExecResult.timed_out && !isStopRequested()) {
-          let retryValidation = validate(retryTask, plan, worktreePath, mainRepoPath, baseCommit);
+          let retryValidation = validate(retryTask, plan, worktreePath, mainRepoPath, baseCommit, validatorMode);
 
           // Resource limits on retry too
           if (retryValidation.passed) {
