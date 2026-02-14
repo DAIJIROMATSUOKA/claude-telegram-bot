@@ -464,6 +464,8 @@ async function main(): Promise<void> {
       if (validation.passed) {
         taskResult.status = "success";
         gitCommit(worktreePath, task.id, task.goal);
+        // Update baseCommit so next task's diff is per-task, not cumulative
+        baseCommit = execSync("git rev-parse HEAD", { cwd: worktreePath, encoding: "utf-8", timeout: 5_000 }).trim();
         taskResult.changes_summary = generateChangesSummary(worktreePath);
         consecutiveFailures = 0;
         runLogger.logEvent("task_committed", {
@@ -519,6 +521,8 @@ async function main(): Promise<void> {
             taskResult.status = "success";
             taskResult.validation = retryValidation;
             gitCommit(worktreePath, task.id, task.goal);
+            // Update baseCommit so next task's diff is per-task, not cumulative
+            baseCommit = execSync("git rev-parse HEAD", { cwd: worktreePath, encoding: "utf-8", timeout: 5_000 }).trim();
             taskResult.changes_summary = generateChangesSummary(worktreePath);
             consecutiveFailures = 0;
             runLogger.logEvent("task_retry_success", { task_id: task.id });
