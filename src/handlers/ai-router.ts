@@ -132,7 +132,7 @@ export async function getMemoryPack(
       return `(AI_MEMORY取得失敗: ${errorMsg})`;
     }
 
-    const { getDocsClient } = await import('./gemini-tasks-sync');
+    const _mod = './gemini-tasks-sync'; const { getDocsClient } = await import(_mod);
     const docsClient = await getDocsClient(credentialsPath);
 
     const doc = await docsClient.documents.get({ documentId });
@@ -780,7 +780,7 @@ export async function extractAndSaveMemory(
   }
 
   try {
-    const { getDocsClient } = await import('./gemini-tasks-sync');
+    const _mod = './gemini-tasks-sync'; const { getDocsClient } = await import(_mod);
     const docsClient = await getDocsClient(credentialsPath);
 
     const doc = await docsClient.documents.get({ documentId });

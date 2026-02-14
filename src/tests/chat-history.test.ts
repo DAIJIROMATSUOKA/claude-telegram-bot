@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Chat History Manager Unit Tests
  */

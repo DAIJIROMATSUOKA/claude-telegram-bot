@@ -47,7 +47,7 @@ function acquireLock(): boolean {
   if (existsSync(LOCK_PATH)) {
     try {
       const lockData = readFileSync(LOCK_PATH, 'utf-8').trim().split('\n');
-      const pid = parseInt(lockData[0], 10);
+      const pid = parseInt(lockData[0] || '0', 10);
       if (pid && pid !== process.pid) {
         // Check if PID is alive
         try {
@@ -94,7 +94,7 @@ function recordError(): void {
   errorTimestamps.push(now);
   // Trim old entries
   const cutoff = now - ERROR_BURST_WINDOW_MS;
-  while (errorTimestamps.length > 0 && errorTimestamps[0] < cutoff) {
+  while (errorTimestamps.length > 0 && (errorTimestamps[0] ?? 0) < cutoff) {
     errorTimestamps.shift();
   }
 }

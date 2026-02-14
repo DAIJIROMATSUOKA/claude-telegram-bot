@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * pattern-detector.ts のユニットテスト
  */

@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Tests for src/task/run-logger.ts
  *

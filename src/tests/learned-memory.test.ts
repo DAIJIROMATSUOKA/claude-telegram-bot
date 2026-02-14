@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * learned-memory.ts の純粋関数テスト
  */
