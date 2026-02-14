@@ -10,6 +10,47 @@
 import { callMemoryGateway } from '../handlers/ai-router';
 import { ulid } from 'ulidx';
 
+/**
+ * 会話履歴をコンパクトに整形（各メッセージ最大500文字、最大30件）
+ */
+function buildCompactHistory(
+  messages: Array<{ role: string; content: string; timestamp: string }>
+): string {
+  return messages
+    .slice(-30)
+    .map(m => {
+      const role = m.role === 'user' ? 'DJ' : 'Jarvis';
+      const content = m.content.slice(0, 500);
+      return `[${role}] ${content}`;
+    })
+    .join('\n');
+}
+
+/**
+ * AI要約用のプロンプトを構築
+ */
+function buildSummaryPrompt(compactHistory: string): string {
+  return `以下はDJ（ユーザー）とJarvis（AIアシスタント）の会話履歴だ。
+これを次回セッションで使える形に要約しろ。
+
+## 出力フォーマット（JSON）
+{
+  "summary": "何をしていたかの要約（200文字以内）",
+  "topics": ["トピック1", "トピック2"],
+  "key_decisions": ["決定事項1", "決定事項2"],
+  "unfinished_tasks": ["未完了1", "未完了2"]
+}
+
+## ルール
+- 日本語で書け
+- 技術的な文脈（ファイル名、コマンド、設計判断）を保持しろ
+- 感想や挨拶は省け
+- JSON以外の出力は不要
+
+## 会話履歴
+${compactHistory}`;
+}
+
 export interface SessionSummary {
   id: string;
   user_id: string;
@@ -158,35 +199,8 @@ async function generateSummaryWithGemini(
   try {
     const { askGemini } = await import('./multi-ai');
 
-    // 会話をコンパクトに整形（各メッセージ最大500文字、最大30件）
-    const compactHistory = messages
-      .slice(-30)
-      .map(m => {
-        const role = m.role === 'user' ? 'DJ' : 'Jarvis';
-        const content = m.content.slice(0, 500);
-        return `[${role}] ${content}`;
-      })
-      .join('\n');
-
-    const prompt = `以下はDJ（ユーザー）とJarvis（AIアシスタント）の会話履歴だ。
-これを次回セッションで使える形に要約しろ。
-
-## 出力フォーマット（JSON）
-{
-  "summary": "何をしていたかの要約（200文字以内）",
-  "topics": ["トピック1", "トピック2"],
-  "key_decisions": ["決定事項1", "決定事項2"],
-  "unfinished_tasks": ["未完了1", "未完了2"]
-}
-
-## ルール
-- 日本語で書け
-- 技術的な文脈（ファイル名、コマンド、設計判断）を保持しろ
-- 感想や挨拶は省け
-- JSON以外の出力は不要
-
-## 会話履歴
-${compactHistory}`;
+    const compactHistory = buildCompactHistory(messages);
+    const prompt = buildSummaryPrompt(compactHistory);
 
     const result = await askGemini(prompt, 60_000);
 
@@ -239,35 +253,8 @@ async function generateSummaryWithCroppy(
   const path = await import('path');
   const execPromise = promisify(exec);
 
-  // 会話をコンパクトに整形
-  const compactHistory = messages
-    .slice(-30)
-    .map(m => {
-      const role = m.role === 'user' ? 'DJ' : 'Jarvis';
-      const content = m.content.slice(0, 500);
-      return `[${role}] ${content}`;
-    })
-    .join('\n');
-
-  const prompt = `以下はDJ（ユーザー）とJarvis（AIアシスタント）の会話履歴だ。
-これを次回セッションで使える形に要約しろ。
-
-## 出力フォーマット（JSON）
-{
-  "summary": "何をしていたかの要約（200文字以内）",
-  "topics": ["トピック1", "トピック2"],
-  "key_decisions": ["決定事項1", "決定事項2"],
-  "unfinished_tasks": ["未完了1", "未完了2"]
-}
-
-## ルール
-- 日本語で書け
-- 技術的な文脈（ファイル名、コマンド、設計判断）を保持しろ
-- 感想や挨拶は省け
-- JSON以外の出力は不要
-
-## 会話履歴
-${compactHistory}`;
+  const compactHistory = buildCompactHistory(messages);
+  const prompt = buildSummaryPrompt(compactHistory);
 
   const tempFile = path.join('/tmp', `croppy-summary-${Date.now()}.txt`);
 
