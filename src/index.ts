@@ -27,7 +27,6 @@ import {
   handleRestart,
   handleRetry,
   handleText,
-  handleVoice,
   handleDocument,
   handleCallback,
   handleWhy,
@@ -43,15 +42,6 @@ import {
   handleAlarm,
   handleRecall } from "./handlers";
 import {
-  handleMeta,
-  handleMetaRun,
-  handleMetaAudit,
-  handleMetaReview,
-  handleMetaGaps,
-  handleMetaStop,
-  handleMetaStart,
-} from "./handlers/meta-commands";
-import {
   handleDebate,
   handleAskGPT,
   handleAskGemini,
@@ -60,7 +50,6 @@ import { handleAISession } from "./handlers/ai-session";
 import { registerMediaCommands } from "./handlers/media-commands";
 import { handleTaskCommand, handleStopCommand as handleOrchestratorStop, handleTaskStatusCommand } from "./task/task-command";
 import { handleTaskLogCommand } from "./task/tasklog-command";
-import { handleNightshift } from "./handlers/nightshift";
 import { ensureLearnedMemoryTable } from './utils/learned-memory';
 import { ensureSessionSummaryTable } from './utils/session-summary';
 import { startMemoryGCScheduler } from './utils/memory-gc';
@@ -176,13 +165,6 @@ bot.command("alarm", handleAlarm);
 bot.command("recall", handleRecall);
 
 // Meta-Agent commands
-bot.command("meta", handleMeta);
-bot.command("meta_run", handleMetaRun);
-bot.command("meta_audit", handleMetaAudit);
-bot.command("meta_review", handleMetaReview);
-bot.command("meta_gaps", handleMetaGaps);
-bot.command("meta_stop", handleMetaStop);
-bot.command("meta_start", handleMetaStart);
 
 // Task Orchestrator commands
 bot.command("task", handleTaskCommand);
@@ -219,7 +201,6 @@ bot.command("gem", handleAskGemini);
 bot.command("ai", handleAISession);
 
 // Nightshift — 夜間バッチモード
-bot.command("nightshift", handleNightshift);
 
 // Autopilot — 自動タスク実行エンジン
 
@@ -227,7 +208,6 @@ registerMediaCommands(bot);
 bot.on("message:text", handleText);
 
 // Voice messages
-bot.on("message:voice", handleVoice);
 
 
 // Document messages

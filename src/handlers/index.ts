@@ -19,7 +19,6 @@ export {
   handleRecall,
 } from "./commands";
 export { handleText } from "./text";
-export { handleVoice } from "./voice";
 export { handleDocument } from "./document";
 export { handleCallback } from "./callback";
 export { StreamingState, createStatusCallback } from "./streaming";
