@@ -372,3 +372,109 @@ describe("listRecentRuns edge cases", () => {
     rmSync(emptyDir, { recursive: true, force: true });
   });
 });
+
+// === MT-006: Additional edge case tests ===
+
+describe("RunLogger: same planId different runId", () => {
+  test("two RunLoggers with same planId created with delay have different runIds", async () => {
+    const logger1 = new RunLogger("UNIQUE-PLAN");
+    // runIdは秒精度のため、1001ms以上待つ必要がある
+    await new Promise((r) => setTimeout(r, 1001));
+    const logger2 = new RunLogger("UNIQUE-PLAN");
+
+    // runIdが異なる
+    expect(logger1.runId).not.toBe(logger2.runId);
+    // 両方とも同じplanIdを含む
+    expect(logger1.runId).toContain("UNIQUE-PLAN");
+    expect(logger2.runId).toContain("UNIQUE-PLAN");
+    // logPathも異なる
+    expect(logger1.logPath).not.toBe(logger2.logPath);
+  });
+});
+
+describe("logEvent: multiple consecutive events", () => {
+  test("records multiple events and readRunEvents returns all", () => {
+    const logger = new RunLogger("CONSECUTIVE-001");
+
+    // 5種類のイベントを連続記録
+    logger.logEvent("run_start", { plan_id: "CONSECUTIVE-001" });
+    logger.logEvent("task_start", { task_id: "T-1" });
+    logger.logEvent("task_exec_done", { task_id: "T-1", exit_code: 0 });
+    logger.logEvent("task_validation", { task_id: "T-1", passed: true });
+    logger.logEvent("task_done", { task_id: "T-1", status: "passed" });
+
+    const events = readRunEvents(logger.runId);
+
+    // 全件取得できる
+    expect(events).toHaveLength(5);
+    expect(events[0].event).toBe("run_start");
+    expect(events[1].event).toBe("task_start");
+    expect(events[2].event).toBe("task_exec_done");
+    expect(events[3].event).toBe("task_validation");
+    expect(events[4].event).toBe("task_done");
+
+    // 全イベントが同じrun_idを持つ
+    for (const event of events) {
+      expect(event.run_id).toBe(logger.runId);
+    }
+  });
+});
+
+describe("writeSummary: JSON parsing", () => {
+  test("summary JSON can be correctly parsed with all fields", () => {
+    const logger = new RunLogger("PARSE-001");
+
+    const inputSummary = {
+      plan_id: "PARSE-001",
+      title: "Parse Test Summary",
+      final_status: "partial" as const,
+      total_tasks: 5,
+      passed_tasks: 3,
+      failed_tasks: 2,
+      total_duration_seconds: 300,
+      task_results: [
+        {
+          task_id: "T-1",
+          status: "passed",
+          duration_seconds: 60,
+          exit_code: 0,
+          violations: [],
+          changed_files: ["src/a.ts", "src/b.ts"],
+        },
+        {
+          task_id: "T-2",
+          status: "failed",
+          duration_seconds: 120,
+          exit_code: 1,
+          violations: ["test_failure"],
+          changed_files: [],
+        },
+      ],
+    };
+
+    logger.writeSummary(inputSummary);
+
+    // readRunSummaryでパースできる
+    const parsed = readRunSummary(logger.runId);
+    expect(parsed).not.toBeNull();
+
+    // 全フィールドが正しくパースされている
+    expect(parsed!.run_id).toBe(logger.runId);
+    expect(parsed!.plan_id).toBe("PARSE-001");
+    expect(parsed!.title).toBe("Parse Test Summary");
+    expect(parsed!.final_status).toBe("partial");
+    expect(parsed!.total_tasks).toBe(5);
+    expect(parsed!.passed_tasks).toBe(3);
+    expect(parsed!.failed_tasks).toBe(2);
+    expect(parsed!.total_duration_seconds).toBe(300);
+    expect(parsed!.started_at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(parsed!.completed_at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+
+    // task_resultsの構造も正しい
+    expect(parsed!.task_results).toHaveLength(2);
+    expect(parsed!.task_results[0].task_id).toBe("T-1");
+    expect(parsed!.task_results[0].changed_files).toEqual(["src/a.ts", "src/b.ts"]);
+    expect(parsed!.task_results[1].task_id).toBe("T-2");
+    expect(parsed!.task_results[1].violations).toEqual(["test_failure"]);
+  });
+});
