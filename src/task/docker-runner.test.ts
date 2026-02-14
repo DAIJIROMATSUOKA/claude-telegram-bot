@@ -83,4 +83,66 @@ describe("checkDockerAvailable", () => {
       expect(result.reason).toBeDefined();
     }
   });
+
+  it("returns reason as string or undefined (type check)", () => {
+    const result = checkDockerAvailable();
+    // reasonフィールドの型: 存在すればstring、なければundefined
+    if ("reason" in result && result.reason !== undefined) {
+      expect(typeof result.reason).toBe("string");
+    } else {
+      // available: true の場合はreasonが存在しない
+      expect(result.reason).toBeUndefined();
+    }
+  });
+});
+
+describe("redactSecrets additional patterns", () => {
+  it("masks secret in very long string (10000 chars) preserving rest", () => {
+    // スペース区切りで100文字未満のチャンクにしてbase64パターン回避
+    const chunk = "word ";
+    const prefixChunks = chunk.repeat(1000); // 5000 chars
+    const secret = "sk-ant-longsecretvalue123";
+    const suffixChunks = chunk.repeat(999); // 4995 chars
+    const input = prefixChunks + secret + suffixChunks;
+
+    // 入力が10000文字超であることを確認
+    expect(input.length).toBeGreaterThanOrEqual(10000);
+
+    const result = redactSecrets(input);
+
+    // シークレットがマスクされ、他のテキストは保持される
+    expect(result).toContain("[REDACTED]");
+    expect(result).not.toContain("sk-ant-");
+    expect(result).toContain("word ");
+    // 結果が元の長さより短くなる（シークレットがREDACTEDに置換）
+    expect(result.length).toBeLessThan(input.length);
+  });
+
+  it("masks entire string when it is only a secret", () => {
+    const secretOnly = "sk-ant-entiresecretstring123";
+    const result = redactSecrets(secretOnly);
+    expect(result).toBe("[REDACTED]");
+  });
+
+  it("masks secrets in multi-line text correctly", () => {
+    const line1 = "first line with sk-ant-secret1";
+    const line2 = "second line normal";
+    const line3 = "third line sk-ant-anothersecret";
+    const input = `${line1}\n${line2}\n${line3}`;
+    const result = redactSecrets(input);
+
+    expect(result).toContain("first line with [REDACTED]");
+    expect(result).toContain("second line normal");
+    expect(result).toContain("third line [REDACTED]");
+    expect(result).not.toContain("sk-ant-");
+  });
+
+  it("masks sk-ant- with short suffix (less than 5 chars)", () => {
+    // sk-ant-で始まり、その後が短くてもマスクされるか
+    const input = "token: sk-ant-xy";
+    const result = redactSecrets(input);
+    // 正規表現は sk-ant-[a-zA-Z0-9_-]+ なので1文字以上でマッチ
+    expect(result).toBe("token: [REDACTED]");
+    expect(result).not.toContain("sk-ant-");
+  });
 });
