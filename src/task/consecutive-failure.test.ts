@@ -126,4 +126,48 @@ describe('Consecutive Failure Stop Logic', () => {
     expect(result.stopped).toBe(true);
     expect(result.stoppedAtIndex).toBe(1);
   });
+
+  // === エッジケース追加テスト ===
+
+  test('edge case: empty array returns stopped=false and stoppedAtIndex=null', () => {
+    const result = simulateConsecutiveFailures([]);
+    expect(result.stopped).toBe(false);
+    expect(result.stoppedAtIndex).toBeNull();
+  });
+
+  test('edge case: single success element returns stopped=false', () => {
+    const result = simulateConsecutiveFailures(['success']);
+    expect(result.stopped).toBe(false);
+    expect(result.stoppedAtIndex).toBeNull();
+  });
+
+  test('edge case: single failed element returns stopped=false (1 failure is not enough)', () => {
+    const result = simulateConsecutiveFailures(['failed']);
+    expect(result.stopped).toBe(false);
+    expect(result.stoppedAtIndex).toBeNull();
+  });
+
+  test('edge case: long sequence of 10 successes returns stopped=false', () => {
+    const result = simulateConsecutiveFailures([
+      'success', 'success', 'success', 'success', 'success',
+      'success', 'success', 'success', 'success', 'success'
+    ]);
+    expect(result.stopped).toBe(false);
+    expect(result.stoppedAtIndex).toBeNull();
+  });
+
+  test('edge case: first two elements are failed returns stopped=true at index 1', () => {
+    const result = simulateConsecutiveFailures(['failed', 'failed', 'success', 'success']);
+    expect(result.stopped).toBe(true);
+    expect(result.stoppedAtIndex).toBe(1);
+  });
+
+  test('edge case: alternating failed-success 5 times returns stopped=false', () => {
+    const result = simulateConsecutiveFailures([
+      'failed', 'success', 'failed', 'success', 'failed',
+      'success', 'failed', 'success', 'failed', 'success'
+    ]);
+    expect(result.stopped).toBe(false);
+    expect(result.stoppedAtIndex).toBeNull();
+  });
 });

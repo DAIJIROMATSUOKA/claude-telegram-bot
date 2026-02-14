@@ -131,4 +131,44 @@ describe("buildPrompt", () => {
     expect(result).toContain("完了条件");
     expect(result).toContain(multiCommand);
   });
+
+  test("空のgoal → promptにgoalが含まれる（Task:セクション存在）", () => {
+    const task = makeTask({ goal: "" });
+    const result = buildPrompt(task);
+
+    // goalは空でも "## Task: " ヘッダーは存在する
+    expect(result).toContain("## Task:");
+    // goalが空文字として含まれる（"## Task: " の直後は空）
+    expect(result).toMatch(/## Task:\s*\n/);
+  });
+
+  test("非常に長いprompt（1000文字） → 全文含まれる", () => {
+    const longPrompt = "指示: " + "X".repeat(994); // 1000文字
+    const task = makeTask({ prompt: longPrompt });
+    const result = buildPrompt(task);
+
+    expect(result).toContain(longPrompt);
+    expect(result.length).toBeGreaterThan(1000);
+  });
+
+  test("context_filesに3ファイル → 全パスが含まれる", () => {
+    const files = ["src/alpha.ts", "src/beta.ts", "src/gamma.ts"];
+    const task = makeTask({ context_files: files });
+    const result = buildPrompt(task);
+
+    expect(result).toContain("参考ファイル");
+    expect(result).toContain("- src/alpha.ts");
+    expect(result).toContain("- src/beta.ts");
+    expect(result).toContain("- src/gamma.ts");
+  });
+
+  test("depends_onがnullでない → promptにdepends_on情報は含まれない（現在の実装）", () => {
+    const task = makeTask({ depends_on: "MT-001" });
+    const result = buildPrompt(task);
+
+    // 現在のbuildPrompt実装ではdepends_onはプロンプトに出力されない
+    // depends_onは実行順序制御のみに使用される
+    expect(result).not.toContain("depends_on");
+    expect(result).not.toContain("MT-001");
+  });
 });
