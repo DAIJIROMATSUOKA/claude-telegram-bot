@@ -144,3 +144,24 @@ Orchestrator起動時にdocker pingで可用性チェック。
 - non-root / cap-drop=ALL / no-new-privileges 検証
 - HOME=/tmp動作確認
 - seccomp profile（任意）
+
+---
+
+## max_changed_files_per_task ルール [DECIDED]
+**ディベート:** Croppy × GPT, 3ラウンド CONVERGED (2026-02-14)
+
+### 変更
+- max_changed_files_per_task: 3 → **5**
+
+### 禁止ファイル（テスト作成タスク）
+package.json, bun.lock, bun.lockb, package-lock.json, yarn.lock, pnpm-lock.yaml
+
+理由: テスト作成タスクがこれらを変更する正当な理由はゼロ。変更があれば異常。
+
+### 却下した追加ガード
+| 案 | 却下理由 |
+|----|---------|
+| blocked_paths全般 | 既存6層バリデーションで十分 |
+| max_new_files=2 | 厳しすぎ。test+fixture+helperで3ファイルは正当 |
+| require_change_rationale | Claude CLIに構造化報告機能がない |
+| 8-10に引き上げ | 朝のレビュー負荷が爆増 |

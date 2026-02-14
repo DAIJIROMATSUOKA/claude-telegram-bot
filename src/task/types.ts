@@ -188,3 +188,17 @@ export const DOCKER_BLOCK_PATTERNS: RegExp[] = [
  * - 'docker': Docker available → Tier1 + Tier2 only, Tier3 skipped
  */
 export type ValidatorMode = 'host' | 'docker';
+
+/**
+ * Files that test-creation tasks must NEVER modify
+ * Debate: Croppy × GPT, 3 rounds CONVERGED (2026-02-14)
+ * Reason: Zero legitimate reason for test tasks to touch these
+ */
+export const FORBIDDEN_CHANGED_FILES: string[] = [
+  'package.json',
+  'bun.lock',
+  'bun.lockb',
+  'package-lock.json',
+  'yarn.lock',
+  'pnpm-lock.yaml',
+];

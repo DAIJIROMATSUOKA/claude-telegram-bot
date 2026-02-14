@@ -20,6 +20,7 @@ import {
   DANGEROUS_SYMBOL_PATTERNS,
   ALWAYS_BLOCK_PATTERNS,
   DOCKER_BLOCK_PATTERNS,
+  FORBIDDEN_CHANGED_FILES,
   type MicroTask,
   type TaskPlan,
   type ValidationResult,
@@ -155,6 +156,24 @@ function checkFileCount(
     };
   }
   return { ok: true, violations: [] };
+}
+
+
+/**
+ * Check 1b: Forbidden files (package.json, lockfiles)
+ * Test creation tasks must NEVER modify these
+ */
+function checkForbiddenFiles(
+  changedFiles: string[],
+): { ok: boolean; violations: string[] } {
+  const violations: string[] = [];
+  for (const file of changedFiles) {
+    const basename = file.split('/').pop() || file;
+    if (FORBIDDEN_CHANGED_FILES.includes(basename)) {
+      violations.push();
+    }
+  }
+  return { ok: violations.length === 0, violations };
 }
 
 /**
@@ -420,6 +439,14 @@ export function validate(
   result.file_count_ok = fileCheck.ok;
   if (!fileCheck.ok) {
     result.violations.push(...fileCheck.violations);
+    rollback(worktreePath);
+    return result;
+  }
+
+  // 1b. Forbidden files
+  const forbiddenCheck = checkForbiddenFiles(result.changed_files);
+  if (!forbiddenCheck.ok) {
+    result.violations.push(...forbiddenCheck.violations);
     rollback(worktreePath);
     return result;
   }
