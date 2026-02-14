@@ -57,6 +57,7 @@ export interface ValidationResult {
   banned_check_ok: boolean;
   import_check_ok: boolean;
   symbol_check_ok: boolean;
+  test_line_check_ok: boolean;
   test_passed: boolean;
   test_output: string;
   violations: string[];
