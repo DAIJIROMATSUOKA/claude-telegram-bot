@@ -1,11 +1,11 @@
 # 自律実装フロー仕様書（autonomous-workflow-spec.md）
-# v3.2 MVP — ディベート全決定事項含む
+# v3.2 B-Plan — 🦞直接作業 + Auto-Kick アーキテクチャ
 
 ---
 
-## DJ運用イメージ（こんなことができるようになる）
+## DJ運用イメージ
 
-### Before（今）
+### Before（v3.2以前）
 ```
 DJ「○○を作りたい」
   → クロッピーが設計
@@ -20,102 +20,85 @@ DJ「○○を作りたい」
 ```
 DJの作業: 10回以上のコピペ + 監視 + 判断
 
-### After（この機能完成後）
+### After（v3.2 B-Plan）
 ```
 DJ「○○を作りたい」
-  → クロッピーが設計
-  → クロッピーが自動でChatGPTにレビュー依頼（exec bridge経由）
-  → クロッピーが自動でGeminiにレビュー依頼（exec bridge経由）
-  → クロッピーがFAIL項目だけ見て設計改善（grepでトークン節約）
+  → 🦞 croppy-start.sh（Auto-Kick ARM、サイレント）
+  → 🦞 設計書作成
+  → 🦞 自動でChatGPT/Geminiにレビュー依頼（exec bridge経由）
+  → 🦞 FAIL項目を自動修正（grepでトークン節約）
   → 最大4ラウンドで自動収束
-  → クロッピーがDJに最終設計を提示
-DJ「GO」
-  → クロッピーがTaskPlanを作ってJarvisに投入（exec.sh --fire）
-  → クロッピーがpoll_job.shで自動待機
-  → Jarvisが実装・テスト
-  → 問題発生 → クロッピーが自動でエラー分析・修正パッチ投入
-  → 最大4ラウンドで自動解決
-  → クロッピーがDJに完了報告
+  → 🦞 exec bridgeで直接コード実装・テスト・修正
+  → タイムアウト発生 → ウォッチドッグが自動復帰 → 🦞が作業継続
+  → （自動復帰×N回、何度でも）
+  → 🦞 croppy-done.sh（DISARM + Telegram通知）
 ```
-DJの作業: 「○○を作りたい」+「GO」の2回だけ
+DJの作業: 「○○を作りたい」の1行だけ。完了はTelegram通知。
 
-### もしクロッピーのセッションが切れても
+### もしAuto-Kickが壊れても
 ```
-  → Jarvisは最後まで作業を続ける（中断しない）
-  → 完了/失敗をTelegram通知
-  → DJが次にclaude.aiを開いた時
-  → クロッピーが --check で結果を自動回収
-  → 途中からシームレスに再開
+  → 🦞 M1.mdに状態が書いてある
+  → DJ 次にclaude.aiを開いた時
+  → 🦞 M1.mdからNEXT_ACTIONを読んで即再開
 ```
 
 ---
 
 ## 0. 最優先原則
 
-- DJ介入最小化（「1行投げたら基本触らない」）
+- DJ介入最小化（「1行投げたら何もしない」）
 - 最小実装 → 実測 → 必要なら拡張（YAGNI）
 - 1チャット完結（Thread分離しない）
-- Claude = 制御エンジン、外部ファイル = 記憶装置
-- 🦞タイムアウトでもJarvisは継続（絶対ルール）
+- 🦞 = 設計+実装+テスト+修正の全責任者
+- Auto-Kick = セッション延命機構
+- Jarvis = 通知+cron+夜間バッチのみ（実装には関与しない）
 
 ---
 
 ## 1. ディベート決定事項
 
+### v3.2 B-Planディベート（2026-02-15）
+
+### [DECIDED] B案採用: 🦞直接作業 + Auto-Kick
+- 投票: ChatGPT賛成 / Gemini賛成 / 🦞賛成（全員一致）
+- 却下案: A案（Jarvis委譲）— 翻訳ロス、修正ラウンド増加、品質低下のため却下
+- 却下案: ハイブリッド（A+B）— 複雑さに見合う価値がないため却下
+
+### [DECIDED] Jarvis実装委譲は不要
+- 投票: ChatGPT賛成 / Gemini賛成 / 🦞賛成
+- 理由: 🦞がコンテキスト全保持で直接作業する方が品質高く、総ラウンド少ない
+- 不要になったもの: TaskPlan JSON作成、実装用Orchestrator、poll_job.sh(Jarvis監視用)、🦞↔Jarvis状態同期
+- Jarvisの残存役割: Telegram Bot通知、cron、夜間バッチのみ
+
+### [DECIDED] フォールバック = DJ通知 + 次セッション再開
+- 投票: ChatGPT賛成 / Gemini賛成 / 🦞賛成
+- 却下案: Auto-Kick失敗時にJarvis CLIに自動切替 — 中途半端なコードが厄介、M1.md経由で🦞が次セッションで再開する方がシンプルで品質高い
+
+### 初期ディベート決定事項（v3.2設計時、引き続き有効）
+
 ### [DECIDED] 状態マシン化
 Claude（🦞）は状態のみ保持。設計全文・レビュー全文・ログ全文は外部ファイルに置く。
-- 投票: ChatGPT賛成 / Gemini賛成 / 🦞賛成
-- 却下案: 全文をコンテキストに保持する方式（200K窓を急速に消費するため却下）
 
 ### [DECIDED] ID参照体系
 `D0001@a13c` 形式（連番+hash4）で外部ファイルを参照。
-- 投票: ChatGPT賛成 / Gemini賛成 / 🦞賛成
-- 却下案: ファイル名のみの参照（取り違えリスクがあるため却下）
 
 ### [DECIDED] ディレクトリ構造は最小3つ
 state/ logs/ reviews/ のみ。追加は必要時。
-- 投票: ChatGPT賛成 / Gemini強く賛成 / 🦞賛成
-- 却下案: 8ディレクトリ構造（管理コストが高く、LLMの推論コストも増えるため却下）
 
 ### [DECIDED] レビュー形式はPASS/FAIL
 S/A/B重大度は不採用。PASS/FAIL -> FIX形式。
-- 投票: ChatGPT賛成 / Gemini強く賛成 / 🦞賛成
-- 却下案: S/A/B重大度（判定基準が揺らぎやすく、パース処理が複雑になるため却下）
 
 ### [DECIDED] Thread分離は不採用
 1チャット完結。論理分離はファイルベースで実現。
-- 投票: ChatGPT賛成 / Gemini賛成 / 🦞賛成
-- 却下案: 設計/実装/例外解析で別チャット（DJの手動切替が必要で自動化に逆行するため却下）
-
-### [DECIDED] モデル切替はJarvis側のみ
-claude.ai上の🦞はモデル固定。Jarvis CLIのみ--modelで切替。
-- 投票: ChatGPT賛成 / Gemini賛成 / 🦞賛成
-- 却下案: claude.ai上でのモデル切替（DJの手動操作が必要なため却下）
 
 ### [DECIDED] チェックポイントは同一チャット内リセット
 新チャット移行は200K危険域の最終手段のみ。
-- 投票: ChatGPT賛成 / Gemini賛成 / 🦞賛成
-- 却下案: ラウンドごとの新チャット移行（DJの手動操作が必要なため却下）
 
 ### [DECIDED] ERRSIG体系は不採用
 exit code + stderr最後5行 + ログ参照IDで十分。
-- 投票: ChatGPT賛成 / Gemini賛成 / 🦞賛成
-- 却下案: E042式エラーコード体系（未知エラーに弱く管理コストが高いため却下）
-
-### [DECIDED] TaskPlanは既存Orchestrator形式
-新スキーマを定義しない。差分フィールドのみ追加。
-- 投票: ChatGPT賛成 / Gemini必須と評価 / 🦞賛成
-- 却下案: 独自TaskPlan JSONスキーマ（二重定義リスクのため却下）
 
 ### [DECIDED] Extended Thinkingは実測後に判断
 常時ON/OFFを決め打ちしない。
-- 投票: ChatGPT賛成 / Gemini賛成 / 🦞賛成
-
-### [DECIDED] poll_job.sh自己継続方式
-bash_tool実行時間上限に依存しない設計。スクリプト出力に「次に実行すべきコマンド」を含める。
-- 投票: ChatGPT提案 → Gemini改善 → 🦞採用
-- 却下案: bash_tool内17分whileループ（bash_tool上限が短い場合に死ぬため却下）
-- 却下案: Gateway long-poll方式（bash_toolタイムアウト不整合リスクのため却下）
 
 ---
 
@@ -126,14 +109,9 @@ bash_tool実行時間上限に依存しない設計。スクリプト出力に�
   state/
     M1.md              # 唯一の真実（状態ファイル）
     CHECKPOINTS.md      # チェックポイント履歴（追記）
-  logs/
-    L-0001.txt          # ジョブログ
-  reviews/
-    R-gpt-0001.md       # ChatGPTレビュー結果
-    R-gem-0001.md       # Geminiレビュー結果
+  logs/                 # ジョブログ
+  reviews/              # ChatGPT/Geminiレビュー結果
 ```
-
-追加ディレクトリ（必要時のみ）: designs/ taskplans/ patches/ reports/
 
 ---
 
@@ -147,13 +125,15 @@ GOAL: <1行>
 CONSTRAINTS:
 - <最大3行>
 CURRENT:
-  TASK_ID: <T-xxxx or NONE>
+  TASK_ID: <NONE>
   LOGREF: <L-xxxx or NONE>
 OPEN_K: <K1,K2,K3 or NONE>
 ROUND: n/4
 LAST_ACTION: <1行>
 NEXT_ACTION: <1行>
 ```
+
+NEXT_ACTIONには長時間ブロックコマンドを書かない。「何をやるか」を書く。実行方法は🦞が判断する。
 
 ---
 
@@ -162,10 +142,11 @@ NEXT_ACTION: <1行>
 ### フロー
 ```
 DJ「○○を作りたい」
+  → 🦞 croppy-start.sh（ARM）
   → 🦞 設計書をM1ファイルに書く
   → 🦞 exec bridge → ChatGPTにレビュー依頼 → 結果をreviews/に保存
   → 🦞 exec bridge → grep FAIL reviews/R-gpt-xxxx.md（数行だけコンテキストに入る）
-  → 🦞 FAIL項目があれば設計書を更新（exec bridgeでsed/patch）
+  → 🦞 FAIL項目があれば設計書を更新
   → 🦞 exec bridge → Geminiにレビュー依頼 → 結果をreviews/に保存
   → 🦞 exec bridge → grep FAIL reviews/R-gem-xxxx.md
   → 🦞 FAIL項目があれば設計書を更新
@@ -195,124 +176,90 @@ Previous FAIL items (if any):
 
 ---
 
-## 5. Phase 2: 実装（Jarvis委譲 + 例外時のみ🦞介入）
+## 5. Phase 2: 実装（🦞直接 + Auto-Kick）
 
 ### フロー
 ```
 DJ「GO」
-  → 🦞 TaskPlan作成（既存Orchestrator形式）
-  → 🦞 exec.sh --fire でJarvisに投入 → task_id取得
-  → 🦞 poll_job.sh task_id で待機
-  → 結果に応じて分岐
+  → 🦞 exec bridgeで直接コード実装
+  → 🦞 exec bridgeでテスト実行
+  → 🦞 テスト失敗 → エラー確認 → 即修正（コンテキスト全保持）
+  → 🦞 タイムアウト → Auto-Kick発動 → 同一コンテキストで再開
+  → （実装→テスト→修正を繰り返す）
+  → 🦞 全テスト通過
+  → 🦞 git commit（exec bridge経由）
+  → 🦞 croppy-done.sh（DISARM + Telegram通知）
 ```
 
-**EXIT:0（成功）:**
+### 🦞セッション切れ時（Auto-Kick失敗時）
 ```
-  → 🦞 DJに報告（PASS: 1行サマリー）
-```
-
-**EXIT:1（失敗）:**
-```
-  → 🦞 LAST5を分析、修正パッチ生成
-  → 🦞 exec.sh --fire で修正投入
-  → 🦞 poll_job.sh で再待機
-  → ROUND++（最大4）
+  → M1.mdにLAST_ACTION/NEXT_ACTIONが書いてある
+  → DJ 次にclaude.aiを開いた時（またはAuto-Kickが復旧した時）
+  → 🦞 M1.mdからNEXT_ACTIONを読んで即再開
 ```
 
-**EXIT:2（まだ実行中）:**
-```
-  → 🦞 出力のACTIONコマンドをそのまま実行（自動再入）
-```
+### 長時間タスク（30分超）
+- 冪等なステージに分割: setup → build → test → package
+- 各ステージ完了時にM1.md更新
+- タイムアウト → Auto-Kick → 次のステージから継続
 
-**🦞セッション切れ:**
-```
-  → 🤖 Jarvisは最後まで作業を続行（中断しない）
-  → 🤖 完了/失敗をTelegram通知
-  → DJ 次にclaude.aiを開いた時
-  → 🦞 exec.sh --check task_id で結果回収
-  → state/M1.md + task_idで途中から再開
-```
-
-### 絶対ルール
-1. --fireで投げたジョブは🦞の生死に関係なくJarvisが最後まで実行する
-2. 🦞はJarvisの全ログを見ない。LAST5（stderr最後5行）のみ
-3. 🦞が落ちてもM1.md + task_idで再開可能
+### ルール
+1. 🦞が直接全作業を行う。Jarvisに委譲しない
+2. exec bridgeの長時間コマンドは --fire --notify で非同期実行
+3. M1.mdを定期的に更新（セッション切れに備える）
+4. git commitはexec bridge経由。bash scripts/restart-bot.sh で再起動
 
 ---
 
-## 6. poll_job.sh 仕様
+## 6. Auto-Kick Watchdog
 
-### 入力
-```
-./poll_job.sh <task_id> [poll_interval] [max_seconds]
-```
-- task_id: 必須
-- poll_interval: デフォルト15秒
-- max_seconds: デフォルト270秒（bash_tool上限5分想定、30秒マージン）
+### 状態: ✅ 本番稼働中（2026-02-15 PoC成功、統合テスト成功）
 
-### 出力フォーマット（固定）
-
-**成功:**
-```
-EXIT:0
-STATUS:DONE
-NEXT:NONE
-SUM:All tests passed
-```
-
-**実行中（自動継続）:**
-```
-EXIT:2
-STATUS:RUNNING
-NEXT:ACTION ./poll_job.sh <task_id>
-SUM:Still running
-```
-
-**失敗:**
-```
-EXIT:1
-STATUS:FAIL
-NEXT:PATCH
-SUM:Tests failed
-LAST5:
-<stderr last 5 lines>
-LOGREF:logs/L-xxxx.txt
-```
-
-**ジョブ不在:**
-```
-EXIT:99
-STATUS:NOT_FOUND
-NEXT:NONE
-SUM:Job does not exist
-```
+### コンポーネント
+| ファイル | 役割 |
+|---|---|
+| scripts/auto-kick-watchdog.sh | ウォッチドッグ本体 |
+| com.jarvis.autokick-watchdog.plist | LaunchAgent |
+| scripts/croppy-start.sh | ARM（サイレント） |
+| scripts/croppy-done.sh | DISARM + Telegram通知 |
 
 ### 動作
-1. 開始時刻を記録
-2. ループ: exec.sh --check task_id
-   - done → 結果を整形、exit 0
-   - processing/pending → sleep poll_interval、ループ継続
-   - 経過時間 > max_seconds → RUNNING出力（ACTION付き）、exit 0
-3. 全ての出力をexit 0で返す（bash_toolにエラーと誤認させない）
+```
+🦞がタイムアウトで停止
+  → ウォッチドッグが20秒間隔でチェック
+  → aria-label「応答を停止」ボタン非表示 = STOPPED
+  → 2回連続(40秒)でSTOPPED検知
+  → osascript + Chrome JS でテキスト入力 + 送信
+  → 🦞が同一コンテキストで再開
+```
 
-### 設計判断
-- max_seconds 270秒は仮値。bash_tool実測後に調整
-- poll_interval 15秒: Gateway HTTP GET 1回で軽量
-- SUM 1行のみ: トークン節約。全文はLOGREFで参照
+### 技術詳細
+- エディタ検出: `document.querySelector('.ProseMirror')`
+- テキスト入力: `document.execCommand('insertText')`
+- 停止検知: `button[aria-label="応答を停止"]` の表示/非表示
+- 送信: `KeyboardEvent('keydown', Enter)` — 🦞停止時のみ有効
+
+### 制御
+| 操作 | コマンド |
+|---|---|
+| ARM | `bash scripts/croppy-start.sh` または `touch /tmp/autokick-armed` |
+| DISARM + 通知 | `bash scripts/croppy-done.sh 'メッセージ'` |
+| 緊急停止 | `touch /tmp/autokick-stop` |
+
+### リスクと受容
+- UI変更で壊れる → 壊れたら直す（自動化優先）
+- ログインセッション切れ → 手動再ログイン
+- Anthropic ToSグレー → DJが受容済み
 
 ---
 
 ## 7. チェックポイント（同一チャット内リセット）
-
-### 目的
-履歴肥大を防ぎ、状態を再宣言して古い文脈依存を断つ。
 
 ### 書式（最大200 words）
 ```
 CHECKPOINT:
 M1 synced.
 ROUND: n/4
-TASK: T-xxxx
 NEXT: <1行>
 ```
 
@@ -320,7 +267,7 @@ NEXT: <1行>
 - state/CHECKPOINTS.mdに追記
 - 新チャットは原則作らない
 - 200K危険域のみ最終手段として新チャット移行
-- 新チャットでもM1.md + CHECKPOINTS.mdだけで復帰可能
+- 新チャットでもM1.md + croppy-notesで復帰可能
 
 ---
 
@@ -338,56 +285,39 @@ NEXT: <1行>
 
 | Phase | 内容 | 状態 |
 |-------|------|------|
-| Phase 1 | poll_job.sh実装 + bash_tool実測 | 次に着手 |
-| Phase 2 | Jarvisジョブ1つを自動完走させる | Phase 1完了後 |
-| Phase 3 | Phase 1レビューループの自動化 | Phase 2完了後 |
-| Phase 4 | 全体結合（DJ「GO」→完了報告まで自動） | Phase 3完了後 |
+| Phase 1 | Auto-Kick PoC + bash_tool実測 | ✅ 完了 |
+| Phase 2 | Auto-Kick LaunchAgent本番化 | ✅ 完了 |
+| Phase 3 | 設計レビューループの自動化 | 次に着手 |
+| Phase 4 | 全体結合（DJ「1行」→完了通知まで自動） | Phase 3完了後 |
 
-### Phase 1 着手条件
-- この仕様書がM1に保存されていること
+### 計測済みの値
+| 項目 | 結果 |
+|---|---|
+| bash_tool実行時間上限 | 240-270秒 |
+| 安全値 | 210秒 |
 
 ### MVP完了基準
-- poll_job.shが固定フォーマットで動く
-- 1つのJarvisジョブが自動で完走する
-- 🦞が200 words以内で状態更新できる
-- ROUND制御が機能する
+- Auto-Kickが安定動作する（✅ 達成）
+- 🦞が直接作業でタスクを完了できる
+- 200 words以内で状態更新できる（✅ 達成）
+- Telegram完了通知がDJに届く（✅ 達成）
 
 ---
 
-## 10. 実装前に計測すべき値
+## 10. Jarvisの役割（B-Plan以降）
 
-| 項目 | 計測方法 | 影響 |
-|---|---|---|
-| bash_tool実行時間上限 | sleep 300で実測 | poll_job.shのmax_seconds決定 |
-| 1ターン内bash_tool呼び出し回数上限 | poll_job.sh再入を繰り返して実測 | 待機可能な最大時間の決定 |
+### やること
+- Telegram Bot（ユーザーコマンド受付、通知）
+- cron（夜間バッチ、JARVIS Journal生成）
+- Darwin Engine（夜間アイデア生成）
+
+### やらないこと
+- 実装作業（🦞が直接やる）
+- TaskPlan実行
+- 🦞との状態同期
 
 ---
 
-*ディベート参加者: ChatGPT / Gemini / クロッピー🦞*
-*全決定事項に3者合意済み*
-
----
-
-## 11. 自動復帰（Auto-Kick）
-
-### 定義
-🦞が同一チャット内で応答停止した時、外部から自動入力して再開させる仕組み。新チャットではない。
-
-### Before（今）
-
-
-### After
-
-
-### 利点
-- 新チャット不要 → コンテキスト消失なし
-- DJ介入ゼロ
-- M1.md読み直し不要（同一セッション）
-
-### 実装フェーズ
-Phase 1完了後に着手（poll_job.sh + M1.md運用が先）
-
-### 実装方針（未確定）
-- 検知: Jarvisがclaude.aiの応答タイミングを監視
-- キック: osascript or Chrome拡張でDOMに文字入力+送信
-- リスク: UI変更で壊れる → 壊れたら直す（自動化優先）
+*初期ディベート参加者: ChatGPT / Gemini / クロッピー🦞（全決定事項に3者合意済み）*
+*B-Planディベート: 2026-02-15 ChatGPT / Gemini / 🦞（全員一致でB案採用）*
+*Auto-Kick PoC: 2026-02-15 実証成功（DJ介入ゼロで自動復帰）*
