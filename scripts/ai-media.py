@@ -2347,21 +2347,29 @@ def cmd_animate(args):
     steps = args.steps or 30
 
     if args.image and os.path.exists(args.image):
-        # Image-to-Video — detect aspect ratio from source image
+        # Image-to-Video — preserve original image size (round to 8-multiple)
         from PIL import Image as PILImage
         try:
             src_img = PILImage.open(args.image)
             src_w, src_h = src_img.size
             src_img.close()
-            if src_h > src_w:
-                # Portrait (taller than wide) → 480x832
-                width = args.width or 480
-                height = args.height or 832
+            if args.width and args.height:
+                # User explicitly specified dimensions — use those
+                width = args.width
+                height = args.height
             else:
-                # Landscape or square → 832x480
-                width = args.width or 832
-                height = args.height or 480
-            print(f"[ai-media] I2V auto-aspect: source {src_w}x{src_h} → output {width}x{height}", file=sys.stderr)
+                # Preserve original size, cap at MAX_IMAGE_DIMENSION, round to 8-multiple
+                if max(src_w, src_h) > MAX_IMAGE_DIMENSION:
+                    ratio = MAX_IMAGE_DIMENSION / max(src_w, src_h)
+                    width = int(src_w * ratio)
+                    height = int(src_h * ratio)
+                else:
+                    width = src_w
+                    height = src_h
+                # Round to nearest multiple of 8 (required by model)
+                width = (width // 8) * 8
+                height = (height // 8) * 8
+            print(f"[ai-media] I2V preserve-size: source {src_w}x{src_h} → output {width}x{height}", file=sys.stderr)
         except Exception:
             width = args.width or 832
             height = args.height or 480
@@ -2570,6 +2578,15 @@ def comfyui_queue_and_wait(workflow: dict, timeout: int = 2400) -> list:
                     d = data.get("data", {})
                     pct = d.get("value", 0) / max(d.get("max", 1), 1) * 100
                     print(f"\r[ai-media] Progress: {pct:.0f}%", end="", file=sys.stderr, flush=True)
+
+                elif msg_type == "status":
+                    # Heartbeat: keep activity timeout alive during model loading
+                    d = data.get("data", {}).get("status", {})
+                    q = d.get("exec_info", {}).get("queue_remaining", "?")
+                    print(f"\r[ai-media] Status: queue={q}, loading...", end="", file=sys.stderr, flush=True)
+
+                elif msg_type == "execution_cached":
+                    print(f"[ai-media] Cached nodes reused", file=sys.stderr, flush=True)
 
                 elif msg_type == "executed":
                     d = data.get("data", {})
