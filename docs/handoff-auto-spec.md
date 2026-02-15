@@ -27,6 +27,7 @@
 | **Phase 2** | Auto Memory導入でcroppy-notes.md置き換え | 低 | Phase 1完了 |
 | **Phase 3** | Stop hookでセッション終了時自動HANDOFF生成 | 中 | Phase 2完了 |
 | **Phase 4** | Tasks + headless cronで夜間自律実行 | 中 | Phase 3完了 |
+| **Phase 4** | Nightly autonomous execution | 低 | **[DONE] 2026-02-15** |
 | **Phase 5** | exec bridge → Claude Code CLI完全移行 | 高 | Phase 4安定稼働 |
 
 **Phase移行条件:** 各Phaseで1週間以上の安定稼働を確認後に次Phaseへ。
@@ -168,3 +169,20 @@ fi
 - [Hooks完全ガイド](https://claudelog.com/mechanics/hooks/)
 - [Shrivu Shankar - How I Use Every Feature](https://blog.sshh.io/p/how-i-use-every-claude-code-feature)
 - [Auto-handoff Stop hookパターン](https://psantanna.com/claude-code-my-workflow/workflow-guide.html)
+
+---
+
+## [DECIDED] 2026-02-15: Phase 1-4 完了、Phase 5 DEFERRED
+
+**判断:** Phase 1-4を「HANDOFF自動化 完了」として閉じる。Phase 5は1週間安定稼働後に着手。
+
+**理由:**
+- Phase 3 (Stop hook) は当日デプロイ、実戦テスト0回
+- Phase 4 (Nightly) は1回動作のみ
+- exec bridgeは全インフラの心臓、Phase 3-4安定前に廃止は危険
+- 仕様書ルール: 各Phase 1週間安定稼働後に次Phase
+
+**Phase 5 着手条件:**
+- Phase 3: Stop hook auto-HANDOFFが1週間エラーなし
+- Phase 4: Nightly実行が5回以上成功
+- exec bridge代替手段の設計完了
