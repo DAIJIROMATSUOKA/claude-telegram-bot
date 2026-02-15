@@ -39,4 +39,5 @@ EmergencyStop -> touch /tmp/croppy-stop
 - Stop hook: auto-handoff.py → Dropbox Journal + Telegram通知
 - Nightly: jarvis-nightly.sh (launchd 23:00) Ralph Loop方式 → 全タスク完了/停止条件まで自律ループ (circuit breaker=3連続失敗, max 4h)
 - Agent Teams: ~/.claude/settings.json で有効化済み (CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1) — 並列エージェント協調
+- PreCompact Hook: 圧縮前にtranscriptバックアップ + Auto Memory recovery file + Telegram通知
 - Phase 5 (exec bridge廃止) はDEFERRED
