@@ -41,4 +41,5 @@ EmergencyStop -> touch /tmp/croppy-stop
 - Agent Teams: ~/.claude/settings.json で有効化済み (CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1) — 並列エージェント協調
 - PreCompact Hook: 圧縮前にtranscriptバックアップ + last-compaction.md保存 + Telegram通知- SessionStart:compact Hook: 圧縮後にlast-compaction.mdを自動復元 → 保存→復元の完全ループ
 - Stop Self-Validation: コード変更時にbun test+BANNEDチェック自動実行 → 失敗ならClaudeに修正を強制(max 3回)
+- Master-Clone委譲: CLAUDE.mdに方針記述 → Claude Codeが自分でTask/Exploreに動的委譲(specialist定義不要)
 - Phase 5 (exec bridge廃止) はDEFERRED
