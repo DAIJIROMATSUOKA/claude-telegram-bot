@@ -85,11 +85,6 @@ APPLESCRIPT
       echo "[$(date '+%H:%M:%S')] Kick result: $KICK_RESULT" >> "$LOG"
       stopped_count=0
 
-      source ~/claude-telegram-bot/.env 2>/dev/null
-      if [ -n "$TELEGRAM_BOT_TOKEN" ]; then
-        curl -s -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage" \
-          -d "chat_id=$TELEGRAM_ALLOWED_USERS" -d "text=🦞 Auto-kick fired. Claude resumed." > /dev/null 2>&1
-      fi
     fi
   else
     stopped_count=0
