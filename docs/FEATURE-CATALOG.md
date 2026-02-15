@@ -32,3 +32,10 @@ EmergencyStop -> touch /tmp/croppy-stop
 - **アーキテクチャ:** B案（🦞直接作業 + Auto-Kick）。Jarvis実装委譲は不要に。
 - **ディベート:** ChatGPT/Gemini/🦞 全員一致でB案採用
 - **ツール:** poll_job.sh, autonomous/state/M1.md
+
+## HANDOFF自動化 (Phase 1-4 完了 2026-02-15)
+- Auto Memory: ~/.claude/projects/.../memory/ (MEMORY.md + 3 topic files)
+- memory-sync.sh: 5min cron → croppy-notes.md backup
+- Stop hook: auto-handoff.py → Dropbox Journal + Telegram通知
+- Nightly: jarvis-nightly.sh (launchd 23:00) → task-state.md読み取り → claude -p実行
+- Phase 5 (exec bridge廃止) はDEFERRED
