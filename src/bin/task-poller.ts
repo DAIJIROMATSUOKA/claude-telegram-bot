@@ -18,7 +18,10 @@ const execAsync = promisify(exec);
 
 // === Config ===
 const GATEWAY_URL = process.env.MEMORY_GATEWAY_URL || 'https://jarvis-memory-gateway.jarvis-matsuoka.workers.dev';
-const POLL_INTERVAL_MS = 3000;
+const POLL_INTERVAL_IDLE_MS = 10000;  // 10s when no tasks
+const POLL_INTERVAL_ACTIVE_MS = 1000;  // 1s after finding a task
+const POLL_COOLDOWN_MS = 30000;        // 30s of no tasks -> back to idle
+let lastTaskTime = 0;
 const FETCH_TIMEOUT_MS = 5000;
 const MAX_OUTPUT = 80000;
 const LOCK_PATH = '/tmp/com.jarvis.task-poller.lock';
@@ -213,6 +216,7 @@ async function pollAndExecute(): Promise<void> {
     );
 
     log(`Done: ${task.id} | exit=${result.exitCode} | stdout=${result.stdout.length}B`);
+    lastTaskTime = Date.now();
 
     await fetchWithTimeout(`${GATEWAY_URL}/v1/exec/complete`, {
       method: 'POST',
@@ -270,12 +274,15 @@ async function main(): Promise<void> {
     process.exit(1); // Crash = launchd restarts
   });
 
-  log(`Polling ${GATEWAY_URL} every ${POLL_INTERVAL_MS}ms`);
+  log(`Polling ${GATEWAY_URL} (adaptive: ${POLL_INTERVAL_IDLE_MS}ms idle / ${POLL_INTERVAL_ACTIVE_MS}ms active)`);
 
   // Main loop
   while (running) {
     await pollAndExecute();
-    await new Promise(r => setTimeout(r, POLL_INTERVAL_MS));
+    const interval = (Date.now() - lastTaskTime < POLL_COOLDOWN_MS)
+      ? POLL_INTERVAL_ACTIVE_MS
+      : POLL_INTERVAL_IDLE_MS;
+    await new Promise(r => setTimeout(r, interval));
   }
 
   releaseLock();
