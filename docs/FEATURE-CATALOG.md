@@ -37,5 +37,5 @@ EmergencyStop -> touch /tmp/croppy-stop
 - Auto Memory: ~/.claude/projects/.../memory/ (MEMORY.md + 3 topic files)
 - memory-sync.sh: 5min cron → croppy-notes.md backup
 - Stop hook: auto-handoff.py → Dropbox Journal + Telegram通知
-- Nightly: jarvis-nightly.sh (launchd 23:00) → task-state.md読み取り → claude -p実行
+- Nightly: jarvis-nightly.sh (launchd 23:00) Ralph Loop方式 → 全タスク完了/停止条件まで自律ループ (circuit breaker=3連続失敗, max 4h)
 - Phase 5 (exec bridge廃止) はDEFERRED
