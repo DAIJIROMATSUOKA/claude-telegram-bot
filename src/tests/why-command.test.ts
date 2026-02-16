@@ -6,8 +6,13 @@
 
 import { describe, test, expect, beforeEach, beforeAll, afterAll } from 'bun:test';
 import { controlTowerDB } from '../utils/control-tower-db';
-import { handleWhy } from '../handlers/why';
 import type { Context } from 'grammy';
+
+// Set dummy env vars before importing config (config.ts exits if missing)
+// Must use dynamic import because ESM hoists static imports before top-level code
+if (!process.env.TELEGRAM_BOT_TOKEN) process.env.TELEGRAM_BOT_TOKEN = 'test:dummy-token';
+if (!process.env.TELEGRAM_ALLOWED_USERS) process.env.TELEGRAM_ALLOWED_USERS = '8484023872';
+const { handleWhy } = await import('../handlers/why');
 
 // Mock Context
 function createMockContext(userId: number, chatId: number): {
