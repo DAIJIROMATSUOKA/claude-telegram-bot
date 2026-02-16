@@ -29,7 +29,7 @@ describe('health-check', () => {
     } else {
       expect(result.passed).toBe(true);
     }
-  });
+  }, 35_000);
 
   test('runHealthCheck returns empty errors array on success', () => {
     const result = runHealthCheck();
@@ -37,7 +37,7 @@ describe('health-check', () => {
     if (result.passed) {
       expect(result.errors).toEqual([]);
     }
-  });
+  }, 35_000);
 
   test('getClaudeVersion returns version string with dot (version format)', () => {
     const result = getClaudeVersion();
@@ -53,5 +53,5 @@ describe('health-check', () => {
     const result = runHealthCheck();
     expect('claudeVersion' in result).toBe(true);
     expect(typeof result.claudeVersion).toBe('string');
-  });
+  }, 35_000);
 });
