@@ -140,9 +140,9 @@ def main():
         run_cmd(f"bash {sync_script}")
         log("memory-sync executed")
 
-    # Telegram notification
-    send_telegram(f"Claude Code session ended. Auto-HANDOFF saved. {uncommitted} uncommitted files.")
-    log("Telegram notified")
+    # Telegram notification - REMOVED (croppy-done.sh handles this)
+    # send_telegram(...)  # disabled to avoid duplicate
+    log("Skipping Telegram - croppy-done.sh handles")
     log("Done")
 
 if __name__ == "__main__":
