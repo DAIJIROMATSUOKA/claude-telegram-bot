@@ -1,0 +1,41 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash /Users/daijiromatsuokam1/claude-telegram-bot/scripts/croppy-start.sh"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 /Users/daijiromatsuokam1/claude-telegram-bot/scripts/auto-handoff.py"
+          },
+          {
+            "type": "command",
+            "command": "bash /Users/daijiromatsuokam1/claude-telegram-bot/scripts/croppy-done.sh"
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash /Users/daijiromatsuokam1/claude-telegram-bot/scripts/pre-compact.sh"
+          }
+        ]
+      }
+    ]
+  }
+}
