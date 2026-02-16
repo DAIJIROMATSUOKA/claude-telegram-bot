@@ -16,6 +16,7 @@ BgTaskManager -> fire-and-forget with retry+tracking
 ContextSwitcher -> SmartRouter+ToolPreload+FocusMode
 EmergencyStop -> touch /tmp/croppy-stop
 /code -> code-command.ts, nohup Claude Code spawn from Telegram
+CroppyLoop(PlanD) -> M1.md状態永続化+Auto-Kick復帰、🦞自律spawn→検証→再spawnループ
 
 ## /code（Telegram直通 Claude Code）
 - **状態:** ✅ 本番稼働中
@@ -82,3 +83,15 @@ EmergencyStop -> touch /tmp/croppy-stop
 - **2レーン:** 重いタスク=🦞→Claude Code、軽いタスク=Telegram→Jarvis（既存）
 - **原則:** 🦞はfire-and-forget。Jarvisは判断ゼロ。障害点は🦞かClaude Codeの2択のみ
 - **仕様書:** docs/jarvis-v2-spec.md
+
+## Croppy自律ループ (Plan D)（2026-02-17 DECIDED）
+- **状態:** ディベート完了 → 設計フェーズ（案D全員一致採用）
+- **仕様書:** docs/croppy-loop-spec.md
+- **概要:** DJの1行指示 → 🦞が計画策定 → Claude Codeをspawn → 結果検証 → 次ステップspawn のループを自律実行
+- **状態永続化:** autonomous/state/M1.md にSTATUS/GOAL/PLAN/CURRENT/RESULTSを記録。🦞が死んでも状態が残る
+- **M1.mdフォーマット:** STATUS(IDLE/RUNNING/WAITING/DONE/FAILED)、STEPS(各ステップの状態+結果)、CURRENT(実行中タスクID/PID)、NEXT_ACTION
+- **Auto-Kick復帰:** 🦞死亡 → Auto-Kick復帰 → M1.md読む → STATUS:RUNNINGならループ再開（実行中タスクの--check/結果検証/再spawnを自動判断）
+- **ループフロー:** Phase1(計画策定) → Phase2(exec bridge --fire → --checkポーリング → 検証 → STEP++) → Phase3(全完了→通知) → Phase4(障害復帰)
+- **安全装置:** /tmp/croppy-stop(即停止)、MAX_RETRIES:3(同一ステップ3回失敗→FAILED)、MAX_STEPS:10、TIMEOUT:60min/step、STATUS:WAITING(DJ判断待ち)
+- **変更不要（既存活用）:** exec bridge, Auto-Kick Watchdog, M1.md, Claude Code nohupパターン, /tmp/croppy-stop
+- **却下案:** A(exec bridgeのみ→復帰不可), B(M1オーケストレータ→🦞品質管理喪失), C(ワンショット→検証不可)
