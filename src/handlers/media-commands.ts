@@ -544,11 +544,17 @@ export async function handleEdit(ctx: Context): Promise<void> {
       // ORIGINAL: Send photo preview (inline, compressed) + document (original quality)
       const filename = `edit_${Date.now()}.png`;
       const caption = `✏️ ${prompt}\n⏱ ${result.elapsed}秒`;
+      const fileSize = statSync(result.path).size;
+      console.log(`[media-upload] /edit starting upload: ${result.path} (${fileSize}B)`);
+      const t0 = Date.now();
       await ctx.replyWithPhoto(new InputFile(result.path), { caption });
+      console.log(`[media-upload] /edit photo sent in ${Date.now() - t0}ms`);
+      const t1 = Date.now();
       await ctx.replyWithDocument(new InputFile(result.path, filename), {
         caption: `📎 原寸: ${filename}`,
         disable_content_type_detection: true,
       });
+      console.log(`[media-upload] /edit document sent in ${Date.now() - t1}ms (total ${Date.now() - t0}ms)`);
       await ctx.api.deleteMessage(ctx.chat!.id, statusMsg.message_id).catch(() => {});
       cleanupFile(imagePath);
       cleanupFile(result.path);
