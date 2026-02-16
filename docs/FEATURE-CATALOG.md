@@ -15,6 +15,15 @@ Metrics -> bun:sqlite, /status shows P50/P99 latency
 BgTaskManager -> fire-and-forget with retry+tracking
 ContextSwitcher -> SmartRouter+ToolPreload+FocusMode
 EmergencyStop -> touch /tmp/croppy-stop
+/code -> code-command.ts, nohup Claude Code spawn from Telegram
+
+## /code（Telegram直通 Claude Code）
+- **状態:** ✅ 本番稼働中
+- **ハンドラー:** src/handlers/code-command.ts
+- **仕組み:** `/code <task>` → nohup で Claude Code を独立プロセスとして spawn（`claude -p --dangerously-skip-permissions`）→ Stop hook が完了時に Telegram 通知
+- **特徴:** SIGTERM カスケード防止（nohup）、Bot プロセスから完全独立、PID を返してユーザーに通知
+- **出力:** /tmp/claude-code-output.log
+- **Commit:** d33649c
 
 ## Auto-Kick Watchdog（自動復帰ウォッチドッグ）
 - **状態:** ✅ 本番稼働中
