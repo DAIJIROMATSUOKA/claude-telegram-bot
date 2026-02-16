@@ -67,3 +67,9 @@ EmergencyStop -> touch /tmp/croppy-stop
 - API: POST /v1/exec/cleanup {stuck_minutes?, purge_hours?}
 - running>10min -> pending, done>24h -> delete
 - Worker Version: 5c92fe60
+
+### JARVIS v2 Croppy-Driven Architecture（2026-02-16 DECIDED）
+- **概要:** 🦞(claude.ai)が設計→exec bridge --fire→Claude Code自律実行→Stop hook→Telegram通知
+- **2レーン:** 重いタスク=🦞→Claude Code、軽いタスク=Telegram→Jarvis（既存）
+- **原則:** 🦞はfire-and-forget。Jarvisは判断ゼロ。障害点は🦞かClaude Codeの2択のみ
+- **仕様書:** docs/jarvis-v2-spec.md
