@@ -47,6 +47,7 @@ import {
   handleAskGemini,
 } from "./handlers/council";
 import { handleAISession } from "./handlers/ai-session";
+import { handleCode } from "./handlers/code-command";
 import { registerMediaCommands } from "./handlers/media-commands";
 import { handleTaskCommand, handleStopCommand as handleOrchestratorStop, handleTaskStatusCommand } from "./task/task-command";
 import { handleTaskLogCommand } from "./task/tasklog-command";
@@ -205,6 +206,7 @@ bot.command("gem", handleAskGemini);
 
 // AI Session Bridge
 bot.command("ai", handleAISession);
+bot.command("code", handleCode);
 
 // Nightshift — 夜間バッチモード
 
