@@ -123,7 +123,13 @@ try {
 }
 
 // Create bot instance
-const bot = new Bot(TELEGRAM_TOKEN);
+const bot = new Bot(TELEGRAM_TOKEN, {
+  client: {
+    // Increase timeout for large file uploads (FLUX PNG 1-3MB)
+    // Default is too short and causes SIGTERM during /edit uploads
+    timeoutSeconds: 300,
+  },
+});
 
 // Sequentialize non-command messages per user (prevents race conditions)
 // Commands bypass sequentialization so they work immediately
