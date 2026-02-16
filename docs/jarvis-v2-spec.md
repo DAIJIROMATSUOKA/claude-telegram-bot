@@ -57,7 +57,7 @@ DJ → Telegram → Jarvis🤖（今のまま）
 
 ### 6.1 🦞がタスクを投げる（claude.ai上）
 ```bash
-bash exec.sh --fire "cd ~/claude-telegram-bot && claude -p 'ここにタスク指示書'"
+bash exec.sh --fire "cd ~/claude-telegram-bot && nohup claude -p --dangerously-skip-permissions 'ここにタスク指示書' > /tmp/claude-code-output.log 2>&1 & echo SPAWNED"
 ```
 
 ### 6.2 Claude Codeが自律実行
@@ -183,3 +183,26 @@ claude /sandbox
 3. 完了時にDJのTelegramに結果通知が届く
 4. 🦞のセッションが死んでもタスクは完走する
 5. Jarvisの既存機能（/debate, /imagine等）に影響なし
+
+
+## 13. E2Eテスト結果（2026-02-16）
+
+### 成功パターン（確定）
+```
+bash exec.sh --fire "cd ~/claude-telegram-bot && nohup claude -p --dangerously-skip-permissions 'タスク' > /tmp/claude-code-output.log 2>&1 & echo SPAWNED"
+```
+
+### 失敗パターンと修正
+| 問題 | 原因 | 修正 |
+|------|------|------|
+| claude -p がハング | パーミッション確認（非対話環境） | --dangerously-skip-permissions |
+| PollerがSIGTERM | claude -pがメモリ食い→macOSがPoller殺す | nohup ... & で独立プロセス化 |
+| stuckタスクがrunningのまま | Gateway Cleanup日付フォーマット不一致 | 要修正（ISO vs SQLite） |
+
+### 確認済みフロー
+1. exec bridge --fire → Poller即完了（nohup spawn）
+2. nohup claude -p → 独立プロセスで自律実行
+3. Claude Code → git log実行 → 正しい結果
+4. Stop hook → croppy-done.sh → Telegram直接通知
+5. auto-handoff.py → セッション保存
+6. Poller watchdog → SIGTERM後の自動復旧（3回確認）
