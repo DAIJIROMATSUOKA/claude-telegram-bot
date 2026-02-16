@@ -33,6 +33,7 @@ Bug Fixes Applied (2026-02-07):
 import argparse
 import json
 import os
+import signal
 import subprocess
 import sys
 import time
@@ -40,6 +41,24 @@ import uuid
 import urllib.request
 import urllib.parse
 from pathlib import Path
+
+# ---------------------------------------------------------------------------
+# SIGTERM / SIGINT graceful shutdown
+# ---------------------------------------------------------------------------
+_shutting_down = False
+
+def _sigterm_handler(signum, frame):
+    global _shutting_down
+    _shutting_down = True
+    print(f"\n[ai-media] SIGTERM received, cleaning up...", file=sys.stderr, flush=True)
+    try:
+        comfyui_free_memory()
+    except Exception as e:
+        print(f"[ai-media] Cleanup failed: {e}", file=sys.stderr, flush=True)
+    sys.exit(143)  # 128 + 15 (SIGTERM)
+
+signal.signal(signal.SIGTERM, _sigterm_handler)
+signal.signal(signal.SIGINT, _sigterm_handler)
 
 # ---------------------------------------------------------------------------
 # Config
@@ -688,13 +707,17 @@ def cmd_edit(args):
         if out_path:
             import shutil
             shutil.move(out_path, output)
-            comfyui_free_memory()
             return {"ok": True, "path": output, "elapsed": round(elapsed, 1)}
 
         return {"ok": False, "error": "Could not retrieve image from ComfyUI", "elapsed": round(elapsed, 1)}
 
     except Exception as e:
         return {"ok": False, "error": str(e)}
+    finally:
+        try:
+            comfyui_free_memory()
+        except Exception:
+            pass
 
 
 def build_flux_img2img_workflow(image_name: str, prompt: str, steps: int = 20,
@@ -1275,13 +1298,17 @@ def cmd_edit_fill(args):
         if out_path:
             import shutil
             shutil.move(out_path, output)
-            comfyui_free_memory()
             return {"ok": True, "path": output, "elapsed": round(elapsed, 1)}
 
         return {"ok": False, "error": "Could not retrieve image from ComfyUI", "elapsed": round(elapsed, 1)}
 
     except Exception as e:
         return {"ok": False, "error": str(e)}
+    finally:
+        try:
+            comfyui_free_memory()
+        except Exception:
+            pass
 
 
 # ===========================================================================
@@ -1403,13 +1430,17 @@ def cmd_undress_fill(args):
         if out_path:
             import shutil
             shutil.move(out_path, output)
-            comfyui_free_memory()
             return {"ok": True, "path": output, "elapsed": round(elapsed, 1)}
 
         return {"ok": False, "error": "Could not retrieve image from ComfyUI", "elapsed": round(elapsed, 1)}
 
     except Exception as e:
         return {"ok": False, "error": str(e)}
+    finally:
+        try:
+            comfyui_free_memory()
+        except Exception:
+            pass
 
 
 # ===========================================================================
@@ -1572,13 +1603,17 @@ def cmd_undress(args):
         if out_path:
             import shutil
             shutil.move(out_path, output)
-            comfyui_free_memory()
             return {"ok": True, "path": output, "elapsed": round(elapsed, 1)}
 
         return {"ok": False, "error": "Could not retrieve image from ComfyUI", "elapsed": round(elapsed, 1)}
 
     except Exception as e:
         return {"ok": False, "error": str(e)}
+    finally:
+        try:
+            comfyui_free_memory()
+        except Exception:
+            pass
 
 
 # ===========================================================================
@@ -1750,13 +1785,17 @@ def cmd_outpaint(args):
                 print(f"[ai-media] Post-blend skipped: {blend_err}", file=sys.stderr)
 
             shutil.move(out_path, output)
-            comfyui_free_memory()
             return {"ok": True, "path": output, "elapsed": round(elapsed, 1)}
 
         return {"ok": False, "error": "Could not retrieve image from ComfyUI", "elapsed": round(elapsed, 1)}
 
     except Exception as e:
         return {"ok": False, "error": str(e)}
+    finally:
+        try:
+            comfyui_free_memory()
+        except Exception:
+            pass
 
 
 def prepare_outpaint_images(image_path: str, direction: str, expand_pixels: int,
@@ -2173,13 +2212,17 @@ def cmd_edit_kontext(args):
         if out_path:
             import shutil
             shutil.move(out_path, output)
-            comfyui_free_memory()
             return {"ok": True, "path": output, "elapsed": round(elapsed, 1)}
 
         return {"ok": False, "error": "Could not retrieve image from ComfyUI", "elapsed": round(elapsed, 1)}
 
     except Exception as e:
         return {"ok": False, "error": str(e)}
+    finally:
+        try:
+            comfyui_free_memory()
+        except Exception:
+            pass
 
 
 def build_flux_kontext_workflow(image_name: str, prompt: str, steps: int = 20,
@@ -2407,6 +2450,11 @@ def cmd_animate(args):
     except Exception as e:
         elapsed = time.time() - t0
         return {"ok": False, "error": str(e), "elapsed": round(elapsed, 1)}
+    finally:
+        try:
+            comfyui_free_memory()
+        except Exception:
+            pass
 
     elapsed = time.time() - t0
 
@@ -2436,7 +2484,6 @@ def cmd_animate(args):
         shutil.move(final_output, output)
         final_output = output
 
-    comfyui_free_memory()
     return {"ok": True, "path": final_output, "elapsed": round(elapsed, 1)}
 
 
@@ -2545,7 +2592,7 @@ def comfyui_queue_and_wait(workflow: dict, timeout: int = 2400) -> list:
     client_id = str(uuid.uuid4())
 
     ws = websocket.WebSocket()
-    ws.settimeout(timeout)
+    ws.settimeout(30)  # Fix 4: short timeout for SIGTERM responsiveness + keep-alive
     ws_url = COMFYUI_URL.replace("http://", "ws://").replace("https://", "wss://")
     ws.connect(f"{ws_url}/ws?clientId={client_id}")
 
@@ -2566,6 +2613,10 @@ def comfyui_queue_and_wait(workflow: dict, timeout: int = 2400) -> list:
     prompt_id = result["prompt_id"]
     print(f"[ai-media] Queued prompt: {prompt_id}", file=sys.stderr)
 
+    # Fix 3: keep-alive output to prevent Node.js activity timeout
+    KEEPALIVE_INTERVAL = 30
+    last_keepalive = time.time()
+
     start = time.time()
     while time.time() - start < timeout:
         try:
@@ -2577,7 +2628,11 @@ def comfyui_queue_and_wait(workflow: dict, timeout: int = 2400) -> list:
                 if msg_type == "progress":
                     d = data.get("data", {})
                     pct = d.get("value", 0) / max(d.get("max", 1), 1) * 100
-                    print(f"\r[ai-media] Progress: {pct:.0f}%", end="", file=sys.stderr, flush=True)
+                    # Fix 2: 10%刻みで改行付き出力（Node.js stderrバッファ確実フラッシュ）
+                    if int(pct) % 10 == 0:
+                        print(f"[ai-media] Progress: {pct:.0f}%", file=sys.stderr, flush=True)
+                    else:
+                        print(f"\r[ai-media] Progress: {pct:.0f}%", end="", file=sys.stderr, flush=True)
 
                 elif msg_type == "status":
                     # Heartbeat: keep activity timeout alive during model loading
@@ -2601,6 +2656,13 @@ def comfyui_queue_and_wait(workflow: dict, timeout: int = 2400) -> list:
                         ws.close()
                         raise Exception(f"Execution error: {d.get('exception_message', 'unknown')}")
         except websocket.WebSocketTimeoutException:
+            # Fix 3: keep-alive output during silent periods (model loading, VAE decode)
+            now = time.time()
+            if now - last_keepalive >= KEEPALIVE_INTERVAL:
+                elapsed_min = (now - start) / 60
+                print(f"[ai-media] Waiting for ComfyUI... ({elapsed_min:.1f}min elapsed)",
+                      file=sys.stderr, flush=True)
+                last_keepalive = now
             continue
 
     ws.close()
