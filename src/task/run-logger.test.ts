@@ -178,9 +178,9 @@ describe("listRecentRuns", () => {
     expect(listRuns.length).toBe(3);
 
     // Should be sorted newest first (reverse alphabetical by runId)
-    expect(listRuns[0].plan_id).toBe("LIST-003");
-    expect(listRuns[1].plan_id).toBe("LIST-002");
-    expect(listRuns[2].plan_id).toBe("LIST-001");
+    expect(listRuns[0]!.plan_id).toBe("LIST-003");
+    expect(listRuns[1]!.plan_id).toBe("LIST-002");
+    expect(listRuns[2]!.plan_id).toBe("LIST-001");
   });
 
   test("respects limit parameter", () => {
@@ -212,11 +212,11 @@ describe("readRunEvents", () => {
     const events = readRunEvents(logger.runId);
 
     expect(events).toHaveLength(4);
-    expect(events[0].event).toBe("run_start");
-    expect(events[1].event).toBe("task_start");
-    expect(events[2].event).toBe("task_done");
-    expect(events[3].event).toBe("run_complete");
-    expect(events[0].run_id).toBe(logger.runId);
+    expect(events[0]!.event).toBe("run_start");
+    expect(events[1]!.event).toBe("task_start");
+    expect(events[2]!.event).toBe("task_done");
+    expect(events[3]!.event).toBe("run_complete");
+    expect(events[0]!.run_id).toBe(logger.runId);
   });
 
   test("returns empty array for nonexistent runId", () => {
@@ -297,8 +297,8 @@ describe("logEvent edge cases", () => {
 
     const events = readRunEvents(logger.runId);
     expect(events).toHaveLength(1);
-    expect(events[0].data.stdout).toBe(largeStdout);
-    expect((events[0].data.stdout as string).length).toBe(1000);
+    expect(events[0]!.data.stdout).toBe(largeStdout);
+    expect((events[0]!.data.stdout as string).length).toBe(1000);
   });
 
   test("handles 10 consecutive events", () => {
@@ -312,9 +312,9 @@ describe("logEvent edge cases", () => {
     expect(events).toHaveLength(10);
 
     for (let i = 0; i < 10; i++) {
-      expect(events[i].event).toBe("task_start");
-      expect(events[i].data.task_id).toBe(`T-${i}`);
-      expect(events[i].data.index).toBe(i);
+      expect(events[i]!.event).toBe("task_start");
+      expect(events[i]!.data.task_id).toBe(`T-${i}`);
+      expect(events[i]!.data.index).toBe(i);
     }
   });
 });
@@ -407,11 +407,11 @@ describe("logEvent: multiple consecutive events", () => {
 
     // 全件取得できる
     expect(events).toHaveLength(5);
-    expect(events[0].event).toBe("run_start");
-    expect(events[1].event).toBe("task_start");
-    expect(events[2].event).toBe("task_exec_done");
-    expect(events[3].event).toBe("task_validation");
-    expect(events[4].event).toBe("task_done");
+    expect(events[0]!.event).toBe("run_start");
+    expect(events[1]!.event).toBe("task_start");
+    expect(events[2]!.event).toBe("task_exec_done");
+    expect(events[3]!.event).toBe("task_validation");
+    expect(events[4]!.event).toBe("task_done");
 
     // 全イベントが同じrun_idを持つ
     for (const event of events) {
@@ -472,9 +472,9 @@ describe("writeSummary: JSON parsing", () => {
 
     // task_resultsの構造も正しい
     expect(parsed!.task_results).toHaveLength(2);
-    expect(parsed!.task_results[0].task_id).toBe("T-1");
-    expect(parsed!.task_results[0].changed_files).toEqual(["src/a.ts", "src/b.ts"]);
-    expect(parsed!.task_results[1].task_id).toBe("T-2");
-    expect(parsed!.task_results[1].violations).toEqual(["test_failure"]);
+    expect(parsed!.task_results[0]!.task_id).toBe("T-1");
+    expect(parsed!.task_results[0]!.changed_files).toEqual(["src/a.ts", "src/b.ts"]);
+    expect(parsed!.task_results[1]!.task_id).toBe("T-2");
+    expect(parsed!.task_results[1]!.violations).toEqual(["test_failure"]);
   });
 });
