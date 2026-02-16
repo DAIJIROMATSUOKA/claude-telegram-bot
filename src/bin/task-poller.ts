@@ -5,7 +5,7 @@
  * Design (ChatGPT-reviewed, CONVERGED):
  * - Lockfile with PID + timestamp + token (prevents dual startup)
  * - Safe-mode: consecutive failures -> exit(0) (launchd won't restart)
- * - SIGTERM handler: cleanup -> exit(0) (graceful stop)
+ * - SIGTERM handler: cleanup -> exit(143) (launchd restarts)
  * - Crash: exit(1) -> launchd restarts (KeepAlive SuccessfulExit=false)
  * - AbortController on all fetch calls
  */
@@ -262,7 +262,9 @@ async function main(): Promise<void> {
     log(`Received ${signal}. Shutting down gracefully.`);
     running = false;
     releaseLock();
-    process.exit(0); // Graceful = don't restart
+    // SIGTERM (OS/memory pressure) -> exit(143) -> launchd restarts
+    // SIGINT (manual Ctrl+C) -> exit(0) -> launchd won't restart
+    process.exit(signal === 'SIGTERM' ? 143 : 0);
   };
   process.on('SIGTERM', () => shutdown('SIGTERM'));
   process.on('SIGINT', () => shutdown('SIGINT'));
