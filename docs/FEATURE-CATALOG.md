@@ -43,3 +43,27 @@ EmergencyStop -> touch /tmp/croppy-stop
 - Stop Self-Validation: コード変更時にbun test+BANNEDチェック自動実行 → 失敗ならClaudeに修正を強制(max 3回)
 - Master-Clone委譲: CLAUDE.mdに方針記述 → Claude Codeが自分でTask/Exploreに動的委譲(specialist定義不要)
 - Phase 5 (exec bridge廃止) はDEFERRED
+
+
+## Poller Watchdog (3-layer) (2026-02-16)
+- Status: DEPLOYED + self-bootstrap verified
+- Layer1: SIGTERM exit(143) -> launchd auto-restart
+- Layer2: heartbeat (/tmp/poller-heartbeat) written every poll cycle
+- Layer3: com.jarvis.poller-watchdog (LaunchAgent, 60s) checks freshness+process -> auto-restart+Telegram
+- Coverage: SIGTERM/plist unload/process hang/Gateway unreachable/watchdog death
+- Spec: docs/poller-watchdog-spec.md
+- Commits: 107cb88, 534363b
+
+## Claude Code Hooks (2026-02-16)
+- Status: DEPLOYED
+- Config: .claude/settings.json (project-level)
+- SessionStart -> croppy-start.sh (autokick ARM)
+- Stop -> auto-handoff.py (Journal) + croppy-done.sh (Telegram)
+- PreCompact -> pre-compact.sh (transcript backup)
+- Commit: d419fe1
+
+## Gateway Cleanup Endpoint (2026-02-16)
+- Status: DEPLOYED
+- API: POST /v1/exec/cleanup {stuck_minutes?, purge_hours?}
+- running>10min -> pending, done>24h -> delete
+- Worker Version: 5c92fe60
