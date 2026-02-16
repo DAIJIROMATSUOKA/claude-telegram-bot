@@ -245,6 +245,8 @@ async function pollAndExecute(): Promise<void> {
     }
   } finally {
     isExecuting = false;
+    // Heartbeat: prove to watchdog cron that poller is alive
+    try { writeFileSync("/tmp/poller-heartbeat", String(Date.now())); } catch {}
   }
 }
 
