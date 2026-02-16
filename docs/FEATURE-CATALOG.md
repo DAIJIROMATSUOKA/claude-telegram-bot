@@ -1,7 +1,7 @@
 /debate -> council.ts
 /ai {claude|gemini|gpt|end|status} -> ai-session.ts, session-bridge.ts
 /imagine -> mflux (Z-Image-Turbo 8bit)
-/edit -> ComfyUI+FLUX.1Dev Q5 GGUF
+/edit -> ComfyUI+FLUX Kontext Dev Q5 GGUF (default), --engine dev|fill selectable
 /outpaint -> ComfyUI+FLUX.1Dev
 /animate -> Wan2.2 TI2V-5B
 Orchestrator -> orchestrate.ts, 6layer safety, 6/6 stable, TaskPlan JSON->autonomous exec
