@@ -2,6 +2,12 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## 📝 Auto Memory (Claude Code自動記憶)
+@/Users/daijiromatsuokam1/.claude/projects/-Users-daijiromatsuokam1-claude-telegram-bot/memory/architecture.md
+@/Users/daijiromatsuokam1/.claude/projects/-Users-daijiromatsuokam1-claude-telegram-bot/memory/lessons.md
+@/Users/daijiromatsuokam1/.claude/projects/-Users-daijiromatsuokam1-claude-telegram-bot/memory/task-state.md
+
+
 ---
 
 ## 🚨 絶対ルール
