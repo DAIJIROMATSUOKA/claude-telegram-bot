@@ -51,3 +51,4 @@ __pycache__/
 # ML models (large binaries)
 models/
 .claude/settings.local.json
+.claude/*.local.md
