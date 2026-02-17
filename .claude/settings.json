@@ -27,6 +27,10 @@
           {
             "type": "command",
             "command": "bash /Users/daijiromatsuokam1/claude-telegram-bot/scripts/croppy-done.sh"
+          },
+          {
+            "type": "prompt",
+            "prompt": "Check if this session modified source code (*.ts files). If yes, verify: (1) Were tests run? Look for test output in the conversation. (2) Was restart-bot.sh mentioned or run? If BOTH are missing and code was changed, respond with {\"decision\": \"block\", \"reason\": \"⚠️ コード変更後チェックリスト: bun test を実行してください。本番反映が必要なら scripts/restart-bot.sh も実行してください。\"}. If tests were run OR no code was changed, respond with {\"decision\": \"approve\"}."
           }
         ]
       }
@@ -38,6 +42,17 @@
           {
             "type": "command",
             "command": "bash /Users/daijiromatsuokam1/claude-telegram-bot/scripts/pre-compact.sh"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash /Users/daijiromatsuokam1/claude-telegram-bot/scripts/typecheck-hook.sh"
           }
         ]
       }
