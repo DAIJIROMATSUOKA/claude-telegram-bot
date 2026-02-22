@@ -95,3 +95,26 @@ CroppyLoop(PlanD) -> M1.md状態永続化+Auto-Kick復帰、🦞自律spawn→�
 - **安全装置:** /tmp/croppy-stop(即停止)、MAX_RETRIES:3(同一ステップ3回失敗→FAILED)、MAX_STEPS:10、TIMEOUT:60min/step、STATUS:WAITING(DJ判断待ち)
 - **変更不要（既存活用）:** exec bridge, Auto-Kick Watchdog, M1.md, Claude Code nohupパターン, /tmp/croppy-stop
 - **却下案:** A(exec bridgeのみ→復帰不可), B(M1オーケストレータ→🦞品質管理喪失), C(ワンショット→検証不可)
+
+## iPhone Remote (Tailscale SSH) (2026-02-22)
+- **状態:** 仕様書完了、DJ手動セットアップ待ち
+- **仕様書:** docs/iphone-remote-spec.md
+- **構成:** Tailscale SSH + Termius スニペット
+- **位置づけ:** Poller/Watchdog全滅時の最終保険。日常運用ではない
+- **ディベート:** VNC却下(モバイル非実用的)、超軽量Bot却下(複雑性増大)
+
+## Croppy Dispatch Commands (scripts/croppy-dispatch.sh)
+| コマンド | 用途 | テスト |
+|---------|------|--------|
+| `/alarm` | iPhoneアラーム | ✅ |
+| `/timer` | タスク時間計測 | ✅ |
+| `/status` | システム状態 | ✅ |
+| `/git` | Git操作 | ✅ |
+| `/restart` | Bot再起動 | ✅ |
+| `/gpt` | ChatGPTに質問 | ⚠️ Pro制限中 |
+| `/gem` | Geminiに質問 | ✅ |
+| `/debate` | 3AI評議会 | 未テスト（/gptが制限中） |
+| `/todoist` | タスク管理(list/add/done/reschedule) | ✅ v1 API |
+| `/help` | 一覧表示 | ✅ |
+
+メモリ1枠、コマンド10個。追加はM1の`scripts/croppy-dispatch.sh`にcase足すだけ。

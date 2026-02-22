@@ -256,8 +256,15 @@ cmd_todoist() {
         -H "Authorization: Bearer $token" > /tmp/todoist-resp.json
       python3 "$SCRIPT_DIR/todoist-parse.py" 2>/dev/null || echo 'Todoist取得失敗'
       ;;
+    reschedule)
+      local target_date="$rest"
+      if [ -z "$target_date" ]; then
+        target_date=$(date -j -v+7d '+%Y-%m-%d')
+      fi
+      python3 "$SCRIPT_DIR/todoist-reschedule.py" "$target_date"
+      ;;
     *)
-      echo "使い方: /todoist [list|add タスク|done タスクID]"
+      echo "使い方: /todoist [list|add|done|reschedule [YYYY-MM-DD]]"
       ;;
   esac
 }
@@ -283,7 +290,7 @@ case "$CMD" in
     echo "/gpt     質問              — ChatGPTに質問"
     echo "/gem     質問              — Geminiに質問"
     echo "/debate  議題              — 3AI評議会"
-    echo "/todoist [list|add|done]   — Todoist管理"
+    echo "/todoist [list|add|done|reschedule]   — Todoist管理"
     ;;
   *)
     echo "❌ Unknown command: $CMD"
