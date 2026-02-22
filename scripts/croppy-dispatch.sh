@@ -26,7 +26,7 @@ todoist_token() {
 # === /alarm — iPhoneアラーム設定 ===
 cmd_alarm() {
   local input="$1"
-  input=$(echo "$input" | perl -pe 's/([０-９])/chr(ord($1)-0xFEE0)/ge; s/：/:/g')
+  input=$(echo "$input" | perl -Mutf8 -CS -pe 's/([０-９])/chr(ord($1)-0xFEE0)/ge; s/：/:/g')
 
   local time="" label=""
 
