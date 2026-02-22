@@ -17,6 +17,7 @@ export {
   handleTodoist,
   handleAlarm,
   handleRecall,
+  handleCroppyDispatch,
 } from "./commands";
 export { handleText } from "./text";
 export { handleDocument } from "./document";
