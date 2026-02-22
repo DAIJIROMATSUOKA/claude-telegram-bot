@@ -40,7 +40,8 @@ import {
   handleFocus,
   handleTodoist,
   handleAlarm,
-  handleRecall } from "./handlers";
+  handleRecall,
+  handleCroppyDispatch } from "./handlers";
 import {
   handleDebate,
   handleAskGPT,
@@ -213,6 +214,9 @@ bot.command("code", handleCode);
 // Autopilot — 自動タスク実行エンジン
 
 registerMediaCommands(bot);
+bot.command("timer", handleCroppyDispatch);
+bot.command("git", handleCroppyDispatch);
+bot.command("help", handleCroppyDispatch);
 bot.on("message:text", handleText);
 
 // Voice messages

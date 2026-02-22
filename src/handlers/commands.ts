@@ -966,3 +966,47 @@ function truncate(s: string, max: number): string {
 function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
+
+/**
+ * Generic handler for croppy-dispatch.sh commands (/timer, /git, /help).
+ * Routes Telegram slash commands to the dispatch script, preventing
+ * fallthrough to the AI text handler (dual-response bug).
+ */
+export async function handleCroppyDispatch(ctx: Context): Promise<void> {
+  const userId = ctx.from?.id;
+  if (!isAuthorized(userId, ALLOWED_USERS)) {
+    await ctx.reply("Unauthorized.");
+    return;
+  }
+
+  const text = (ctx.message?.text || "").trim();
+  if (!text) return;
+
+  try {
+    const { exec } = await import("child_process");
+    const { promisify } = await import("util");
+    const execAsync = promisify(exec);
+
+    const { stdout, stderr } = await execAsync(
+      `bash scripts/croppy-dispatch.sh ${JSON.stringify(text)}`,
+      {
+        cwd: process.env.REPO_DIR || "/Users/daijiromatsuokam1/claude-telegram-bot",
+        timeout: 30_000,
+        env: {
+          ...process.env,
+          PATH: `/opt/homebrew/bin:/usr/local/bin:${process.env.PATH}`,
+        },
+      }
+    );
+
+    const output = (stdout || "").trim() || (stderr || "").trim() || "（出力なし）";
+    // Split long output for Telegram 4096 char limit
+    const chunks = output.match(/[\s\S]{1,4000}/g) || [output];
+    for (const chunk of chunks) {
+      await ctx.reply(chunk);
+    }
+  } catch (error: any) {
+    const errMsg = error?.stderr || error?.message || String(error);
+    await ctx.reply(`❌ Dispatch error: ${errMsg.slice(0, 500)}`);
+  }
+}
