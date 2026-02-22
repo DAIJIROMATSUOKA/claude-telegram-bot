@@ -506,6 +506,7 @@ export async function handleTaskPause(ctx: Context): Promise<void> {
  *   /todoist              → Show today's tasks
  *   /todoist add タスク名  → Add a new task (due today)
  *   /todoist done タスクID → Complete a task
+ *   /todoist reschedule [YYYY-MM-DD] → Move all overdue tasks to date (default: +7 days)
  */
 export async function handleTodoist(ctx: Context): Promise<void> {
   const userId = ctx.from?.id;
@@ -543,7 +544,7 @@ export async function handleTodoist(ctx: Context): Promise<void> {
     }
 
     try {
-      const res = await fetch("https://api.todoist.com/rest/v2/tasks", {
+      const res = await fetch("https://api.todoist.com/api/v1/tasks", {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${apiToken}`,
@@ -571,7 +572,7 @@ export async function handleTodoist(ctx: Context): Promise<void> {
     }
 
     try {
-      const res = await fetch(`https://api.todoist.com/rest/v2/tasks/${taskId}/close`, {
+      const res = await fetch(`https://api.todoist.com/api/v1/tasks/${taskId}/close`, {
         method: "POST",
         headers: { "Authorization": `Bearer ${apiToken}` },
       });
@@ -582,15 +583,96 @@ export async function handleTodoist(ctx: Context): Promise<void> {
       await ctx.reply(`❌ タスク完了失敗: ${e.message}`);
     }
 
-  } else {
+  } else if (subcommand === "reschedule") {
+    // Reschedule all overdue tasks to a target date (default: 1 week from today)
+    const dateArg = args.replace(/^reschedule\s*/, "").trim();
+    let targetDate: string;
+    let targetLabel: string;
+
+    if (dateArg && /^\d{4}-\d{2}-\d{2}$/.test(dateArg)) {
+      targetDate = dateArg;
+      targetLabel = dateArg;
+    } else {
+      const d = new Date();
+      d.setDate(d.getDate() + 7);
+      targetDate = d.toISOString().slice(0, 10);
+      targetLabel = `${targetDate}` + "(\uFF0B1\u9031\u9593)";
+    }
+
+    await ctx.reply("\u23F3 Overdue \u30BF\u30B9\u30AF\u3092 " + targetLabel + " \u306B\u79FB\u52D5\u4E2D...");
+
+    try {
+      // Collect all overdue tasks with pagination
+      const allTasks: Array<{ id: string; content: string; due?: { date?: string } }> = [];
+      let cursor: string | null = null;
+      const apiBase = "https://api.todoist.com/api/v1";
+
+      do {
+        const params = new URLSearchParams({ query: "overdue" });
+        if (cursor) params.set("cursor", cursor);
+        const r = await fetch(`${apiBase}/tasks/filter?${params}`, {
+          headers: { "Authorization": `Bearer ${apiToken}` },
+        });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const data = await r.json() as any;
+        allTasks.push(...(data.results || []));
+        cursor = data.next_cursor || null;
+      } while (cursor);
+
+      if (allTasks.length === 0) {
+        await ctx.reply("\u2705 Overdue\u30BF\u30B9\u30AF\u306A\u3057");
+        return;
+      }
+
+      let updated = 0;
+      let errors = 0;
+
+      for (const t of allTasks) {
+        const dueStr = t.due?.date || "";
+        const hasTime = dueStr.includes("T");
+        let payload: Record<string, string>;
+
+        if (hasTime) {
+          const timePart = dueStr.split("T")[1] || "00:00:00Z";
+          payload = { due_datetime: `${targetDate}T${timePart}` };
+        } else {
+          payload = { due_date: targetDate };
+        }
+
+        try {
+          const r = await fetch(`${apiBase}/tasks/${t.id}`, {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${apiToken}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(payload),
+          });
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          updated++;
+        } catch {
+          errors++;
+        }
+      }
+
+      const lines = ["\u2705 Reschedule\u5B8C\u4E86: " + updated + "/" + allTasks.length + "\u4EF6 \u2192 " + targetLabel];
+      if (errors > 0) lines.push("\u26A0\uFE0F " + errors + "\u4EF6\u30A8\u30E9\u30FC");
+      await ctx.reply(lines.join("\n"));
+    } catch (e: any) {
+      await ctx.reply("\u274C Reschedule\u5931\u6557: " + e.message);
+    }
+
+    } else {
     // List today's tasks (default)
     try {
-      const res = await fetch("https://api.todoist.com/rest/v2/tasks?filter=today", {
+      const res = await fetch("https://api.todoist.com/api/v1/tasks/filter?query=today", {
         headers: { "Authorization": `Bearer ${apiToken}` },
       });
 
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const tasks = await res.json() as Array<{ id: string; content: string; priority: number; due?: { datetime?: string } }>;
+      const raw = await res.json() as any;
+      const tasks: Array<{ id: string; content: string; priority: number; due?: { date?: string; datetime?: string } }> =
+        Array.isArray(raw) ? raw : (raw.results || []);
 
       if (tasks.length === 0) {
         await ctx.reply("📋 今日のタスクはない");
