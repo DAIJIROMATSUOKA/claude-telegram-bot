@@ -329,8 +329,21 @@ export async function handleImagine(ctx: Context): Promise<void> {
   const statusMsg = await ctx.reply("🎨 画像生成中... (Z-Image-Turbo, ~2-3分)");
 
   try {
+    // Extract optional flags
+    let cleanPrompt = prompt;
+    const genArgs = ["generate"];
+
+    // --steps N
+    const stepsMatch = cleanPrompt.match(/--steps\s+(\d+)/);
+    if (stepsMatch?.[1]) {
+      genArgs.push("--steps", stepsMatch[1]);
+      cleanPrompt = cleanPrompt.replace(/--steps\s+\d+/, "").trim();
+    }
+
+    genArgs.push("--prompt", cleanPrompt);
+
     const result = await withMediaQueue(() => runAiMedia(
-      ["generate", "--prompt", prompt],
+      genArgs,
       { timeout: TIMEOUT_IMAGE }
     ));
 
@@ -449,6 +462,13 @@ export async function handleEdit(ctx: Context): Promise<void> {
     // Extract optional flags from prompt
     let cleanPrompt = prompt;
     const editArgs = ["edit", "--image", imagePath];
+
+    // --steps N (sampling steps, default 15)
+    const stepsMatch = cleanPrompt.match(/--steps\s+(\d+)/);
+    if (stepsMatch?.[1]) {
+      editArgs.push("--steps", stepsMatch[1]);
+      cleanPrompt = cleanPrompt.replace(/--steps\s+\d+/, "").trim();
+    }
 
     // --denoise N
     const denoiseMatch = cleanPrompt.match(/--denoise\s+([\d.]+)/);
@@ -649,6 +669,13 @@ export async function handleOutpaint(ctx: Context): Promise<void> {
 
     let cleanPrompt = prompt;
     const outpaintArgs = ["outpaint", "--image", imagePath];
+
+    // --steps N (sampling steps, default 25)
+    const stepsMatch = cleanPrompt.match(/--steps\s+(\d+)/);
+    if (stepsMatch?.[1]) {
+      outpaintArgs.push("--steps", stepsMatch[1]);
+      cleanPrompt = cleanPrompt.replace(/--steps\s+\d+/, "").trim();
+    }
 
     // --direction
     const dirMatch = cleanPrompt.match(/--direction\s+(bottom|top|left|right)/);
