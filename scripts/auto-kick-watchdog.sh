@@ -58,6 +58,19 @@ APPLESCRIPT
     echo "[$(date '+%H:%M:%S')] STOPPED detected ($stopped_count/$STOPPED_THRESHOLD)" >> "$LOG"
 
     if [ "$stopped_count" -ge "$STOPPED_THRESHOLD" ]; then
+      # --- M1_STATUS_CHECK: skip kick if task is DONE/IDLE ---
+      M1_STATE_FILE="/Users/daijiromatsuokam1/claude-telegram-bot/autonomous/state/M1.md"
+      if [ -f "$M1_STATE_FILE" ]; then
+        M1_STATUS=$(head -1 "$M1_STATE_FILE" | grep -oE '(DONE|IDLE)')
+        if [ -n "$M1_STATUS" ]; then
+          echo "[$(date '+%H:%M:%S')] M1 STATUS= - auto-disarming (no work to do)" >> "$LOG"
+          rm -f "$ARMED_FLAG"
+          stopped_count=0
+          sleep "$CHECK_INTERVAL"
+          continue
+        fi
+      fi
+      # --- END M1_STATUS_CHECK ---
       echo "[$(date '+%H:%M:%S')] KICKING" >> "$LOG"
 
       KICK_RESULT=$(osascript << 'APPLESCRIPT' 2>/dev/null
