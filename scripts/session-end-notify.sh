@@ -6,6 +6,18 @@
 INPUT=$(cat)
 REASON=$(echo "$INPUT" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("reason","unknown"))' 2>/dev/null || echo 'unknown')
 
+# Dedup: skip if notified within 30s
+DEDUP_FILE="/tmp/session-end-notify-last"
+NOW=$(date +%s)
+if [ -f "$DEDUP_FILE" ]; then
+  LAST_TIME=$(cat "$DEDUP_FILE" 2>/dev/null)
+  if [ -n "$LAST_TIME" ] && [ $((NOW - LAST_TIME)) -lt 30 ]; then
+    exit 0
+  fi
+fi
+echo "$NOW" > "$DEDUP_FILE"
+
+
 # Detach completely: nohup + background + redirect
 nohup bash -c '
 sleep 60
