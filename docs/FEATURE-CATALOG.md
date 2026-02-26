@@ -97,7 +97,7 @@ CroppyLoop(PlanD) -> M1.md状態永続化+Auto-Kick復帰、🦞自律spawn→�
 - **却下案:** A(exec bridgeのみ→復帰不可), B(M1オーケストレータ→🦞品質管理喪失), C(ワンショット→検証不可)
 
 ## iPhone Remote (Tailscale SSH) (2026-02-22)
-- **状態:** 仕様書完了、DJ手動セットアップ待ち
+- **状態:** セットアップ完了・動作確認済み
 - **仕様書:** docs/iphone-remote-spec.md
 - **構成:** Tailscale SSH + Termius スニペット
 - **位置づけ:** Poller/Watchdog全滅時の最終保険。日常運用ではない
@@ -118,3 +118,12 @@ CroppyLoop(PlanD) -> M1.md状態永続化+Auto-Kick復帰、🦞自律spawn→�
 | `/help` | 一覧表示 | ✅ |
 
 メモリ1枠、コマンド10個。追加はM1の`scripts/croppy-dispatch.sh`にcase足すだけ。
+
+## X (Twitter) Search Fetcher (2026-02-26)
+- **Status:** DEPLOYED
+- **Script:** scripts/x-fetch.py
+- **Usage:** python3 scripts/x-fetch.py 'search query' [max_tweets]
+- **How:** AppleScript -> Chrome (DJ's logged-in session) -> JS DOM extraction -> auto-close tab
+- **No API keys needed.** Uses existing Premium Plus session. Zero additional cost.
+- **MCP:** chrome-devtools MCP also registered in Claude Code (for future Chrome debug port usage)
+- **Queries tested:** Claude Code OR OpenClaw, Claude Code hooks worktree agent
