@@ -127,3 +127,39 @@ CroppyLoop(PlanD) -> M1.md状態永続化+Auto-Kick復帰、🦞自律spawn→�
 - **No API keys needed.** Uses existing Premium Plus session. Zero additional cost.
 - **MCP:** chrome-devtools MCP also registered in Claude Code (for future Chrome debug port usage)
 - **Queries tested:** Claude Code OR OpenClaw, Claude Code hooks worktree agent
+
+## Scout Agent - 全方位スキャン (2026-02-26)
+- **Status:** DEPLOYED (daily 06:30)
+- **LaunchAgent:** com.jarvis.scout
+- **Scripts:** scripts/scout-agent.sh + scripts/scout-scan.md
+- **Spec:** docs/scout-agent-spec.md
+- **スキャン範囲（全部入り）:**
+  1. コード健康（TypeScript/テストカバレッジ/未使用export/git変更）
+  2. ビジネスデータ（Access DB: 見積書/プロジェクト/受注 via mdb-tools+Python）
+  3. システム監視（ディスク/メモリ/プロセス/Poller/Nightly）
+  4. ドキュメント鮮度（FEATURE-CATALOG/DESIGN-RULES/HANDOFF/croppy-notes）
+  5. 日報サマリ（git/テスト/Journal）
+- **出力:** Telegram通知 + /tmp/jarvis-scout/latest-report.txt
+- **設計:** 各セクション独立実行（1つ失敗しても他は続行）、Claude Code Max 10min timeout
+- **停止:** touch /tmp/jarvis-scout-stop
+- **Commits:** d40f1bf, e1aa052
+
+## Auto-HANDOFF docs/保存 + Dedup (2026-02-26)
+- **Status:** DEPLOYED
+- **Script:** scripts/auto-handoff.py (Stop hook)
+- **改修内容:**
+  - docs/HANDOFF_{date}.md に上書き保存を追加（最新セッションが勝つ）
+  - 2層デデュプ: タイムスタンプ(5秒)チェック + fcntl.flock排他ロック
+  - Agent Teams重複実行を完全防止（以前は毎回2重実行されていた）
+- **Commits:** b55329e, 6b619bc
+
+## Husky pre-commit docs/除外 (2026-02-26)
+- **Status:** DEPLOYED
+- **.husky/pre-commit:** docs/* をBANNEDキーワードチェックから除外
+- **理由:** DESIGN-RULES.mdにAPI_KEY名を記載するとコミット拒否されていた
+- **Commit:** a007c5b
+
+## DESIGN-RULES.md 包括的更新 (2026-02-26)
+- **Status:** 6行→223行に拡充
+- **追加セクション:** 最重要原則/実装ルール/フェーズ分割/exec bridge運用/パッチ適用/プロセス管理/蓄積された教訓/自律ループ/Scout運用
+- **Commit:** 2211641
