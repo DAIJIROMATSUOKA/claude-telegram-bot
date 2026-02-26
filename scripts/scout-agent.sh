@@ -13,7 +13,7 @@ SCAN_PROMPT="$PROJECT_DIR/scripts/scout-scan.md"
 ENV_FILE="$PROJECT_DIR/.env"
 LOG_DIR="/tmp/jarvis-scout"
 STOP_FILE="/tmp/jarvis-scout-stop"
-TASK_TIMEOUT=300  # 5 min max
+TASK_TIMEOUT=600  # 10 min max for full scan
 DRY_RUN=0
 
 [ "${1:-}" = "--dry-run" ] && DRY_RUN=1
@@ -75,7 +75,7 @@ PROMPT=$(cat "$SCAN_PROMPT")
 
 SCAN_OUTPUT=$(timeout "$TASK_TIMEOUT" "$CLAUDE_BIN" \
   -p "$PROMPT" \
-  --max-turns 10 \
+  --max-turns 25 \
   --dangerously-skip-permissions \
   --output-format text \
   < /dev/null 2>>"$LOGFILE" || echo "SCOUT_TIMEOUT")
