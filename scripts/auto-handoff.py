@@ -9,6 +9,7 @@ import os
 import sys
 import subprocess
 import fcntl
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -38,14 +39,25 @@ def run_cmd(cmd, cwd=None):
         return ""
 
 def main():
-    # Dedup lock - prevent concurrent/duplicate execution
+    # Layer 1: Timestamp dedup - skip if ran within last 5 seconds
+    STAMP_FILE = "/tmp/auto-handoff.stamp"
+    try:
+        if os.path.exists(STAMP_FILE):
+            age = time.time() - os.path.getmtime(STAMP_FILE)
+            if age < 5:
+                return  # Another instance just ran
+    except Exception:
+        pass
+
+    # Layer 2: fcntl lock - prevent concurrent execution
     lock_fd = open(LOCK_FILE, "w")
     try:
         fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except OSError:
-        # Another instance running - skip
-        return
+        return  # Another instance running
     try:
+        # Write stamp BEFORE work (prevents second process from starting)
+        Path(STAMP_FILE).touch()
         _run()
     finally:
         fcntl.flock(lock_fd, fcntl.LOCK_UN)
