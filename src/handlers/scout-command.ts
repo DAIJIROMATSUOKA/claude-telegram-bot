@@ -46,7 +46,7 @@ export async function handleScout(ctx: Context): Promise<void> {
       return;
     }
     const lines = actions.map(
-      (a) => `${a.number}️⃣ ${a.label}`
+      (a) => `${a.number}️⃣ ${(a as any).safe ? "🤖" : "👤"} ${a.label}`
     );
     await ctx.reply(
       `🔭 Scout 推奨アクション\n\n${lines.join("\n")}\n\n→ /scout N で実行`

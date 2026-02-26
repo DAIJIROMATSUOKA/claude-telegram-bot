@@ -231,3 +231,25 @@ SCOUT_REPORT_END
 2. テスト実行する？ CMD:cd ~/claude-telegram-bot && bun test 2>&1 | tail -5
 ```
 CMDは自動実行されるので、安全で冪等なコマンドのみ。破壊的操作（rm, reset等）は絶対に含めない。
+
+**SAFE:タグ（Phase 3 自動実行）:**
+各アクションに `SAFE:true` または `SAFE:false` を付与。SAFE:true のアクションはDJ承認なしで自動実行される。
+
+SAFE:true の基準（全て満たすこと）:
+- 読み取り専用（git status, ls, cat, stat, launchctl list等）
+- サービス起動（launchctl load, launchctl kickstart等）
+- 冪等な操作（2回実行しても結果が同じ）
+
+SAFE:false の基準（1つでも該当すれば）:
+- ファイル削除（rm）
+- git reset, git push --force
+- 設定変更、ファイル書き換え
+- 判断が必要なもの
+
+例:
+```
+🎯 推奨アクション
+1. LaunchAgent再ロードする？ CMD:launchctl load ~/Library/LaunchAgents/com.jarvis.task-poller.plist SAFE:true
+2. 不要ファイル削除する？ CMD:rm old-file.txt SAFE:false
+3. テスト実行する？ CMD:cd ~/claude-telegram-bot && bun test 2>&1 | tail -5 SAFE:true
+```
