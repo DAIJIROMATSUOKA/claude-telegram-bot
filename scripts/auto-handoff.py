@@ -3,10 +3,12 @@
 auto-handoff.py - Claude Code Stop hook
 Fires when a Claude Code session ends.
 Generates HANDOFF automatically from Auto Memory + git state.
+Saves to: Journal (Dropbox, append) + docs/HANDOFF (git repo, overwrite)
 """
 import os
 import sys
 import subprocess
+import fcntl
 from datetime import datetime
 from pathlib import Path
 
@@ -16,6 +18,7 @@ MEMORY_DIR = os.path.expanduser("~/.claude/projects/-Users-daijiromatsuokam1-cla
 JOURNAL_DIR = os.path.expanduser("~/Machinelab Dropbox/Matsuoka Daijiro/JARVIS-Journal")
 ENV_FILE = os.path.join(PROJECT_DIR, ".env")
 LOG_FILE = "/tmp/auto-handoff.log"
+LOCK_FILE = "/tmp/auto-handoff.lock"
 
 def log(msg):
     with open(LOG_FILE, "a") as f:
@@ -34,30 +37,21 @@ def run_cmd(cmd, cwd=None):
     except Exception:
         return ""
 
-def send_telegram(msg):
-    env = {}
-    try:
-        for line in Path(ENV_FILE).read_text().splitlines():
-            if "=" in line and not line.startswith("#"):
-                k, v = line.split("=", 1)
-                env[k.strip()] = v.strip().strip('"').strip("'")
-    except Exception:
-        return
-    token = env.get("TELEGRAM_BOT_TOKEN", "")
-    chat_id = env.get("TELEGRAM_ALLOWED_USERS", "")
-    if not token or not chat_id:
-        return
-    try:
-        subprocess.run([
-            "curl", "-s", "-X", "POST",
-            f"https://api.telegram.org/bot{token}/sendMessage",
-            "-d", f"chat_id={chat_id}",
-            "-d", f"text={msg}"
-        ], timeout=10, capture_output=True)
-    except Exception:
-        pass
-
 def main():
+    # Dedup lock - prevent concurrent/duplicate execution
+    lock_fd = open(LOCK_FILE, "w")
+    try:
+        fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        # Another instance running - skip
+        return
+    try:
+        _run()
+    finally:
+        fcntl.flock(lock_fd, fcntl.LOCK_UN)
+        lock_fd.close()
+
+def _run():
     log("Stop hook fired")
     now = datetime.now()
     date_str = now.strftime("%Y-%m-%d")
@@ -126,13 +120,20 @@ def main():
     ]
     handoff = "\n".join(lines)
 
-    # Save to Journal (append - multiple sessions per day)
+    # 1. Save to Journal (Dropbox) - append (multiple sessions per day)
     os.makedirs(JOURNAL_DIR, exist_ok=True)
-    handoff_path = os.path.join(JOURNAL_DIR, f"auto-handoff-{date_str}.md")
-    with open(handoff_path, "a") as f:
+    journal_path = os.path.join(JOURNAL_DIR, f"auto-handoff-{date_str}.md")
+    with open(journal_path, "a") as f:
         f.write(handoff + "\n\n---\n\n")
+    log(f"Journal saved: {journal_path}")
 
-    log(f"HANDOFF saved: {handoff_path}")
+    # 2. Save to docs/ (git repo) - overwrite (latest session wins)
+    docs_dir = os.path.join(PROJECT_DIR, "docs")
+    os.makedirs(docs_dir, exist_ok=True)
+    docs_path = os.path.join(docs_dir, f"HANDOFF_{date_str}.md")
+    with open(docs_path, "w") as f:
+        f.write(handoff + "\n")
+    log(f"docs/ saved: {docs_path}")
 
     # Sync memory -> croppy-notes
     sync_script = os.path.join(PROJECT_DIR, "scripts/memory-sync.sh")
@@ -140,9 +141,6 @@ def main():
         run_cmd(f"bash {sync_script}")
         log("memory-sync executed")
 
-    # Telegram notification - REMOVED (croppy-done.sh handles this)
-    # send_telegram(...)  # disabled to avoid duplicate
-    log("Skipping Telegram - croppy-done.sh handles")
     log("Done")
 
 if __name__ == "__main__":
