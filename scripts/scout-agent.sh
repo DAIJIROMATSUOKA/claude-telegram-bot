@@ -112,4 +112,30 @@ log "Report sent to Telegram"
 # === Save for Phase 2 (future: numbered item dispatch) ===
 echo "$REPORT" > "$LOG_DIR/latest-report.txt"
 
+# === Extract actions to JSON for /scout command ===
+python3 -c "
+import json, re, sys
+report = sys.stdin.read()
+actions = []
+in_actions = False
+for line in report.split('\n'):
+    if '推奨アクション' in line:
+        in_actions = True
+        continue
+    if in_actions and line.strip():
+        # Match: N. label CMD:command
+        m = re.match(r'^\s*(\d+)\.\s+(.+?)\s+CMD:(.+)$', line)
+        if m:
+            actions.append({'number': int(m.group(1)), 'label': m.group(2).strip(), 'command': m.group(3).strip()})
+        else:
+            # Match: N. label (no CMD)
+            m2 = re.match(r'^\s*(\d+)\.\s+(.+)$', line)
+            if m2:
+                actions.append({'number': int(m2.group(1)), 'label': m2.group(2).strip(), 'command': ''})
+            elif not line.startswith(('━', '─', '=')):
+                break  # end of actions section
+json.dump(actions, sys.stdout, ensure_ascii=False, indent=2)
+" <<< "$REPORT" > "$LOG_DIR/actions.json" 2>/dev/null || echo "[]" > "$LOG_DIR/actions.json"
+log "Actions extracted: $(python3 -c 'import json; print(len(json.load(open("'$LOG_DIR'/actions.json"))))' 2>/dev/null || echo 0)"
+
 log "Scout Agent complete"
