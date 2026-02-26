@@ -209,7 +209,7 @@ def cmd_generate(args):
         "--prompt", args.prompt,
         "--width", str(args.width or 1024),
         "--height", str(args.height or 1024),
-        "--steps", str(args.steps or 9),
+        "--steps", str(args.steps),
         "-q", str(args.quantize or 8),
         "--output", output,
     ]
@@ -598,7 +598,7 @@ def cmd_edit(args):
             return {"ok": False, "error": "Failed to upload image to ComfyUI"}
 
         denoise = args.denoise if hasattr(args, 'denoise') and args.denoise is not None else 0.45
-        steps = args.steps or 15
+        steps = args.steps if args.steps is not None else 15
         seed = args.seed if args.seed is not None else int(time.time()) % (2**32)
         lora = args.lora or FLUX_DEV_LORA
         lora_strength = args.lora_strength if hasattr(args, 'lora_strength') and args.lora_strength else FLUX_EDIT_LORA_STRENGTH
@@ -1195,7 +1195,7 @@ def cmd_edit_fill(args):
         if not uploaded_name:
             return {"ok": False, "error": "Failed to upload image to ComfyUI"}
 
-        steps = args.steps or FLUX_FILL_STEPS
+        steps = args.steps if args.steps is not None else FLUX_FILL_STEPS
         seed = args.seed if args.seed is not None else int(time.time()) % (2**32)
         lora = args.lora or FLUX_DEV_LORA
         lora_strength = args.lora_strength if hasattr(args, 'lora_strength') and args.lora_strength else 0.8
@@ -1339,7 +1339,7 @@ def cmd_undress_fill(args):
         if not uploaded_name:
             return {"ok": False, "error": "Failed to upload image to ComfyUI"}
 
-        steps = args.steps or FLUX_FILL_STEPS
+        steps = args.steps if args.steps is not None else FLUX_FILL_STEPS
         seed = args.seed if args.seed is not None else int(time.time()) % (2**32)
 
         # LoRA configuration (optimized for undressing + Fill Dev)
@@ -1500,7 +1500,7 @@ def cmd_undress(args):
         else:
             denoise = 0.80  # default: medium (Web research: 0.8-0.95 = dramatic change zone)
 
-        steps = args.steps or 30  # Web research: Dev 25-30 steps; 30 for better effective steps at partial denoise
+        steps = args.steps  # Web research: Dev 25-30 steps; 30 for better effective steps at partial denoise
         seed = args.seed if args.seed is not None else int(time.time()) % (2**32)
 
         # --- LoRA configuration (optimized for undressing) ---
@@ -2144,7 +2144,7 @@ def cmd_edit_kontext(args):
             return {"ok": False, "error": "Failed to upload image to ComfyUI"}
 
         denoise = args.denoise if hasattr(args, 'denoise') and args.denoise is not None else 0.75
-        steps = args.steps or 20
+        steps = args.steps if args.steps is not None else 20
         seed = args.seed if args.seed is not None else int(time.time()) % (2**32)
         lora = args.lora or FLUX_DEV_LORA
         lora_strength = args.lora_strength if hasattr(args, 'lora_strength') and args.lora_strength else 0.6
@@ -2387,7 +2387,7 @@ def cmd_animate(args):
     output = args.output or os.path.join(WORKING_DIR, f"video_{uuid.uuid4().hex[:8]}.mp4")
 
     frames = args.frames or 33
-    steps = args.steps or 30
+    steps = args.steps
 
     if args.image and os.path.exists(args.image):
         # Image-to-Video — preserve original image size (round to 8-multiple)
@@ -3015,7 +3015,7 @@ def main():
     p_edit.add_argument("--image", required=True)
     p_edit.add_argument("--prompt", required=True)
     p_edit.add_argument("--output", default=None)
-    p_edit.add_argument("--steps", type=int, default=15)
+    p_edit.add_argument("--steps", type=int, default=None)
     p_edit.add_argument("--denoise", type=float, default=None,
                          help="Denoise strength (0.0=no change, 1.0=full regenerate, default 0.85)")
     p_edit.add_argument("--seed", type=int, default=None)

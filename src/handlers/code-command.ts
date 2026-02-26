@@ -7,6 +7,16 @@ import { fileURLToPath } from "url";
 
 const REPO_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
+// Wrap user prompt with subagent delegation guidance for parallelization
+function buildCodePrompt(userPrompt: string): string {
+  return `${userPrompt}
+
+[実行ガイド]
+- 独立した調査・検索はTask toolのsubagentに委譲して並列化せよ
+- 従量課金API使用禁止（CLI経由のみ）
+- 完了時は結果を簡潔に報告`;
+}
+
 export async function handleCode(ctx: Context): Promise<void> {
   if (!isAuthorized(ctx.from?.id, ALLOWED_USERS)) return;
 
@@ -20,8 +30,10 @@ export async function handleCode(ctx: Context): Promise<void> {
 
   await ctx.reply(`🚀 Claude Code starting...\n📋 ${prompt.substring(0, 100)}${prompt.length > 100 ? "..." : ""}`);
 
+  const fullPrompt = buildCodePrompt(prompt);
+
   // Spawn Claude Code as independent process (nohup prevents SIGTERM cascade)
-  const cmd = `cd ${REPO_DIR} && nohup claude -p --dangerously-skip-permissions ${JSON.stringify(prompt)} > /tmp/claude-code-output.log 2>&1 & echo $!`;
+  const cmd = `cd ${REPO_DIR} && nohup claude -p --dangerously-skip-permissions ${JSON.stringify(fullPrompt)} > /tmp/claude-code-output.log 2>&1 & echo $!`;
 
   exec(cmd, { shell: "/bin/zsh", env: { ...process.env, PATH: `/opt/homebrew/bin:${process.env.PATH}` } }, async (err, stdout) => {
     const pid = stdout?.trim();
