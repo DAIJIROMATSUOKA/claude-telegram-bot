@@ -220,7 +220,18 @@ IDLE → RUNNING → DONE/FAILED/WAITING
 ### 原則
 - 各セクション独立実行（1つ失敗しても他は続行）
 - 推奨アクションは自動実行可能なものだけ提案
-- launchd: 毎朝 06:30 (com.jarvis.scout)
-test
-test
+- launchd: 毎朝 02:30 (com.jarvis.scout)
+- Phase 2: /scout N → 推奨アクション即実行（actions.json経由）
+- Phase 3: SAFE:trueアクションは自動実行→Telegram通知のみ
+- CMD:タグ: 推奨アクションにシェルコマンド付与、SAFE:true/falseで安全性分類
+- 🤖バッジ=自動実行、👤バッジ=手動実行
+### 通知・フック
+- Claude Code Stop hook通知が重複する → /tmp にlast-commit+timestampで30秒dedup
+- hookifyプラグインは直接通知しない。croppy-done.sh(プロジェクト)とsession-end-notify.sh(グローバル)が別々に通知
+- 複数Claude Codeセッション同時終了 → 同じコミットを複数回通知する問題
+
+### Gateway/Poller
+- exec bridgeデフォルト300秒 < Scout内部600秒 → 長いタスクは --fire --notify + 直接実行
+- Pollerリスタート時に実行中タスクがorphaned(永久running) → cleanup APIが未実装の既知問題
+- withMediaQueueパッチで/edit SIGTERMは解決済み（DJ実使用確認）
 
