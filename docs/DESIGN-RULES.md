@@ -81,11 +81,16 @@ Stop: Deliverablesが揃ったら終了
 
 ## 4. 実装完了後
 
-### 必ず更新する4箇所
+### 必ず更新する3箇所
 1. `docs/FEATURE-CATALOG.md` — 機能一覧（忘れた機能は存在しない）
 2. `croppy-notes.md` (Dropbox) — セッション記録
 3. `DESIGN-RULES.md` (この文書) — 新しい教訓があれば追記
-4. Memory Gateway — 次セッション引き継ぎ用
+
+**Auto Memory自動同期:** Claude Code Stop hook (auto-memory-sync.py) がセッション終了時に以下を自動更新:
+- memory/task-state.md ← WIP.md + git status
+- memory/lessons.md ← DESIGN-RULES §8
+- memory/architecture.md ← FEATURE-CATALOG + 既存決定
+- HANDOFF廃止済み（2026-02-26）。Auto Memoryが代替。
 
 ### テスト・確認
 - スモークテスト/実戦テスト結果を仕様書に追記
