@@ -171,3 +171,10 @@ CroppyLoop(PlanD) -> M1.md状態永続化+Auto-Kick復帰、🦞自律spawn→�
 - **Status:** 6行→223行に拡充
 - **追加セクション:** 最重要原則/実装ルール/フェーズ分割/exec bridge運用/パッチ適用/プロセス管理/蓄積された教訓/自律ループ/Scout運用
 - **Commit:** 2211641
+
+### Scout Phase 3（SAFE:自動実行）
+- **仕組み:** Scout reportのSAFE:trueアクションをDJ承認なしで自動実行
+- **通知:** 実行結果をTelegram '🤖 Scout自動実行' で送信
+- **安全基準:** 読取専用・サービス起動・冪等操作のみSAFE:true
+- **表示:** /scoutで🤖(自動)と👤(手動)バッジ
+- **コミット:** 41bcd00 (2026-02-26)
