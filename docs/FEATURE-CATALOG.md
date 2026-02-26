@@ -105,7 +105,15 @@ CroppyLoop(PlanD) -> M1.md状態永続化+Auto-Kick復帰、🦞自律spawn→�
 
 ## Croppy Dispatch Commands (scripts/croppy-dispatch.sh)
 | コマンド | 用途 | テスト |
-|---------|------|--------|
+|---------|------|-----
+### Scout Phase 2（/scout N）
+- **コマンド:** `/scout` → 推奨アクション一覧、`/scout N` → アクションN実行
+- **仕組み:** scout-agent.shが推奨アクションから`CMD:`タグ抽出→actions.json保存→JARVISハンドラが実行
+- **ファイル:** src/handlers/scout-command.ts, scripts/scout-agent.sh, scripts/scout-scan.md
+- **コミット:** 0470cec (2026-02-26)
+- **安全策:** 破壊的コマンド(rm,reset等)はscan promptで明示禁止
+
+---|
 | `/alarm` | iPhoneアラーム | ✅ |
 | `/timer` | タスク時間計測 | ✅ |
 | `/status` | システム状態 | ✅ |
