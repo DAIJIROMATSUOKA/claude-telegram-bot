@@ -250,6 +250,36 @@ async function pollAndExecute(): Promise<void> {
   }
 }
 
+
+// === Startup Cleanup (Phase 2 recovery) ===
+async function startupCleanup(): Promise<void> {
+  let drained = 0;
+  try {
+    // Drain all pending tasks from before this instance started
+    // (they are stale - previous Poller died mid-execution)
+    for (let i = 0; i < 50; i++) {
+      const res = await fetchWithTimeout(`${GATEWAY_URL}/v1/exec/poll`);
+      const data: any = await res.json();
+      if (!data.ok || !data.task) break;
+      // Complete as drained (exit 99)
+      await fetchWithTimeout(`${GATEWAY_URL}/v1/exec/complete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          task_id: data.task.id,
+          exit_code: 99,
+          stdout: 'drained: stale task from previous poller instance',
+          stderr: '',
+        }),
+      });
+      drained++;
+    }
+    if (drained > 0) log(`Startup drain: ${drained} stale tasks cleared`);
+  } catch (err) {
+    logError(`Startup cleanup failed: ${err instanceof Error ? err.message : err}`);
+  }
+}
+
 // === Main Loop ===
 async function main(): Promise<void> {
   log('Starting independent task poller...');
@@ -277,6 +307,8 @@ async function main(): Promise<void> {
     releaseLock();
     process.exit(1); // Crash = launchd restarts
   });
+
+  await startupCleanup();
 
   log(`Polling ${GATEWAY_URL} (adaptive: ${POLL_INTERVAL_IDLE_MS}ms idle / ${POLL_INTERVAL_ACTIVE_MS}ms active)`);
 

@@ -1,6 +1,6 @@
 #!/bin/bash
-# morning-briefing.sh - 毎朝2:30自動実行
-# 公式情報源 + web searchでDJスタック改善情報を収集
+# morning-briefing.sh - 毎朝2:00自動実行
+# FA業界ニュース（世界+日本）+ KEYENCE重点監視
 # Claude Code Max subscription (フラット課金) のみ使用
 #
 # CRITICAL: < /dev/null required for headless mode via launchd
@@ -11,7 +11,7 @@ CLAUDE_BIN="/opt/homebrew/bin/claude"
 ENV_FILE="$PROJECT_DIR/.env"
 LOG_DIR="/tmp/jarvis-briefing"
 STOP_FILE="/tmp/jarvis-briefing-stop"
-TASK_TIMEOUT=300  # 5min max
+TASK_TIMEOUT=600  # 10min max (multiple web searches)
 
 # === Setup ===
 mkdir -p "$LOG_DIR"
@@ -22,10 +22,11 @@ log() { echo "[$(date '+%H:%M:%S')] $1" | tee -a "$LOGFILE"; }
 
 notify() {
   source "$ENV_FILE" 2>/dev/null || true
-  curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+  echo -n "$1" > /tmp/jarvis-briefing/msg.txt
+  RESP=$(curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
     -d "chat_id=${TELEGRAM_ALLOWED_USERS}" \
-    -d "parse_mode=Markdown" \
-    -d "text=$1" > /dev/null 2>&1 || true
+    --data-urlencode "text@/tmp/jarvis-briefing/msg.txt")
+  echo "$RESP" >> "$LOGFILE"
 }
 
 # === Stop file check ===
@@ -34,57 +35,68 @@ if [ -f "$STOP_FILE" ]; then
   exit 0
 fi
 
-log "=== Morning Briefing Start ==="
+log "=== FA News Briefing Start ==="
 
 # === Run Claude Code ===
-PROMPT='You are DJs morning briefing AI. Check the following sources for updates in the LAST 24 HOURS that could dramatically improve DJs automation system.
+PROMPT='You are DJs Factory Automation industry news briefing AI. Gather FA news from the LAST 24 HOURS covering both global and Japanese markets. KEYENCE news must NEVER be missed.
 
-DJ SYSTEM STACK:
-- Claude Code (Anthropic Max subscription, CLI, MCP servers, hooks)
-- Telegram Bot (Grammy framework, Bun runtime)
-- ComfyUI + FLUX (image generation, LoRA, GGUF models)
-- macOS launchd (process management, cron)
-- Cloudflare Workers + D1 (API gateway, database)
-- MCP protocol (tool integration)
-- Python scripts for AI media processing
+=== STEP 1: KEYENCE DEDICATED CHECK (MANDATORY) ===
+Use web_fetch on these pages to check for ANY new content:
+1. https://www.keyence.co.jp/company/news/ — プレスリリース・ニュース
+2. https://www.keyence.co.jp/company/ir/ — IR情報
 
-CHECK THESE OFFICIAL SOURCES (use web_fetch):
-1. https://docs.anthropic.com/en/docs/changelog - Anthropic API/Claude changes
-2. https://github.com/anthropics/claude-code/releases - Claude Code releases
-3. https://github.com/comfyanonymous/ComfyUI/releases - ComfyUI releases
-4. https://github.com/oven-sh/bun/releases - Bun runtime releases
-5. https://core.telegram.org/bots/api-changelog - Telegram Bot API changes
+Then web_search:
+3. "KEYENCE OR キーエンス" (last 7 days)
+4. "keyence new product OR partnership OR acquisition 2026"
 
-ALSO WEB SEARCH these queries:
-- "Claude Code new features" (last 7 days)
-- "ComfyUI new workflow optimization" (last 7 days)
-- "MCP server new release 2026" (last 7 days)
-- "AI coding agent breakthrough" (last 7 days)
+=== STEP 2: GLOBAL FA NEWS ===
+Web search these queries:
+5. "factory automation industry news" (last 7 days)
+6. "industrial robot market 2026"
+7. "Fanuc OR ABB OR Siemens OR Rockwell automation news"
+8. "smart factory AI manufacturing"
 
-JUDGMENT CRITERIA:
-"Dramatic improvement" = something that should make DJ change his architecture, workflow, or tooling NOW. Not minor bugfixes or incremental updates.
+=== STEP 3: JAPAN FA NEWS ===
+Web search these queries:
+9. "ファクトリーオートメーション ニュース 2026"
+10. "ファナック OR 三菱電機 OR オムロン OR 安川電機 OR SMC 最新"
+11. "製造業 DX 自動化 AI"
+12. "FA 設計 省人化"
 
-OUTPUT FORMAT:
-If NOTHING dramatic found:
-Morning Briefing [DATE]
-特になし
+=== OUTPUT FORMAT ===
+Use this exact format:
 
-If something found:
-Morning Briefing [DATE]
-[Source] What changed
--> Impact on DJ system
--> Recommended action
+🏭 FA News [DATE]
 
-Be extremely selective. DJ only wants to hear about game-changers, not noise.'
+📌 *KEYENCE*
+- (KEYENCEの最新ニュースを箇条書き。なければ「特になし」)
 
-RESULT=$(cd "$PROJECT_DIR" && timeout "$TASK_TIMEOUT" "$CLAUDE_BIN" -p --dangerously-skip-permissions "$PROMPT" --max-turns 15 < /dev/null 2>>"$LOGFILE")
+🌍 *Global FA*
+- (海外FA業界の重要ニュース3-5件)
+
+🇯🇵 *Japan FA*
+- (国内FA業界の重要ニュース3-5件)
+
+💡 *注目トレンド*
+- (今週のFA業界で注目すべき動向1-2件)
+
+=== RULES ===
+- KEYENCEセクションは必ず出力（ニュースがなくても「特になし」と明記）
+- 各ニュースには情報源名を括弧で付記
+- 日本語で出力
+- 1件あたり1-2行で簡潔に
+- IRや決算情報も含める
+- 重複ニュースは統合
+- 推測や古いニュースは含めない'
+
+RESULT=$(cd "$PROJECT_DIR" && timeout "$TASK_TIMEOUT" "$CLAUDE_BIN" -p --dangerously-skip-permissions "$PROMPT" --max-turns 25 < /dev/null 2>>"$LOGFILE")
 EXIT_CODE=$?
 
 log "Claude Code exit: $EXIT_CODE"
 
 if [ $EXIT_CODE -ne 0 ]; then
   log "ERROR: Claude Code failed (exit=$EXIT_CODE)"
-  notify "Morning Briefing failed (exit=$EXIT_CODE)"
+  notify "🏭 FA News Briefing failed (exit=$EXIT_CODE)"
   exit 1
 fi
 
@@ -96,8 +108,8 @@ if [ -n "$RESULT_TRUNCATED" ]; then
   notify "$RESULT_TRUNCATED"
   log "Sent to Telegram (${#RESULT_TRUNCATED} chars)"
 else
-  notify "Morning Briefing ${DATE} - empty response"
+  notify "🏭 FA News Briefing ${DATE} - empty response"
   log "Empty response, sent default"
 fi
 
-log "=== Morning Briefing Done ==="
+log "=== FA News Briefing Done ==="
