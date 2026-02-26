@@ -124,9 +124,9 @@ for line in report.split('\n'):
         continue
     if in_actions and line.strip():
         # Match: N. label CMD:command
-        m = re.match(r'^\s*(\d+)\.\s+(.+?)\s+CMD:(.+)$', line)
+        m = re.match(r'^\s*(\d+)\.\s+(.+?)\s+CMD:(.+?)(?:\\s+SAFE:(true|false))?$', line)
         if m:
-            actions.append({'number': int(m.group(1)), 'label': m.group(2).strip(), 'command': m.group(3).strip()})
+            actions.append({'number': int(m.group(1)), 'label': m.group(2).strip(), 'command': m.group(3).strip(), 'safe': m.group(4) == 'true' if m.group(4) else False})
         else:
             # Match: N. label (no CMD)
             m2 = re.match(r'^\s*(\d+)\.\s+(.+)$', line)
@@ -137,5 +137,44 @@ for line in report.split('\n'):
 json.dump(actions, sys.stdout, ensure_ascii=False, indent=2)
 " <<< "$REPORT" > "$LOG_DIR/actions.json" 2>/dev/null || echo "[]" > "$LOG_DIR/actions.json"
 log "Actions extracted: $(python3 -c 'import json; print(len(json.load(open("'$LOG_DIR'/actions.json"))))' 2>/dev/null || echo 0)"
+
+# === Phase 3: Auto-execute SAFE actions ===
+AUTO_RESULTS=$(python3 -c "
+import json, subprocess, sys
+
+try:
+    actions = json.load(open('$LOG_DIR/actions.json'))
+except:
+    sys.exit(0)
+
+safe_actions = [a for a in actions if a.get('safe') == True and a.get('command')]
+if not safe_actions:
+    sys.exit(0)
+
+results = []
+for a in safe_actions:
+    cmd = a['command']
+    label = a['label']
+    try:
+        r = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=60, cwd='$PROJECT_DIR')
+        out = (r.stdout or '').strip()[:500]
+        status = '✅' if r.returncode == 0 else '⚠️'
+        results.append(f'{status} {label}')
+        if out:
+            results.append(f'  {out[:200]}')
+    except subprocess.TimeoutExpired:
+        results.append(f'⏱ {label} (timeout)')
+    except Exception as e:
+        results.append(f'❌ {label}: {e}')
+
+if results:
+    print('\n'.join(results))
+" 2>/dev/null)
+
+if [ -n "$AUTO_RESULTS" ]; then
+  notify "🤖 Scout自動実行
+$AUTO_RESULTS"
+  log "Auto-executed safe actions"
+fi
 
 log "Scout Agent complete"
