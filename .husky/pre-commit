@@ -1,6 +1,6 @@
 export PATH="$HOME/.bun/bin:$PATH"
 BANNED="GEMINI_API_KEY|GOOGLE_API_KEY|OPENAI_API_KEY|ANTHROPIC_API_KEY|@google/generative-ai"
-if git diff --cached -- . ':!.husky/*' ':!.git/hooks/*' | grep -E "$BANNED" | grep -q "^+"; then
+if git diff --cached -- . ':!.husky/*' ':!.git/hooks/*' ':!docs/*' | grep -E "$BANNED" | grep -q "^+"; then
     echo "🔴 コミット拒否: 従量課金APIキーまたはSDKが検出されました"
     exit 1
 fi

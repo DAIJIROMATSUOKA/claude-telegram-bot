@@ -221,3 +221,6 @@ IDLE → RUNNING → DONE/FAILED/WAITING
 - 各セクション独立実行（1つ失敗しても他は続行）
 - 推奨アクションは自動実行可能なものだけ提案
 - launchd: 毎朝 06:30 (com.jarvis.scout)
+test
+test
+
