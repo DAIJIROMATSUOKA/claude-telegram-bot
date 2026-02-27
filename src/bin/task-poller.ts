@@ -129,7 +129,12 @@ async function executeCommand(
   cwd: string,
   timeoutSeconds: number
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
-  const resolvedCwd = cwd.replace(/^~/, process.env.HOME || '/Users/daijiromatsuokam1');
+  // Validate cwd: if not a valid path (e.g. numeric timeout leaked into cwd), use default
+  const DEFAULT_CWD = '/Users/daijiromatsuokam1/claude-telegram-bot';
+  const rawCwd = cwd?.toString() || DEFAULT_CWD;
+  const resolvedCwd = rawCwd.startsWith('/') || rawCwd.startsWith('~')
+    ? rawCwd.replace(/^~/, process.env.HOME || '/Users/daijiromatsuokam1')
+    : DEFAULT_CWD;
 
   const MAX_RETRIES = 3;
   const BACKOFF_BASE_MS = 200;
