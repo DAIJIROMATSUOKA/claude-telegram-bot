@@ -13,7 +13,7 @@ SCAN_PROMPT="$PROJECT_DIR/scripts/scout-scan.md"
 ENV_FILE="$PROJECT_DIR/.env"
 LOG_DIR="/tmp/jarvis-scout"
 STOP_FILE="/tmp/jarvis-scout-stop"
-TASK_TIMEOUT=600  # 10 min max for full scan
+TASK_TIMEOUT=900  # 10 min max for full scan
 DRY_RUN=0
 
 [ "${1:-}" = "--dry-run" ] && DRY_RUN=1
