@@ -3,15 +3,19 @@
 # FA業界ニュース（世界+日本）+ KEYENCE重点監視
 # Claude Code Max subscription (フラット課金) のみ使用
 #
-# CRITICAL: < /dev/null required for headless mode via launchd
+# CRITICAL: < /dev/null for headless mode
+# CRITICAL: prompt via file (shell arg breaks with Japanese)
+# CRITICAL: notify via Python (curl breaks UTF-8)
 
 # === Config ===
 PROJECT_DIR="$HOME/claude-telegram-bot"
 CLAUDE_BIN="/opt/homebrew/bin/claude"
-ENV_FILE="$PROJECT_DIR/.env"
+NOTIFY="python3 $PROJECT_DIR/scripts/telegram-notify.py"
 LOG_DIR="/tmp/jarvis-briefing"
 STOP_FILE="/tmp/jarvis-briefing-stop"
-TASK_TIMEOUT=600  # 10min max (multiple web searches)
+PROMPT_FILE="$LOG_DIR/fa-prompt.txt"
+RESULT_FILE="$LOG_DIR/fa-result.txt"
+TASK_TIMEOUT=600
 
 # === Setup ===
 mkdir -p "$LOG_DIR"
@@ -19,15 +23,6 @@ DATE=$(date +%Y-%m-%d)
 LOGFILE="$LOG_DIR/briefing-${DATE}.log"
 
 log() { echo "[$(date '+%H:%M:%S')] $1" | tee -a "$LOGFILE"; }
-
-notify() {
-  source "$ENV_FILE" 2>/dev/null || true
-  echo -n "$1" > /tmp/jarvis-briefing/msg.txt
-  RESP=$(curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
-    -d "chat_id=${TELEGRAM_ALLOWED_USERS}" \
-    --data-urlencode "text@/tmp/jarvis-briefing/msg.txt")
-  echo "$RESP" >> "$LOGFILE"
-}
 
 # === Stop file check ===
 if [ -f "$STOP_FILE" ]; then
@@ -37,79 +32,101 @@ fi
 
 log "=== FA News Briefing Start ==="
 
-# === Run Claude Code ===
-PROMPT='You are DJs Factory Automation industry news briefing AI. Gather FA news from the LAST 24 HOURS covering both global and Japanese markets. KEYENCE news must NEVER be missed.
+# === Write prompt to file ===
+cat > "$PROMPT_FILE" << 'PROMPT_EOF'
+You are DJs Factory Automation industry news briefing AI. Gather FA news from the LAST 24 HOURS covering both global and Japanese markets. KEYENCE news must NEVER be missed.
 
-=== STEP 1: KEYENCE DEDICATED CHECK (MANDATORY) ===
-Use web_fetch on these pages to check for ANY new content:
-1. https://www.keyence.co.jp/company/news/ — プレスリリース・ニュース
-2. https://www.keyence.co.jp/company/ir/ — IR情報
+STEP 1: KEYENCE DEDICATED CHECK (MANDATORY)
+web_search: KEYENCE OR キーエンス (last 7 days)
+web_search: keyence new product OR partnership OR acquisition 2026
 
-Then web_search:
-3. "KEYENCE OR キーエンス" (last 7 days)
-4. "keyence new product OR partnership OR acquisition 2026"
+STEP 2: GLOBAL FA NEWS
+web_search: factory automation industry news (last 7 days)
+web_search: Fanuc OR ABB OR Siemens OR Rockwell automation news
+web_search: smart factory AI manufacturing 2026
 
-=== STEP 2: GLOBAL FA NEWS ===
-Web search these queries:
-5. "factory automation industry news" (last 7 days)
-6. "industrial robot market 2026"
-7. "Fanuc OR ABB OR Siemens OR Rockwell automation news"
-8. "smart factory AI manufacturing"
+STEP 3: JAPAN FA NEWS
+web_search: ファクトリーオートメーション ニュース 2026
+web_search: ファナック OR 三菱電機 OR オムロン OR 安川電機 最新
+web_search: 製造業 DX 自動化 AI
 
-=== STEP 3: JAPAN FA NEWS ===
-Web search these queries:
-9. "ファクトリーオートメーション ニュース 2026"
-10. "ファナック OR 三菱電機 OR オムロン OR 安川電機 OR SMC 最新"
-11. "製造業 DX 自動化 AI"
-12. "FA 設計 省人化"
-
-=== OUTPUT FORMAT ===
-Use this exact format:
+OUTPUT FORMAT (plain text, no markdown):
 
 🏭 FA News [DATE]
 
-📌 *KEYENCE*
-- (KEYENCEの最新ニュースを箇条書き。なければ「特になし」)
+📌 KEYENCE
+- (news items or 特になし)
 
-🌍 *Global FA*
-- (海外FA業界の重要ニュース3-5件)
+🌍 Global FA
+- (3-5 items)
 
-🇯🇵 *Japan FA*
-- (国内FA業界の重要ニュース3-5件)
+🇯🇵 Japan FA
+- (3-5 items)
 
-💡 *注目トレンド*
-- (今週のFA業界で注目すべき動向1-2件)
+💡 注目トレンド
+- (1-2 items)
 
-=== RULES ===
-- KEYENCEセクションは必ず出力（ニュースがなくても「特になし」と明記）
-- 各ニュースには情報源名を括弧で付記
-- 日本語で出力
-- 1件あたり1-2行で簡潔に
-- IRや決算情報も含める
-- 重複ニュースは統合
-- 推測や古いニュースは含めない'
+RULES:
+- KEYENCE section is mandatory (write 特になし if no news)
+- Source name in parentheses for each item
+- Output in Japanese
+- 1-2 lines per item, concise
+- Include IR and earnings info
+- Merge duplicate news
+- No speculation or outdated news
+- No markdown formatting, plain text only
+PROMPT_EOF
 
-RESULT=$(cd "$PROJECT_DIR" && timeout "$TASK_TIMEOUT" "$CLAUDE_BIN" -p --dangerously-skip-permissions "$PROMPT" --max-turns 25 < /dev/null 2>>"$LOGFILE")
+# === Run Claude Code with retry ===
+run_claude() {
+  cd "$PROJECT_DIR" && timeout "$TASK_TIMEOUT" "$CLAUDE_BIN" -p --dangerously-skip-permissions "$(cat "$PROMPT_FILE")" --max-turns 15 < /dev/null 2>>"$LOGFILE"
+}
+
+validate_result() {
+  local r="$1"
+  [ ${#r} -lt 200 ] && return 1
+  echo "$r" | grep -qi "^Execution error$" && return 1
+  echo "$r" | grep -qi "^Error:" && return 1
+  return 0
+}
+
+RESULT=$(run_claude)
 EXIT_CODE=$?
 
-log "Claude Code exit: $EXIT_CODE"
+log "Claude Code exit: $EXIT_CODE (${#RESULT} chars)"
+
+# Retry once if failed or invalid output
+if [ $EXIT_CODE -ne 0 ] || ! validate_result "$RESULT"; then
+  log "RETRY: waiting 60s (exit=$EXIT_CODE, len=${#RESULT})"
+  sleep 60
+  RESULT=$(run_claude)
+  EXIT_CODE=$?
+  log "RETRY result: exit=$EXIT_CODE (${#RESULT} chars)"
+fi
 
 if [ $EXIT_CODE -ne 0 ]; then
   log "ERROR: Claude Code failed (exit=$EXIT_CODE)"
-  notify "🏭 FA News Briefing failed (exit=$EXIT_CODE)"
+  $NOTIFY "🏭 FA News Briefing failed (exit=$EXIT_CODE)"
   exit 1
 fi
 
-# === Send to Telegram ===
-# Truncate if too long (Telegram max 4096 chars)
-RESULT_TRUNCATED=$(echo "$RESULT" | head -c 3800)
+# === Save and send ===
+echo "$RESULT" > "$RESULT_FILE"
 
-if [ -n "$RESULT_TRUNCATED" ]; then
-  notify "$RESULT_TRUNCATED"
-  log "Sent to Telegram (${#RESULT_TRUNCATED} chars)"
+if [ -n "$RESULT" ] && validate_result "$RESULT"; then
+  $NOTIFY --file "$RESULT_FILE"
+  SEND_EXIT=$?
+  if [ $SEND_EXIT -eq 0 ]; then
+    log "Sent to Telegram OK"
+  else
+    log "ERROR: Telegram send failed (exit=$SEND_EXIT)"
+  fi
+elif [ -n "$RESULT" ]; then
+  log "ERROR: Invalid result content (${#RESULT} chars): $(echo "$RESULT" | head -1)"
+  $NOTIFY "🏭 Briefing ERROR: Claude returned invalid output (${#RESULT} chars)"
 else
-  notify "🏭 FA News Briefing ${DATE} - empty response"
-  log "Empty response, sent default"
+  $NOTIFY "🏭 FA News Briefing ${DATE} - empty response"
+  log "Empty response"
 fi
 
 log "=== FA News Briefing Done ==="
