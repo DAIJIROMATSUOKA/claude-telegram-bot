@@ -164,7 +164,7 @@ ls -t docs/HANDOFF*.md 2>/dev/null | head -1 | while read f; do
 done
 
 echo "=== CROPPY-NOTES ==="
-NOTES="/Users/daijiromatsuokam1/Machinelab Dropbox/Matsuoka Daijiro/JARVIS-Journal/croppy-notes.md"
+NOTES="$HOME/Library/Mobile Documents/iCloud~md~obsidian/Documents/MyObsidian/10_Projects/croppy-notes.md"
 [ -f "$NOTES" ] && echo "croppy-notes: $(( ($(date +%s) - $(stat -f %m "$NOTES")) / 86400 ))d ago" || echo "NOT FOUND"
 ```
 
