@@ -51,6 +51,7 @@ import { handleAISession } from "./handlers/ai-session";
 import { handleCode } from "./handlers/code-command";
 import { handleScout } from "./handlers/scout-command";
 import { handleManual } from "./handlers/manual-command";
+import { handleSearch } from "./handlers/search-command";
 import { registerMediaCommands } from "./handlers/media-commands";
 import { handleTaskCommand, handleStopCommand as handleOrchestratorStop, handleTaskStatusCommand } from "./task/task-command";
 import { handleTaskLogCommand } from "./task/tasklog-command";
@@ -220,6 +221,7 @@ bot.command("timer", handleCroppyDispatch);
 bot.command("git", handleCroppyDispatch);
 bot.command("scout", handleScout);
 bot.command("manual", handleManual);
+bot.command("search", handleSearch);
 bot.command("help", handleCroppyDispatch);
 bot.on("message:text", handleText);
 
