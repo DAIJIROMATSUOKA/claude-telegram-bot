@@ -2,7 +2,7 @@
 # Auto Memory -> croppy-notes.md one-way sync
 # Runs via cron every 5 minutes
 SRC="$HOME/.claude/projects/-Users-daijiromatsuokam1-claude-telegram-bot/memory/MEMORY.md"
-DST="$HOME/Machinelab Dropbox/Matsuoka Daijiro/JARVIS-Journal/croppy-notes.md"
+DST="$HOME/Library/Mobile Documents/iCloud~md~obsidian/Documents/MyObsidian/10_Projects/croppy-notes.md"
 if [ ! -f "$SRC" ]; then exit 0; fi
 if [ ! -f "$DST" ] || [ "$SRC" -nt "$DST" ]; then
   MEMDIR=$(dirname "$SRC")

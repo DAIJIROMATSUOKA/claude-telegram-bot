@@ -9,7 +9,7 @@ DATE="${1:-$(date +%Y-%m-%d)}"
 BOT_DIR="$HOME/claude-telegram-bot"
 JOURNAL_DIR="/Users/daijiromatsuokam1/Machinelab Dropbox/Matsuoka Daijiro/JARVIS-Journal"
 OUTPUT="$JOURNAL_DIR/$DATE.md"
-CROPPY_NOTES="$JOURNAL_DIR/croppy-notes.md"
+CROPPY_NOTES="$HOME/Library/Mobile Documents/iCloud~md~obsidian/Documents/MyObsidian/10_Projects/croppy-notes.md"
 BOT_LOG="$BOT_DIR/logs/bot-launchd.log"
 
 mkdir -p "$JOURNAL_DIR"
