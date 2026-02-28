@@ -24,6 +24,26 @@ LOGFILE="$LOG_DIR/briefing-${DATE}.log"
 
 log() { echo "[$(date '+%H:%M:%S')] $1" | tee -a "$LOGFILE"; }
 
+
+# === Kill stale Claude Code processes (>6h old) ===
+cleanup_stale_claude() {
+  local now=$(date +%s)
+  for pid in $(pgrep -f "claude.*--output-format" 2>/dev/null); do
+    local start=$(ps -o lstart= -p "$pid" 2>/dev/null)
+    if [ -n "$start" ]; then
+      local start_epoch=$(date -j -f "%c" "$start" +%s 2>/dev/null)
+      if [ -n "$start_epoch" ]; then
+        local age=$(( (now - start_epoch) / 3600 ))
+        if [ "$age" -ge 6 ]; then
+          kill "$pid" 2>/dev/null
+          log "Killed stale Claude Code PID=$pid (${age}h old)"
+        fi
+      fi
+    fi
+  done
+}
+cleanup_stale_claude
+
 # === Stop file check ===
 if [ -f "$STOP_FILE" ]; then
   log "Stop file exists, skipping"
