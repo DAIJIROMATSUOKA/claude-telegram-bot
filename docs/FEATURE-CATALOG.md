@@ -178,3 +178,17 @@ CroppyLoop(PlanD) -> M1.md状態永続化+Auto-Kick復帰、🦞自律spawn→�
 - **安全基準:** 読取専用・サービス起動・冪等操作のみSAFE:true
 - **表示:** /scoutで🤖(自動)と👤(手動)バッジ
 - **コミット:** 41bcd00 (2026-02-26)
+
+## /manual - Claude Code自律マニュアル生成 (2026-02-28)
+- **Status:** DEPLOYED
+- **Handler:** src/handlers/manual-command.ts (140行)
+- **使い方:** `/manual M1308 ベーコン原木をハーフカットする装置`
+- **説明省略可:** `/manual M1308` → 装置概要.txt or フォルダ名から自動推測
+- **3フェーズ自律実行:**
+  1. collect-materials.py (部品表/ニモニック/電装図/画像収集)
+  2. Claude CLI -p --model opus (AI生成)
+  3. generate-docx.cjs (Markdown→Docx変換)
+- **設計:** nohup独立プロセス (/codeパターン踏襲)、Stop hook通知
+- **ログ:** /tmp/claude-code-manual-{番号}.log
+- **出力:** Dropbox/M{番号}_*/M{番号}_取扱説明書.docx
+- **Commit:** 33bd67e
