@@ -34,6 +34,23 @@ const cellMargins = { top: 60, bottom: 60, left: 100, right: 100 };
 // Markdown Parser
 // ==============================================================================
 function parseMarkdown(md) {
+  // Preprocessing: clean up AI artifacts and markdown escapes
+  md = md
+    // Remove AI thinking/meta lines (e.g. "装置の構造を十分に把握できました...")
+    .replace(/^.*(?:把握できました|確認できました|生成します|分析します|読み込みます|理解しました|調査します).*$/gm, "")
+    // Strip blockquote prefix
+    .replace(/^>\s?/gm, "")
+    // Remove horizontal rules
+    .replace(/^-{3,}$/gm, "")
+    .replace(/^\\-{2,}/gm, "")
+    // Remove escaped markdown (\# \*\* \- etc from pandoc round-trip)
+    .replace(/\\#/g, "#")
+    .replace(/\\\*/g, "*")
+    // Remove code block fences that might wrap the entire output
+    .replace(/^```(?:markdown)?\s*$/gm, "")
+    // Clean up multiple blank lines
+    .replace(/\n{3,}/g, "\n\n");
+
   const lines = md.split("\n");
   const elements = [];
   let i = 0;
@@ -87,16 +104,18 @@ function parseMarkdown(md) {
     }
 
     // Warning labels
-    if (line.trim().startsWith("【危険】") || line.trim().startsWith("【危 険】")) {
-      elements.push({ type: "warning", level: "danger", text: line.trim().replace(/【危\s*険】/, "").trim() });
+    // Warning labels - handle various formats: 【危険】, **【危 険】**, etc.
+    const cleanLine = line.trim().replace(/\*\*/g, "");
+    if (/【危\s*険】/.test(cleanLine)) {
+      elements.push({ type: "warning", level: "danger", text: cleanLine.replace(/【危\s*険】/, "").trim() });
       i++; continue;
     }
-    if (line.trim().startsWith("【警告】")) {
-      elements.push({ type: "warning", level: "warning", text: line.trim().replace("【警告】", "").trim() });
+    if (/【警\s*告】/.test(cleanLine)) {
+      elements.push({ type: "warning", level: "warning", text: cleanLine.replace(/【警\s*告】/, "").trim() });
       i++; continue;
     }
-    if (line.trim().startsWith("【注意】")) {
-      elements.push({ type: "warning", level: "caution", text: line.trim().replace("【注意】", "").trim() });
+    if (/【注\s*意】/.test(cleanLine)) {
+      elements.push({ type: "warning", level: "caution", text: cleanLine.replace(/【注\s*意】/, "").trim() });
       i++; continue;
     }
 
@@ -322,15 +341,9 @@ async function main() {
       style: { paragraph: { indent: { left: 720, hanging: 360 } } }
     }]
   };
-  const numberConfig = {
-    reference: "numbers",
-    levels: [{
-      level: 0, format: LevelFormat.DECIMAL, text: "%1.",
-      alignment: AlignmentType.LEFT,
-      style: { paragraph: { indent: { left: 720, hanging: 360 } } }
-    }]
-  };
+  // numberConfig removed - dynamic per-group configs used instead
 
+  let numberGroupId = 0;
   for (const el of elements) {
     switch (el.type) {
       case "heading1":
@@ -373,9 +386,10 @@ async function main() {
         break;
 
       case "numbered_list":
+        numberGroupId++;
         for (const item of el.items) {
           contentChildren.push(new Paragraph({
-            numbering: { reference: "numbers", level: 0 },
+            numbering: { reference: `numbers_${numberGroupId}`, level: 0 },
             children: makeTextRuns(item)
           }));
         }
@@ -414,7 +428,18 @@ async function main() {
         }
       ]
     },
-    numbering: { config: [bulletConfig, numberConfig] },
+    numbering: { config: [
+      bulletConfig,
+      // Generate unique number configs per list group (restart from 1)
+      ...Array.from({ length: numberGroupId }, (_, i) => ({
+        reference: `numbers_${i + 1}`,
+        levels: [{
+          level: 0, format: LevelFormat.DECIMAL, text: "%1.",
+          alignment: AlignmentType.LEFT,
+          style: { paragraph: { indent: { left: 720, hanging: 360 } } }
+        }]
+      }))
+    ] },
     sections: [{
       properties: {
         page: {
