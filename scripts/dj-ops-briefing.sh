@@ -17,6 +17,9 @@ STOP_FILE="/tmp/jarvis-briefing-stop"
 PROMPT_FILE="$LOG_DIR/ops-prompt.txt"
 RESULT_FILE="$LOG_DIR/ops-result.txt"
 TASK_TIMEOUT=600
+# Obsidian CLI (daily note integration)
+OBSIDIAN_CLI="/Applications/Obsidian.app/Contents/MacOS/Obsidian"
+
 
 # === Setup ===
 mkdir -p "$LOG_DIR"
@@ -108,6 +111,32 @@ RULES:
 - No markdown formatting, plain text only
 PROMPT_EOF
 
+
+# === Append to Obsidian Daily Note ===
+append_to_obsidian() {
+  local text="$1"
+  if [ ! -x "$OBSIDIAN_CLI" ]; then
+    log "Obsidian CLI not found, skipping daily note"
+    return 1
+  fi
+  # Check if Obsidian is running (CLI requires GUI)
+  if ! pgrep -xq "Obsidian"; then
+    log "Obsidian not running, skipping daily note"
+    return 1
+  fi
+  # Escape content for CLI (newlines as \n)
+  local escaped=$(echo "$text" | sed 's/"/\\"/g' | awk '{printf "%s\\n", $0}')
+  local obs_content="\n## 🚀 DJ Ops Intel\n${escaped}"
+  "$OBSIDIAN_CLI" daily:append content="$obs_content" 2>>"$LOGFILE"
+  local exit_code=$?
+  if [ $exit_code -eq 0 ]; then
+    log "Appended to Obsidian daily note OK"
+  else
+    log "Obsidian daily:append failed (exit=$exit_code)"
+  fi
+  return $exit_code
+}
+
 # === Run Claude Code with retry ===
 run_claude() {
   cd "$PROJECT_DIR" && timeout "$TASK_TIMEOUT" "$CLAUDE_BIN" -p --dangerously-skip-permissions "$(cat "$PROMPT_FILE")" --max-turns 15 < /dev/null 2>>"$LOGFILE"
@@ -149,6 +178,8 @@ if [ -n "$RESULT" ] && validate_result "$RESULT"; then
   SEND_EXIT=$?
   if [ $SEND_EXIT -eq 0 ]; then
     log "Sent to Telegram OK"
+    # Append to Obsidian daily note
+    append_to_obsidian "$RESULT"
   else
     log "ERROR: Telegram send failed (exit=$SEND_EXIT)"
   fi
