@@ -16,7 +16,7 @@ from pathlib import Path
 # Paths
 PROJECT_DIR = os.environ.get("CLAUDE_PROJECT_DIR", os.path.expanduser("~/claude-telegram-bot"))
 MEMORY_DIR = os.path.expanduser("~/.claude/projects/-Users-daijiromatsuokam1-claude-telegram-bot/memory")
-JOURNAL_DIR = os.path.expanduser("~/Machinelab Dropbox/Matsuoka Daijiro/JARVIS-Journal")
+JOURNAL_DIR = os.path.expanduser("~/Library/Mobile Documents/iCloud~md~obsidian/Documents/MyObsidian/90_System/JARVIS/Journal")
 ENV_FILE = os.path.join(PROJECT_DIR, ".env")
 LOG_FILE = "/tmp/auto-handoff.log"
 LOCK_FILE = "/tmp/auto-handoff.lock"

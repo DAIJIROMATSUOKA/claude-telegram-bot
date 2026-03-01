@@ -19,8 +19,8 @@ from pathlib import Path
 # Paths
 PROJECT_DIR = os.environ.get("CLAUDE_PROJECT_DIR", os.path.expanduser("~/claude-telegram-bot"))
 MEMORY_DIR = os.path.expanduser("~/.claude/projects/-Users-daijiromatsuokam1-claude-telegram-bot/memory")
-JOURNAL_DIR = os.path.expanduser("~/Machinelab Dropbox/Matsuoka Daijiro/JARVIS-Journal")
-WIP_FILE = os.path.join(PROJECT_DIR, "autonomous/state/WIP.md")
+JOURNAL_DIR = os.path.expanduser("~/Library/Mobile Documents/iCloud~md~obsidian/Documents/MyObsidian/90_System/JARVIS/Journal")
+WIP_FILE = os.path.join(PROJECT_DIR, "Library/Mobile Documents/iCloud~md~obsidian/Documents/MyObsidian/90_System/JARVIS/WIP.md")
 DESIGN_RULES = os.path.join(PROJECT_DIR, "docs/DESIGN-RULES.md")
 FEATURE_CATALOG = os.path.join(PROJECT_DIR, "docs/FEATURE-CATALOG.md")
 LOG_FILE = "/tmp/auto-memory-sync.log"

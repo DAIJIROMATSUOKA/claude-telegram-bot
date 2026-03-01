@@ -182,7 +182,7 @@ bun test 2>&1 | tail -3
 
 echo "=== JOURNAL ==="
 YESTERDAY=$(date -v-1d +%Y-%m-%d)
-JOURNAL="/Users/daijiromatsuokam1/Machinelab Dropbox/Matsuoka Daijiro/JARVIS-Journal/${YESTERDAY}.md"
+JOURNAL="/Users/daijiromatsuokam1/Library/Mobile Documents/iCloud~md~obsidian/Documents/MyObsidian/90_System/JARVIS/Journal/${YESTERDAY}.md"
 [ -f "$JOURNAL" ] && head -10 "$JOURNAL" || echo "No journal for $YESTERDAY"
 ```
 
