@@ -114,7 +114,7 @@ def main():
             user_requests, files_modified = extract_summary(transcript_path)
         
         # === 3. Save structured summary to JARVIS-Journal ===
-        journal_dir = Path.home() / "Machinelab Dropbox" / "Matsuoka Daijiro" / "JARVIS-Journal"
+        journal_dir = Path.home() / "Library" / "Mobile Documents" / "iCloud~md~obsidian" / "Documents" / "MyObsidian" / "90_System" / "JARVIS" / "Journal"
         if journal_dir.exists():
             summary_file = journal_dir / f"pre-compact-{date_str}.md"
             

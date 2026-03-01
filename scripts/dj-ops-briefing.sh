@@ -56,6 +56,26 @@ fi
 
 log "=== DJ Ops Briefing Start ==="
 
+
+# === Gather past daily note context ===
+gather_daily_context() {
+  local ctx_file="$LOG_DIR/daily-context.txt"
+  > "$ctx_file"
+  for days_ago in 1 2 3; do
+    local past_date=$(date -v-${days_ago}d +%Y/%m/%d)
+    if [ -x "$OBSIDIAN_CLI" ] && pgrep -xq "Obsidian"; then
+      local note=$("$OBSIDIAN_CLI" read "file=${past_date}" 2>/dev/null | head -60)
+      if [ -n "$note" ] && [ ${#note} -gt 50 ]; then
+        echo "--- ${past_date} ---" >> "$ctx_file"
+        echo "$note" >> "$ctx_file"
+        echo "" >> "$ctx_file"
+      fi
+    fi
+  done
+  log "Daily context: $(wc -c < "$ctx_file" | tr -d ' ') bytes"
+}
+gather_daily_context
+
 # === Write prompt to file ===
 cat > "$PROMPT_FILE" << 'PROMPT_EOF'
 You are DJs personal operations intelligence AI. Your mission: find information from the LAST 24-48 HOURS that will help DJ operate in the top 1% worldwide as a CEO who leverages AI automation.
@@ -111,6 +131,16 @@ RULES:
 - No markdown formatting, plain text only
 PROMPT_EOF
 
+
+# Inject daily context into prompt
+if [ -s "$LOG_DIR/daily-context.txt" ]; then
+  {
+    echo ""
+    echo "CONTEXT FROM PAST 3 DAYS (use for continuity, follow-ups, action items):"
+    cat "$LOG_DIR/daily-context.txt"
+  } >> "$PROMPT_FILE"
+  log "Injected daily context into prompt"
+fi
 
 # === Append to Obsidian Daily Note ===
 append_to_obsidian() {
