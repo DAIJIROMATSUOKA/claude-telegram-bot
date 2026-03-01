@@ -192,3 +192,15 @@ CroppyLoop(PlanD) -> M1.md状態永続化+Auto-Kick復帰、🦞自律spawn→�
 - **ログ:** /tmp/claude-code-manual-{番号}.log
 - **出力:** Dropbox/M{番号}_*/M{番号}_取扱説明書.docx
 - **Commit:** 33bd67e
+
+## Obsidian CLI Phase 2 - Vault統合 + 文脈ブリーフィング (2026-03-02)
+- **Status:** DEPLOYED
+- **3AI Council決定:** Claude×Gemini×ChatGPT全員一致
+- **ファイル配置:**
+  - M1.md → 変更なし (高頻度書換のためiCloud不可)
+  - WIP.md → MyObsidian/90_System/JARVIS/WIP.md (symlink互換)
+  - JARVIS-Journal → MyObsidian/90_System/JARVIS/Journal/ (33ファイル移行)
+- **文脈ブリーフィング:** dj-ops-briefing.sh が過去3日のdaily noteを読んで文脈注入
+- **更新スクリプト:** auto-handoff.py, generate-journal.sh, auto-memory-sync.py, pre-compact-hook.py, scout-scan.md
+- **Spec:** docs/obsidian-cli-phase2-spec.md
+- **Phase 3 (Inbox自動実行ループ):** 未実装。00_Inbox/jarvis.md → 5分ポーリング → 実行
