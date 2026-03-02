@@ -31,6 +31,18 @@ if [ -f "$STOP_FILE" ]; then
   exit 0
 fi
 
+# === Lock file (prevent concurrent execution) ===
+LOCK_FILE="/tmp/jarvis-inbox.lock"
+if [ -f "$LOCK_FILE" ]; then
+  LOCK_PID=$(head -1 "$LOCK_FILE" 2>/dev/null)
+  if kill -0 "$LOCK_PID" 2>/dev/null; then
+    exit 0  # Another instance running
+  fi
+  rm -f "$LOCK_FILE"  # Stale lock
+fi
+echo $$ > "$LOCK_FILE"
+trap 'rm -f "$LOCK_FILE"' EXIT
+
 # === Pre-checks ===
 if [ ! -f "$INBOX_FILE" ]; then
   # No inbox file yet — create template
@@ -46,10 +58,7 @@ TEMPLATE
   exit 0
 fi
 
-if ! pgrep -xq "Obsidian"; then
-  log "Obsidian not running, skipping"
-  exit 0
-fi
+# Obsidian process not required for inbox file read (removed gate)
 
 # === Read inbox ===
 INBOX_CONTENT=$(cat "$INBOX_FILE" 2>/dev/null)
@@ -122,7 +131,7 @@ RULES:
 PROMPTEOF
 
   log "Executing via Claude CLI..."
-  RESULT=$(cd "$PROJECT_DIR" && timeout "$TASK_TIMEOUT" "$CLAUDE_BIN" -p --dangerously-skip-permissions "$(cat "$PROMPT_FILE")" --max-turns 10 < /dev/null 2>>"$LOGFILE")
+  RESULT=$(cd "$PROJECT_DIR" && timeout "$TASK_TIMEOUT" "$CLAUDE_BIN" -p --dangerously-skip-permissions "$(cat "$PROMPT_FILE")" --max-turns 25 < /dev/null 2>>"$LOGFILE")
   EXIT_CODE=$?
 
   if [ $EXIT_CODE -ne 0 ] || [ -z "$RESULT" ]; then
@@ -144,8 +153,12 @@ PROMPTEOF
   # Append to Obsidian daily note
   # Escape for CLI (truncate long results)
   TRUNCATED=$(echo "$RESULT" | head -30)
-  "$OBSIDIAN_CLI" daily:append "content=## 📥 Inbox: $CMD
+  if pgrep -xq "Obsidian"; then
+    "$OBSIDIAN_CLI" daily:append "content=## 📥 Inbox: $CMD
 $TRUNCATED" 2>>"$LOGFILE"
+  else
+    log "Obsidian not running, skipping daily note append"
+  fi
 
   # Mark as processed
   echo "$LINE_HASH $(date '+%Y-%m-%d %H:%M') OK: $CMD" >> "$STATE_FILE"
