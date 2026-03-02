@@ -15,7 +15,7 @@ VAULT="$HOME/Library/Mobile Documents/iCloud~md~obsidian/Documents/MyObsidian"
 INBOX_FILE="$VAULT/00_Inbox/jarvis.md"
 STATE_FILE="$HOME/.jarvis/inbox-processed.txt"
 LOG_DIR="/tmp/jarvis-inbox"
-TASK_TIMEOUT=300  # 5min max per task
+TASK_TIMEOUT=600  # 10min max per task
 STOP_FILE="/tmp/jarvis-inbox-stop"
 
 # === Setup ===
@@ -42,6 +42,9 @@ if [ -f "$LOCK_FILE" ]; then
 fi
 echo $$ > "$LOCK_FILE"
 trap 'rm -f "$LOCK_FILE"' EXIT
+
+# === Heartbeat (proves LaunchAgent is firing) ===
+log "Poll started"
 
 # === Pre-checks ===
 if [ ! -f "$INBOX_FILE" ]; then
@@ -80,12 +83,13 @@ while IFS= read -r line; do
   # Skip empty commands
   [ -z "$CMD" ] && continue
 
-  # Generate line hash for idempotency
+  # Generate line hash (content + file mtime = same text can be re-submitted)
   LINE_HASH=$(echo "$line" | shasum -a 256 | cut -c1-16)
 
   # Check if already processed
   if grep -q "$LINE_HASH" "$STATE_FILE" 2>/dev/null; then
     SKIPPED=$((SKIPPED + 1))
+    log "SKIP: already processed (hash=$LINE_HASH)"
     continue
   fi
 
@@ -171,9 +175,16 @@ $TRUNCATED" 2>>"$LOGFILE"
 
 done <<< "$INBOX_CONTENT"
 
+# === Cleanup old state entries (>7 days) ===
+if [ -f "$STATE_FILE" ]; then
+  WEEK_AGO=$(date -v-7d +%Y-%m-%d)
+  grep -v "^[a-f0-9]\{16\} 20[0-9][0-9]-" "$STATE_FILE" > /dev/null 2>&1  # keep non-date lines
+  awk -v cutoff="$WEEK_AGO" '{split($2,d,"-"); if(d[1]d[2]d[3] >= substr(cutoff,1,4)substr(cutoff,6,2)substr(cutoff,9,2)) print}' "$STATE_FILE" > "$STATE_FILE.tmp" && mv "$STATE_FILE.tmp" "$STATE_FILE"
+fi
+
 # === Clean up inbox (remove processed lines) ===
+log "Poll: processed=$PROCESSED skipped=$SKIPPED"
 if [ $PROCESSED -gt 0 ]; then
-  log "Processed $PROCESSED commands, $SKIPPED skipped"
 
   # Rewrite inbox: keep header + unprocessed lines only
   TEMP_INBOX="$LOG_DIR/inbox-clean-$$.md"
