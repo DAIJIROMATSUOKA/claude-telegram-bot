@@ -169,7 +169,7 @@ $SUMMARY
 
 <code>Run ID: $RUN_ID</code>"
 
-  curl -s -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage" \
+  bash ~/scripts/notify-line.sh "通知"
     -H "Content-Type: application/json" \
     -d "{\"chat_id\": \"$TELEGRAM_USER_ID\", \"text\": $(echo "$MESSAGE" | jq -Rs .), \"parse_mode\": \"HTML\"}" \
     > /dev/null

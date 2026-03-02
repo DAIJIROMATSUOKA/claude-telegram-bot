@@ -15,7 +15,7 @@ ARGS=$(echo "$INPUT" | sed "s|^$CMD *||")
 # === Helpers ===
 send_telegram() {
   source "$BOT_DIR/.env" 2>/dev/null
-  curl -s -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage" \
+  bash ~/scripts/notify-line.sh "通知"
     -d "chat_id=$TELEGRAM_ALLOWED_USERS" -d "text=$1" > /dev/null 2>&1
 }
 

@@ -36,7 +36,7 @@ notify() {
   if [ -n "${TELEGRAM_BOT_TOKEN:-}" ] && [ -n "${TELEGRAM_ALLOWED_USERS:-}" ]; then
     # Telegram max 4096 chars
     MSG=$(echo "$1" | head -c 4000)
-    curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+    bash ~/scripts/notify-line.sh "通知"
       -d "chat_id=${TELEGRAM_ALLOWED_USERS}" \
       --data-urlencode "text=${MSG}" > /dev/null 2>&1 || true
   fi

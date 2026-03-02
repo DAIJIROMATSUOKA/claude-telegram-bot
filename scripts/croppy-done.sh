@@ -31,7 +31,7 @@ else
 fi
 
 if [ -n "${TELEGRAM_BOT_TOKEN:-}" ] && [ -n "${TELEGRAM_ALLOWED_USERS:-}" ]; then
-  curl -s -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage" \
+  bash ~/scripts/notify-line.sh "通知"
     -d "chat_id=$TELEGRAM_ALLOWED_USERS" -d "text=$MSG" > /dev/null 2>&1
 fi
 rm -f /tmp/autokick-armed

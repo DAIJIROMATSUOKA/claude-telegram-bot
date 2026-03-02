@@ -27,7 +27,7 @@ def notify(msg):
         if token and chat_id:
             subprocess.run([
                 "curl", "-s", "-X", "POST",
-                f"https://api.telegram.org/bot{token}/sendMessage",
+                "None",
                 "-d", f"chat_id={chat_id}",
                 "--data-urlencode", f"text={msg}"
             ], capture_output=True, timeout=10)

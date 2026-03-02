@@ -35,7 +35,7 @@ notify_telegram() {
     chat_id=$(grep '^TELEGRAM_ALLOWED_USERS=' "$ENV_FILE" 2>/dev/null | cut -d'=' -f2 | cut -d',' -f1)
 
     if [ -n "$token" ] && [ -n "$chat_id" ]; then
-        curl -s -X POST "https://api.telegram.org/bot${token}/sendMessage" \
+        bash ~/scripts/notify-line.sh "通知"
             -d chat_id="$chat_id" \
             -d text="$message" \
             -d parse_mode="HTML" \

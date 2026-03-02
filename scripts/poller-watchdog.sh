@@ -49,7 +49,7 @@ if [ "$needs_restart" -eq 1 ]; then
   
   # Telegram notification
   source ~/claude-telegram-bot/.env 2>/dev/null
-  curl -s -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage"     -d "chat_id=$TELEGRAM_ALLOWED_USERS" -d "text=$MSG" > /dev/null 2>&1
+  bash ~/scripts/notify-line.sh $MSG > /dev/null 2>&1
 fi
 
 # Keep log small (last 100 lines)

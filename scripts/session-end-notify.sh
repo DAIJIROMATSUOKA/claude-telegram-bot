@@ -23,7 +23,7 @@ nohup bash -c '
 sleep 60
 source ~/claude-telegram-bot/.env 2>/dev/null
 MSG="🤖 Claude Code session ended (reason: '"$REASON"')"
-curl -s -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage"   -d "chat_id=$TELEGRAM_ALLOWED_USERS" -d "text=$MSG" > /dev/null 2>&1
+bash ~/scripts/notify-line.sh $MSG > /dev/null 2>&1
 ' &>/dev/null &
 disown
 
