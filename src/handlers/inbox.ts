@@ -87,6 +87,9 @@ export async function handleInboxCallback(ctx: Context): Promise<boolean> {
       case "lnrpl":
         await handleLineReplyPrompt(ctx, sourceId, msgId);
         break;
+      case "imrpl":
+        await handleImessageReplyPrompt(ctx, sourceId, msgId);
+        break;
       case "snz1h":
         await handleSnooze(ctx, sourceId, msgId, chatId, 1);
         break;
@@ -342,6 +345,8 @@ export async function handleInboxReply(ctx: Context): Promise<boolean> {
       return await handleLineReply(ctx, source_id, detail, replyText, replyMsgId);
     } else if (source === "slack") {
       return await handleSlackReply(ctx, source_id, detail, replyText, replyMsgId);
+    } else if (source === "imessage") {
+      return await handleImessageReply(ctx, source_id, detail, replyText, replyMsgId);
     }
   } catch (e) {
     console.error("[Inbox] Reply lookup error:", e);
@@ -520,6 +525,93 @@ async function handleSlackReply(
 ): Promise<boolean> {
   await ctx.reply("🚧 Slack返信は実装中...");
   return true;
+}
+
+/**
+ * iMessage reply prompt
+ */
+async function handleImessageReplyPrompt(
+  ctx: Context,
+  sourceId: string,
+  msgId?: number
+): Promise<void> {
+  await ctx.answerCallbackQuery();
+  await ctx.reply(
+    "↩️ このメッセージに<b>引用リプライ</b>でiMessage返信内容を送信してください。",
+    {
+      parse_mode: "HTML",
+      reply_to_message_id: msgId,
+    }
+  );
+}
+
+/**
+ * iMessage reply via AppleScript → Messages.app
+ */
+async function handleImessageReply(
+  ctx: Context,
+  sourceId: string,
+  detail: any,
+  replyText: string,
+  originalMsgId: number
+): Promise<boolean> {
+  const handleId = detail.handle_id;
+  if (!handleId) {
+    await ctx.reply("❌ 送信先が不明です（handle_id missing）");
+    return true;
+  }
+  const sendingMsg = await ctx.reply("📤 iMessage返信送信中...");
+  try {
+    const escapedText = replyText.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+    const escapedHandle = handleId.replace(/"/g, '\\"');
+    const script =
+      'tell application "Messages"\n' +
+      "  set targetService to 1st service whose service type = iMessage\n" +
+      '  set targetBuddy to buddy "' + escapedHandle + '" of targetService\n' +
+      '  send "' + escapedText + '" to targetBuddy\n' +
+      "end tell";
+    const proc = Bun.spawn(["osascript", "-e", script], { stdout: "pipe", stderr: "pipe" });
+    const exitCode = await proc.exited;
+    const stderr = await new Response(proc.stderr).text();
+    if (exitCode === 0) {
+      logInboxAction("reply", sourceId, "imessage");
+      await archiveToObsidian(originalMsgId, ctx.chat?.id, "out", "imessage", "Reply to " + handleId + ": " + replyText, "replied");
+      const chatId = ctx.chat?.id!;
+      try { await ctx.api.deleteMessage(chatId, sendingMsg.message_id); } catch {}
+      try { await ctx.api.deleteMessage(chatId, originalMsgId); } catch {}
+      const confirm = await ctx.reply("✅ iMessage返信送信完了 → " + handleId);
+      setTimeout(async () => { try { await ctx.api.deleteMessage(chatId, confirm.message_id); if (ctx.message?.message_id) await ctx.api.deleteMessage(chatId, ctx.message.message_id); } catch {} }, 5000);
+      return true;
+    } else {
+      // SMS fallback
+      const smsScript =
+        'tell application "Messages"\n' +
+        "  set targetService to 1st service whose service type = SMS\n" +
+        '  set targetBuddy to buddy "' + escapedHandle + '" of targetService\n' +
+        '  send "' + escapedText + '" to targetBuddy\n' +
+        "end tell";
+      const smsProc = Bun.spawn(["osascript", "-e", smsScript], { stdout: "pipe", stderr: "pipe" });
+      const smsExit = await smsProc.exited;
+      if (smsExit === 0) {
+        logInboxAction("reply", sourceId, "imessage");
+        await archiveToObsidian(originalMsgId, ctx.chat?.id, "out", "imessage", "SMS to " + handleId + ": " + replyText, "replied");
+        const chatId = ctx.chat?.id!;
+        try { await ctx.api.deleteMessage(chatId, sendingMsg.message_id); } catch {}
+        try { await ctx.api.deleteMessage(chatId, originalMsgId); } catch {}
+        const confirm = await ctx.reply("✅ SMS返信完了 → " + handleId);
+        setTimeout(async () => { try { await ctx.api.deleteMessage(chatId, confirm.message_id); if (ctx.message?.message_id) await ctx.api.deleteMessage(chatId, ctx.message.message_id); } catch {} }, 5000);
+        return true;
+      }
+      const smsStderr = await new Response(smsProc.stderr).text();
+      await ctx.reply(("❌ iMessage/SMS送信失敗:\n" + (stderr || smsStderr)).substring(0, 500));
+      try { await ctx.api.deleteMessage(ctx.chat?.id!, sendingMsg.message_id); } catch {}
+      return true;
+    }
+  } catch (e) {
+    await ctx.reply("❌ iMessageエラー: " + e);
+    try { await ctx.api.deleteMessage(ctx.chat?.id!, sendingMsg.message_id); } catch {}
+    return true;
+  }
 }
 
 function escapeHtml(str: string): string {
