@@ -69,17 +69,10 @@ async function sendToTelegram(
 
   body = body.substring(0, 4000);
 
-  // Deep link: sms: for phone numbers, mailto: for email
-  const appUrl = senderName.includes("@")
-    ? `mailto:${senderName}`
-    : `sms:${senderName}`;
   const keyboard = {
     inline_keyboard: [
       [
-        { text: "📱Messages", url: appUrl },
         { text: "💬返信", callback_data: `ib:imrpl:${sourceId}` },
-      ],
-      [
         { text: "⏰1h", callback_data: `ib:snz1h:${sourceId}` },
         { text: "⏰3h", callback_data: `ib:snz3h:${sourceId}` },
         { text: "⏰明朝", callback_data: `ib:snzam:${sourceId}` },
