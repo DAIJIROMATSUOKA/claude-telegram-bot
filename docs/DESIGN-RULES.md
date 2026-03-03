@@ -1,12 +1,12 @@
 # 設計ルール（クロッピー🦞 必読）
-**最終更新:** 2026-02-26
+**最終更新:** 2026-03-03
 
 ---
 
 ## 0. 最重要原則
 
 ### DJの大原則
-**「Telegramへの最初の投稿以外は何もしない」**
+**「LINEへの最初の投稿以外は何もしない」**
 → すべての設計判断はこの原則に照らして評価する。手動ステップが増える設計は却下。
 
 ### クロッピーの約束
@@ -119,6 +119,8 @@ Stop: Deliverablesが揃ったら終了
 - `d.task.result_stdout` であって `d.stdout` ではない
 - submitのレスポンスは `task_id` フィールド
 
+- CF Worker間通信で error 1042 → public URL不可、Service Binding必須
+
 ### Chromeセキュリティフィルター回避
 - コード内容・base64・hexを含むstdoutはブロックされる
 - `sed "s/[^a-zA-Z0-9 .:_,=-]/ /g"` でサニタイズすれば回避可能
@@ -171,6 +173,9 @@ Stop: Deliverablesが揃ったら終了
 - Poller子プロセスでclaude -p → メモリ圧迫SIGTERM → nohupで独立プロセス化が正解
 - launchctl load/unload state がPoller死の根本原因だった
 - crontab は exec bridge 経由で使えない（TCC権限） → LaunchAgent一択
+
+### GAS (Google Apps Script)
+- GAS(Google Apps Script): トークン等はPropertiesService、コード更新はclasp push。手動貼り替え前提の設計は禁止
 
 ### AI関連
 - ChatGPT Shortcuts: 毎回新チャット、`continuous=true`はCLI自動化で使えない
