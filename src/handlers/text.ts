@@ -1,3 +1,4 @@
+import { handleLinePost } from "./line-post";
 /**
  * Text message handler for Claude Telegram Bot.
  *

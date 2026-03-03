@@ -152,10 +152,15 @@ async function sendToTelegram(
 
   body = body.substring(0, 4000);
 
+  // Slack deep link: remove dot from ts for permalink
+  const slackPermalink = `https://machine-lab.slack.com/archives/${channelId}/p${messageTs.replace(".", "")}`;
   const keyboard = {
     inline_keyboard: [
       [
+        { text: "📱Slack", url: slackPermalink },
         { text: "💬返信", callback_data: `ib:slrpl:${sourceId}` },
+      ],
+      [
         { text: "⏰1h", callback_data: `ib:snz1h:${sourceId}` },
         { text: "⏰3h", callback_data: `ib:snz3h:${sourceId}` },
         { text: "⏰明朝", callback_data: `ib:snzam:${sourceId}` },

@@ -81,6 +81,9 @@ export async function handleInboxCallback(ctx: Context): Promise<boolean> {
       case "full":
         await handleFullText(ctx, sourceId);
         break;
+      case "attach":
+        await handleAttachments(ctx, sourceId);
+        break;
       case "reply":
         await handleReplyPrompt(ctx, sourceId, msgId);
         break;
@@ -152,6 +155,30 @@ async function handleGmailAction(
 /**
  * Full text: fetch from GAS and send as reply
  */
+/**
+ * Fetch and list Gmail attachments with download info
+ */
+async function handleAttachments(ctx: Context, gmailId: string): Promise<void> {
+  await ctx.answerCallbackQuery({ text: "📎 添付取得中..." });
+  const url = `${GAS_GMAIL_URL}?action=full&gmail_id=${gmailId}&key=${GAS_GMAIL_KEY}`;
+  const res = await fetch(url, { redirect: "follow" });
+  const result: any = await res.json();
+  if (result.ok && result.attachments?.length > 0) {
+    const list = result.attachments
+      .map((a: any, i: number) => `${i + 1}. 📎 ${a.name} (${a.mimeType}, ${Math.round((a.size || 0) / 1024)}KB)`)
+      .join("\n");
+    await ctx.reply(
+      `📎 添付ファイル一覧:\n${list}\n\n📱 Gmailアプリで開いてダウンロードしてください。`,
+      {
+        parse_mode: "HTML",
+        reply_to_message_id: ctx.callbackQuery?.message?.message_id,
+      }
+    );
+  } else {
+    await ctx.reply("📎 添付ファイルなし");
+  }
+}
+
 async function handleFullText(ctx: Context, gmailId: string): Promise<void> {
   await ctx.answerCallbackQuery({ text: "📖 全文取得中..." });
 
