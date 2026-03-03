@@ -104,6 +104,13 @@ export async function handleText(ctx: Context): Promise<void> {
     }
   }
 
+  // LINE group post command
+  if (message.startsWith("/line")) {
+    stopProcessing();
+    await handleLinePost(ctx);
+    return;
+  }
+
   // AI Session Bridge: bypass Jarvis when session is active
   if (hasActiveSession(userId)) {
     const _sbTyping = startTypingIndicator(ctx);
