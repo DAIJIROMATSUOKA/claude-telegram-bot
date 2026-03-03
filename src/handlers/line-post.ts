@@ -1,7 +1,7 @@
 /**
- * /line command - Post to LINE group from Telegram
+ * /line command - Post to LINE group or individual from Telegram
  * Usage:
- *   /line                    → list available groups
+ *   /line                    → list available targets (groups + individuals)
  *   /line <group> <message>  → post to group
  *   /line 1 <message>        → post by group number
  */
@@ -12,25 +12,34 @@ const GATEWAY_URL =
   process.env.GATEWAY_URL ||
   "https://jarvis-memory-gateway.jarvis-matsuoka.workers.dev";
 
-interface LineGroup {
+interface LineTarget {
   source_id: string;
   name: string;
+  is_group: boolean;
 }
 
-async function getLineGroups(): Promise<LineGroup[]> {
+async function getLineTargets(): Promise<LineTarget[]> {
   try {
     const res = await fetch(`${GATEWAY_URL}/v1/db/query`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        sql: `SELECT DISTINCT source_id, json_extract(source_detail, '$.group_name') as name
+        sql: `SELECT DISTINCT source_id,
+                json_extract(source_detail, '$.group_name') as name,
+                json_extract(source_detail, '$.is_group') as is_group,
+                json_extract(source_detail, '$.sender_name') as sender
               FROM message_mappings
-              WHERE source='line' AND json_extract(source_detail, '$.is_group')=1
-              ORDER BY created_at DESC LIMIT 20`,
+              WHERE source='line'
+              ORDER BY json_extract(source_detail, '$.is_group') DESC, created_at DESC
+              LIMIT 30`,
       }),
     });
     const data: any = await res.json();
-    return data.results || [];
+    return (data.results || []).map((r: any) => ({
+      source_id: r.source_id,
+      name: r.is_group ? (r.name || r.source_id) : (r.sender || r.name || "DM"),
+      is_group: !!r.is_group,
+    }));
   } catch {
     return [];
   }
@@ -41,7 +50,7 @@ export async function handleLinePost(ctx: Context): Promise<void> {
 
   // No args: list groups
   if (!text) {
-    const groups = await getLineGroups();
+    const groups = await getLineTargets();
     if (groups.length === 0) {
       await ctx.reply("📋 LINE\u30b0\u30eb\u30fc\u30d7\u304c\u898b\u3064\u304b\u308a\u307e\u305b\u3093");
       return;
@@ -57,8 +66,8 @@ export async function handleLinePost(ctx: Context): Promise<void> {
   }
 
   // Parse: /line <number_or_name> <message>
-  const groups = await getLineGroups();
-  let targetGroup: LineGroup | undefined;
+  const groups = await getLineTargets();
+  let targetGroup: LineTarget | undefined;
   let message: string;
 
   const firstWord = text.split(/\s+/)[0];
@@ -106,7 +115,7 @@ export async function handleLinePost(ctx: Context): Promise<void> {
       body: JSON.stringify({
         target_id: targetGroup.source_id,
         text: message,
-        is_group: true,
+        is_group: targetGroup.is_group,
       }),
     });
     const result: any = await res.json();
