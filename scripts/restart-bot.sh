@@ -31,7 +31,7 @@ echo '[restart] Clearing stale Telegram long polling...'
 source ~/claude-telegram-bot/.env 2>/dev/null
 if [ -n "$TELEGRAM_BOT_TOKEN" ]; then
   for i in $(seq 1 12); do
-    RESULT=$(bash ~/scripts/notify-line.sh "通知"
+    RESULT=$(curl -s "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getUpdates?timeout=0&offset=-1")
     IS_OK=$(echo "$RESULT" | python3 -c 'import json,sys; d=json.load(sys.stdin); print("yes" if d.get("ok") else "no")' 2>/dev/null)
     if [ "$IS_OK" = "yes" ]; then
       echo '[restart] Telegram polling cleared'

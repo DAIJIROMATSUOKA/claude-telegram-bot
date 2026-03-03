@@ -176,4 +176,7 @@ bash "$PROJECT_DIR/scripts/memory-sync.sh" 2>/dev/null || true
 # Trigger auto-handoff
 python3 "$PROJECT_DIR/scripts/auto-handoff.py" 2>/dev/null || true
 
+# Inbox Learning: nightly sender score recalculation
+bash "$PROJECT_DIR/scripts/recalc-sender-scores.sh" 2>/dev/null || true
+
 notify "🌙 Nightly DONE: ${COMPLETED}完了 / ${FAILED}失敗 / ${SKIPPED}スキップ (${ITERATION}回, ${TOTAL_TIME}s) log: $LOGFILE"

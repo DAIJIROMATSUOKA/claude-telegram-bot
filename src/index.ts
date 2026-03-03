@@ -62,6 +62,7 @@ import { getPendingTask, clearPendingTask } from './utils/pending-task';
 import { getWorkState, formatWorkStateForContext, updateWorkStateSessionId, isWorkComplete } from './utils/work-state';
 import { session } from './session';
 import { convertMarkdownToHtml } from './formatting';
+import { startSnoozeChecker } from "./services/snooze";
 
 // ============== Global Context ==============
 // Bot起動時にCLAUDE.mdを読み込んでグローバルに保持
@@ -315,6 +316,8 @@ const runner = run(bot);
     ensureSessionSummaryTable(),
   ]).then(() => {
     console.log('✅ Memory tables initialized');
+    // Inbox Zero: snooze re-notification checker
+    try { startSnoozeChecker(bot); } catch(e) { console.error("[Snooze] Init failed:", e); }
     // テーブル初期化後にMemory GCスケジューラーを起動
     startMemoryGCScheduler();
   }).catch(err => {

@@ -35,6 +35,7 @@ import { setClaudeStatus } from "../utils/tower-renderer";
 import { updateTower } from "../utils/tower-manager";
 import type { TowerIdentifier } from "../types/control-tower";
 import { savePendingTask, clearPendingTask } from "../utils/pending-task";
+import { handleInboxReply } from "./inbox";
 
 /**
  * Handle incoming text messages.
@@ -88,6 +89,19 @@ export async function handleText(ctx: Context): Promise<void> {
   }
 
   const stopProcessing = session.startProcessing();
+
+  // Inbox Zero: route quote-replies to inbox sources (BEFORE AI session)
+  if (ctx.message?.reply_to_message) {
+    try {
+      const handled = await handleInboxReply(ctx);
+      if (handled) {
+        stopProcessing();
+        return;
+      }
+    } catch (e) {
+      console.error("[Text] Inbox reply error:", e);
+    }
+  }
 
   // AI Session Bridge: bypass Jarvis when session is active
   if (hasActiveSession(userId)) {

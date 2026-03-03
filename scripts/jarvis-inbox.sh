@@ -121,21 +121,19 @@ while IFS= read -r line; do
   # === Execute via Claude CLI ===
   PROMPT_FILE="$LOG_DIR/inbox-prompt-$$.txt"
   cat > "$PROMPT_FILE" << PROMPTEOF
-You are JARVIS, DJ's AI assistant. Execute the following task from DJ's Obsidian inbox.
+You are JARVIS. Execute this task concisely.
 
 TASK: $CMD
 
 RULES:
-- Execute the task directly. No clarification needed.
-- Be concise in your response.
-- If the task requires file operations, use the project at ~/claude-telegram-bot
-- All output in Japanese.
-- If you need web search, use it.
-- If the task is ambiguous, make your best judgment and note assumptions.
+- Respond in Japanese, under 200 words.
+- If searching files, limit to 3 directories max. If not found quickly, say so.
+- No clarification needed. Make your best judgment.
+- Be direct and concise.
 PROMPTEOF
 
   log "Executing via Claude CLI..."
-  RESULT=$(cd "$PROJECT_DIR" && timeout "$TASK_TIMEOUT" "$CLAUDE_BIN" -p --dangerously-skip-permissions "$(cat "$PROMPT_FILE")" --max-turns 25 < /dev/null 2>>"$LOGFILE")
+  RESULT=$(cd "$PROJECT_DIR" && timeout "$TASK_TIMEOUT" "$CLAUDE_BIN" -p --dangerously-skip-permissions "$(cat "$PROMPT_FILE")" --max-turns 10 < /dev/null 2>>"$LOGFILE")
   EXIT_CODE=$?
 
   if [ $EXIT_CODE -ne 0 ] || [ -z "$RESULT" ]; then

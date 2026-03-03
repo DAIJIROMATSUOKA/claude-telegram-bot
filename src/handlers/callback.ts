@@ -11,6 +11,7 @@ import { ALLOWED_USERS } from "../config";
 import { isAuthorized } from "../security";
 import { auditLog, startTypingIndicator } from "../utils";
 import { StreamingState, createStatusCallback } from "./streaming";
+import { handleInboxCallback } from "./inbox";
 
 /**
  * Handle callback queries from inline keyboards.
@@ -39,6 +40,13 @@ export async function handleCallback(ctx: Context): Promise<void> {
   }
 
   // 3. Parse callback data: askuser:{request_id}:{option_index}
+  // 2.5 Inbox Zero callback routing
+  if (callbackData.startsWith("ib:")) {
+    const handled = await handleInboxCallback(ctx);
+    if (handled) return;
+  }
+
+
   if (!callbackData.startsWith("askuser:")) {
     await ctx.answerCallbackQuery();
     return;
