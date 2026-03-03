@@ -1,6 +1,5 @@
 import { handleImsgSend } from "./imsg-send";
 import { handleMailSend } from "./mail-send";
-import { handleSlackPost } from "./slack-post";
 import { handleLinePost } from "./line-post";
 /**
  * Text message handler for Claude Telegram Bot.
@@ -111,12 +110,6 @@ export async function handleText(ctx: Context): Promise<void> {
   if (message.startsWith("/line")) {
     stopProcessing();
     await handleLinePost(ctx);
-    return;
-  }
-
-  if (message.startsWith("/slack")) {
-    stopProcessing();
-    await handleSlackPost(ctx);
     return;
   }
 
