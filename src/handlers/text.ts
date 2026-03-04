@@ -71,6 +71,19 @@ export async function handleText(ctx: Context): Promise<void> {
     return;
   }
 
+  // ── Memo mode: 。で始まるメッセージはJarvisスルー、🗑ボタンのみ ──
+  if (ctx.message?.text?.startsWith('。')) {
+    await ctx.reply('🗑', {
+      reply_to_message_id: ctx.message?.message_id,
+      reply_markup: {
+        inline_keyboard: [[
+          { text: '🗑', callback_data: 'ib:delmemo:0' },
+        ]],
+      },
+    });
+    return;
+  }
+
   // ── Stage 2: Routing ──
   if (message.trim().toLowerCase() === 'croppy: debug') {
     const { formatCroppyDebugOutput } = await import("../utils/croppy-context");

@@ -100,6 +100,14 @@ export async function handleInboxCallback(ctx: Context): Promise<boolean> {
         try { if (chatId && msgId) await ctx.api.deleteMessage(chatId, msgId); } catch {}
         try { await ctx.answerCallbackQuery(); } catch {}
         break;
+      case "delmemo": {
+        // Delete both: this button message + the original memo it replies to
+        const replyTo = ctx.callbackQuery?.message?.reply_to_message?.message_id;
+        try { if (chatId && msgId) await ctx.api.deleteMessage(chatId, msgId); } catch {}
+        try { if (chatId && replyTo) await ctx.api.deleteMessage(chatId, replyTo); } catch {}
+        try { await ctx.answerCallbackQuery(); } catch {}
+        break;
+      }
       case "snz1h":
         await handleSnooze(ctx, sourceId, msgId, chatId, 1);
         break;
