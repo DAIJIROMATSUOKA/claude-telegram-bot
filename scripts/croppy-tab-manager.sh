@@ -178,7 +178,7 @@ inject)
   WIDX=$(echo "$WT" | cut -d: -f1)
   TIDX=$(echo "$WT" | cut -d: -f2)
   
-  # Step 1: Check if tab is a WORKER and READY (use health AS file)
+  # Step 1: Check if tab is a WORKER and READY
   CHECKFILE="/tmp/croppy-inject-check-$$.as"
   cat > "$CHECKFILE" << CHECKEOF
 tell application "Google Chrome"
@@ -200,20 +200,15 @@ CHECKEOF
     exit 1
   fi
   
-  # Step 2: Escape message and build AppleScript file
-  ESCAPED_MSG=$(python3 -c "
-import sys, json
-msg = sys.argv[1]
-# Escape for JS string inside AppleScript
-escaped = msg.replace('\\\\', '\\\\\\\\').replace('\"', '\\\\\"').replace(\"'\", \"\\\\'\")
-print(escaped)
-" "$MSG" 2>/dev/null)
+  # Step 2: Base64 encode the message to avoid ALL escaping issues
+  B64MSG=$(printf '%s' "$MSG" | base64 | tr -d '\n')
   
+  # Step 3: Build AppleScript that decodes base64 in JS
   ASFILE="/tmp/croppy-inject-$$.as"
   cat > "$ASFILE" << INJECTEOF
 tell application "Google Chrome"
   set t to tab $TIDX of window $WIDX
-  set insertJs to "(() => { const e = document.querySelector('.ProseMirror'); e.focus(); document.execCommand('selectAll'); document.execCommand('delete'); document.execCommand('insertText', false, '$ESCAPED_MSG'); return 'INSERTED'; })()"
+  set insertJs to "(() => { const b = Uint8Array.from(atob('$B64MSG'), c => c.charCodeAt(0)); const msg = new TextDecoder().decode(b); const e = document.querySelector('.ProseMirror'); e.focus(); document.execCommand('selectAll'); document.execCommand('delete'); document.execCommand('insertText', false, msg); return 'INSERTED'; })()"
   set r1 to execute t javascript insertJs
   delay 0.5
   set sendJs to "(() => { const e = document.querySelector('.ProseMirror'); const ev = new KeyboardEvent('keydown', {key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true}); e.dispatchEvent(ev); return 'SENT'; })()"
