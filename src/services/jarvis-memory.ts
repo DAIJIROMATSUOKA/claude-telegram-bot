@@ -383,8 +383,8 @@ export async function buildMemoryContext(userMessage: string): Promise<string> {
     getPendingMemories(),
   ]);
 
-  if (Object.keys(profile).length > 0) {
-    // Split profile into facts vs preferences/rules
+  // Split profile into facts vs preferences/rules
+  {
     const profileFull = await getProfileFull();
     const facts: string[] = [];
     const prefs: string[] = [];
