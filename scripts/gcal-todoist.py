@@ -292,7 +292,7 @@ def main():
 
         today_events = get_events(service, today, today + datetime.timedelta(days=1))
         tomorrow_events = get_events(service, tomorrow, tomorrow + datetime.timedelta(days=1))
-        tasks = get_todoist_tasks(token, "today | overdue")
+        tasks = get_todoist_tasks(token, "today")[:10]
 
         day_names = ["月", "火", "水", "木", "金", "土", "日"]
         parts = []
