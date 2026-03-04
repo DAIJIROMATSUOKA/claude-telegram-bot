@@ -64,7 +64,12 @@ ${assistantResponse.substring(0, 1000)}
 3. 既存キーと同じ情報は含めるな
 4. 雑談・挨拶・コマンド・テスト目的の発言 → 全て空配列を返せ: {"facts":[],"projects":[],"summary":"","topics":[],"decisions":[]}
 5. confidence基準: DJが明言した事実=0.9、文脈から推測可能=0.6、曖昧・仮定=0.4
-6. categoryは5種限定: identity, work, tech, rules, preferences
+6. categoryは5種限定:
+   - identity: 名前、場所、所属（人物情報）
+   - work: 会社、顧客、案件、業界（仕事情報）
+   - tech: ハードウェア、ソフトウェア、インフラ（技術情報）
+   - rules: 「〜禁止」「〜必須」「〜しない」等の制約・ルール
+   - preferences: 「〜にして」「〜が好き」「もっと〜」等の好み・スタイル指示
 7. keyは英語snake_case、valueは元の言語のまま`;
 
   return new Promise((resolve) => {

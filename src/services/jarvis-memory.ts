@@ -73,6 +73,19 @@ export async function ensureMemoryTables(): Promise<void> {
 
 // ─── User Profile ───
 
+export async function getProfileFull(): Promise<Array<{key: string; value: string; category: string; source: string; confidence: number}>> {
+  try {
+    const res = await callMemoryGateway('/v1/db/query', 'POST', {
+      sql: 'SELECT key, value, category, source, confidence FROM jarvis_user_profile WHERE confidence >= 0.5 ORDER BY category, key',
+      params: [],
+    });
+    return (res as any)?.data?.results || [];
+  } catch (e) {
+    console.error('[Memory] getProfileFull failed:', e);
+    return [];
+  }
+}
+
 export async function getProfile(): Promise<Record<string, string>> {
   try {
     const res = await callMemoryGateway('/v1/db/query', 'POST', {
@@ -242,6 +255,14 @@ export async function rejectPendingMemory(id: string): Promise<boolean> {
 export async function routeMemoryByConfidence(
   key: string, value: string, category: string, confidence: number, sourceConversation?: string
 ): Promise<'stored' | 'pending' | 'skipped'> {
+  // Preferences/rules bypass pending — behavioral directives apply immediately
+  if (category === 'preferences' || category === 'rules') {
+    if (confidence >= 0.5) {
+      const stored = await upsertProfile(key, value, category, confidence, 'extracted');
+      return stored ? 'stored' : 'skipped';
+    }
+    return 'skipped';
+  }
   if (confidence >= PENDING_CONFIDENCE_THRESHOLD) {
     const stored = await upsertProfile(key, value, category, confidence, 'extracted');
     return stored ? 'stored' : 'skipped';
@@ -354,8 +375,8 @@ export async function buildMemoryContext(userMessage: string): Promise<string> {
   const start = Date.now();
   const parts: string[] = [];
 
-  const [profile, projects, vectorResults, summaries, pending] = await Promise.all([
-    getProfile(),
+  const [_, projects, vectorResults, summaries, pending] = await Promise.all([
+    Promise.resolve(null), // profile fetched separately for category split
     getActiveProjects(),
     searchMemories(userMessage, 3),
     getRecentSummaries(3),
@@ -363,7 +384,24 @@ export async function buildMemoryContext(userMessage: string): Promise<string> {
   ]);
 
   if (Object.keys(profile).length > 0) {
-    parts.push(`[DJ PROFILE]\n${Object.entries(profile).map(([k, v]) => `- ${k}: ${v}`).join('\n')}`);
+    // Split profile into facts vs preferences/rules
+    const profileFull = await getProfileFull();
+    const facts: string[] = [];
+    const prefs: string[] = [];
+    for (const r of profileFull) {
+      const line = `- ${r.key}: ${r.value}`;
+      if (r.category === 'preferences' || r.category === 'rules') {
+        prefs.push(line);
+      } else {
+        facts.push(line);
+      }
+    }
+    if (facts.length > 0) {
+      parts.push(`[DJ PROFILE]\n${facts.join('\n')}`);
+    }
+    if (prefs.length > 0) {
+      parts.push(`[DJ PREFERENCES — Jarvisはこれに従え]\n${prefs.join('\n')}`);
+    }
   }
 
   if (projects.length > 0) {
@@ -390,7 +428,7 @@ export async function buildMemoryContext(userMessage: string): Promise<string> {
   }
 
   const elapsed = Date.now() - start;
-  console.log(`[Memory] Context built in ${elapsed}ms: profile=${Object.keys(profile).length} projects=${projects.length} vectors=${vectorResults.length} summaries=${summaries.length} pending=${pending.length}`);
+  console.log(`[Memory] Context built in ${elapsed}ms: facts=${facts.length} prefs=${prefs.length} projects=${projects.length} vectors=${vectorResults.length} summaries=${summaries.length} pending=${pending.length}`);
 
   return parts.length === 0 ? '' : parts.join('\n\n') + '\n';
 }
