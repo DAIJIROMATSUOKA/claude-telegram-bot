@@ -11,6 +11,7 @@ ARMED_FLAG="/tmp/autokick-armed"
 STOP_FLAG="/tmp/autokick-stop"
 CHECK_INTERVAL=20
 STOPPED_THRESHOLD=2
+TARGET_URL_FILE="/tmp/autokick-target-url"
 
 stopped_count=0
 
@@ -28,15 +29,29 @@ while true; do
     continue
   fi
 
-  RESULT=$(osascript << 'APPLESCRIPT' 2>/dev/null
+  # Determine target URL (use specific tab if set, else first claude.ai tab)
+  TARGET_URL=""
+  if [ -f "$TARGET_URL_FILE" ]; then
+    TARGET_URL=$(cat "$TARGET_URL_FILE")
+  fi
+
+  RESULT=$(osascript 2>/dev/null <<APPLESCRIPT
+set targetUrl to (do shell script "cat /tmp/autokick-target-url 2>/dev/null || echo ''")
 tell application "Google Chrome"
   if not running then return "NO_CHROME"
   repeat with w in windows
     set tabCount to count of tabs of w
     repeat with i from 1 to tabCount
       set t to tab i of w
-      if URL of t contains "claude.ai/chat" then
-        set checkJs to "(() => { const stopBtn = document.querySelector('button[aria-label=\"応答を停止\"]') || document.querySelector('button[aria-label=\"Stop Response\"]'); if (stopBtn) { const rect = stopBtn.getBoundingClientRect(); if (rect.width > 0 && rect.height > 0) return 'RUNNING'; } return 'STOPPED'; })()"
+      set tabUrl to URL of t
+      set matched to false
+      if targetUrl is not "" then
+        if tabUrl contains targetUrl then set matched to true
+      else
+        if tabUrl contains "claude.ai/chat" then set matched to true
+      end if
+      if matched then
+        set checkJs to "(() => { const s = document.querySelector('button[aria-label=\"Stop Response\"]') || document.querySelector('button[aria-label=\"\u5fdc\u7b54\u3092\u505c\u6b62\"]'); if (s) { const r = s.getBoundingClientRect(); if (r.width > 0) return 'RUNNING'; } return 'STOPPED'; })()"
         set status to execute t javascript checkJs
         return status
       end if
@@ -73,13 +88,21 @@ APPLESCRIPT
       # --- END M1_STATUS_CHECK ---
       echo "[$(date '+%H:%M:%S')] KICKING" >> "$LOG"
 
-      KICK_RESULT=$(osascript << 'APPLESCRIPT' 2>/dev/null
+      KICK_RESULT=$(osascript 2>/dev/null <<APPLESCRIPT
+set targetUrl to (do shell script "cat /tmp/autokick-target-url 2>/dev/null || echo ''")
 tell application "Google Chrome"
   repeat with w in windows
     set tabCount to count of tabs of w
     repeat with i from 1 to tabCount
       set t to tab i of w
-      if URL of t contains "claude.ai/chat" then
+      set tabUrl to URL of t
+      set matched to false
+      if targetUrl is not "" then
+        if tabUrl contains targetUrl then set matched to true
+      else
+        if tabUrl contains "claude.ai/chat" then set matched to true
+      end if
+      if matched then
         set active tab index of w to i
         set js1 to "(() => { const e = document.querySelector('.ProseMirror'); if (!e) return 'NO_EDITOR'; e.focus(); document.execCommand('selectAll'); document.execCommand('delete'); document.execCommand('insertText', false, 'auto-kick: session timeout detected, continue working'); return 'INSERTED'; })()"
         execute t javascript js1
