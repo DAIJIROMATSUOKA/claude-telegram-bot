@@ -376,7 +376,7 @@ export async function buildMemoryContext(userMessage: string): Promise<string> {
   const parts: string[] = [];
 
   const [_, projects, vectorResults, summaries, pending] = await Promise.all([
-    Promise.resolve(null), // profile fetched separately for category split
+    Promise.resolve(null),
     getActiveProjects(),
     searchMemories(userMessage, 3),
     getRecentSummaries(3),
@@ -384,24 +384,22 @@ export async function buildMemoryContext(userMessage: string): Promise<string> {
   ]);
 
   // Split profile into facts vs preferences/rules
-  {
-    const profileFull = await getProfileFull();
-    const facts: string[] = [];
-    const prefs: string[] = [];
-    for (const r of profileFull) {
-      const line = `- ${r.key}: ${r.value}`;
-      if (r.category === 'preferences' || r.category === 'rules') {
-        prefs.push(line);
-      } else {
-        facts.push(line);
-      }
+  const profileFull = await getProfileFull();
+  const facts: string[] = [];
+  const prefs: string[] = [];
+  for (const r of profileFull) {
+    const line = `- ${r.key}: ${r.value}`;
+    if (r.category === 'preferences' || r.category === 'rules') {
+      prefs.push(line);
+    } else {
+      facts.push(line);
     }
-    if (facts.length > 0) {
-      parts.push(`[DJ PROFILE]\n${facts.join('\n')}`);
-    }
-    if (prefs.length > 0) {
-      parts.push(`[DJ PREFERENCES — Jarvisはこれに従え]\n${prefs.join('\n')}`);
-    }
+  }
+  if (facts.length > 0) {
+    parts.push(`[DJ PROFILE]\n${facts.join('\n')}`);
+  }
+  if (prefs.length > 0) {
+    parts.push(`[DJ PREFERENCES — Jarvisはこれに従え]\n${prefs.join('\n')}`);
   }
 
   if (projects.length > 0) {
