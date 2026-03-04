@@ -73,11 +73,14 @@ export async function handleText(ctx: Context): Promise<void> {
 
   // ── Memo mode: 。で始まるメッセージはJarvisスルー、🗑ボタンのみ ──
   if (ctx.message?.text?.startsWith('。')) {
-    await ctx.reply('🗑', {
-      reply_to_message_id: ctx.message?.message_id,
+    const memoText = ctx.message.text.substring(1).trim();
+    // Delete user's original message
+    try { await ctx.api.deleteMessage(chatId, ctx.message.message_id); } catch {}
+    // Send clean memo with delete button
+    await ctx.api.sendMessage(chatId, memoText || '。', {
       reply_markup: {
         inline_keyboard: [[
-          { text: '🗑', callback_data: 'ib:delmemo:0' },
+          { text: '🗑', callback_data: 'ib:del:memo' },
         ]],
       },
     });
