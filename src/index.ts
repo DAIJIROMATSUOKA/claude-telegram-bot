@@ -138,6 +138,38 @@ const bot = new Bot(TELEGRAM_TOKEN, {
   },
 });
 
+// ── Global: append 🗑 delete button to every outgoing message ──
+bot.api.config.use((prev, method, payload, signal) => {
+  if (method === 'sendMessage' || method === 'sendPhoto' || method === 'sendDocument') {
+    const p = payload as any;
+    let markup = p.reply_markup ? (typeof p.reply_markup === 'string' ? JSON.parse(p.reply_markup) : p.reply_markup) : null;
+
+    const delBtn = { text: '🗑', callback_data: 'ib:del:sys' };
+
+    if (markup?.inline_keyboard) {
+      // Check if 🗑 already exists
+      const hasDelBtn = markup.inline_keyboard.some((row: any[]) => 
+        row.some((btn: any) => btn.callback_data?.startsWith('ib:del'))
+      );
+      if (!hasDelBtn) {
+        // Append 🗑 to the last row if it has space, otherwise new row
+        const lastRow = markup.inline_keyboard[markup.inline_keyboard.length - 1];
+        if (lastRow.length < 4) {
+          lastRow.push(delBtn);
+        } else {
+          markup.inline_keyboard.push([delBtn]);
+        }
+      }
+    } else if (!markup || !markup.keyboard) {
+      // No markup at all → add 🗑 button
+      markup = { inline_keyboard: [[delBtn]] };
+    }
+
+    p.reply_markup = JSON.stringify(markup);
+  }
+  return prev(method, payload, signal);
+});
+
 // Sequentialize non-command messages per user (prevents race conditions)
 // Commands bypass sequentialization so they work immediately
 bot.use(
