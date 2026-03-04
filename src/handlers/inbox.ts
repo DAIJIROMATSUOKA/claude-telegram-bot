@@ -280,10 +280,19 @@ async function handleAiDraft(
   });
 
   try {
+    // Load staff context for tone/naming
+    let staffContext = "";
+    try {
+      const ctxFile = Bun.file("config/staff-context.md");
+      if (await ctxFile.exists()) staffContext = await ctxFile.text();
+    } catch {}
+
     const isJapanese = /[぀-ゟ゠-ヿ一-龯]/.test(msgContent);
     const langHint = isJapanese ? "日本語" : "English";
     const prompt = [
       "以下のメッセージに対する返信の下書きを1つだけ書いてください。",
+      "あなたは株式会社機械ラボのCEO松岡大次郎（DJ）として返信します。",
+      staffContext ? "\nスタッフ情報:\n" + staffContext : "",
       `- ${langHint}で書いてください`,
       "- 簡潔でプロフェッショナルなトーンで",
       "- 挨拶と署名は不要",
