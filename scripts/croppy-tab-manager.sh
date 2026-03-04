@@ -85,7 +85,7 @@ tell application "Google Chrome"
       set tTitle to title of t
       if tTitle contains "[J-WORKER" then
         try
-          set checkJs to "(() => { const e = document.querySelector('.ProseMirror'); if (!e) return 'NO_EDITOR'; const stopBtn = document.querySelector('button[aria-label=\"Stop Response\"]') || document.querySelector('button[aria-label=\"応答を停止\"]'); if (stopBtn && stopBtn.getBoundingClientRect().width > 0) return 'BUSY'; return 'READY'; })()"
+          set checkJs to "(() => { const e = document.querySelector('.ProseMirror'); if (!e) return 'NO_EDITOR'; const retry = document.querySelector('button[aria-label=\"Retry\"]') || document.querySelector('button[aria-label=\"再試行\"]'); if (retry) return 'READY'; const stopBtn = document.querySelector('button[aria-label=\"Stop Response\"]') || document.querySelector('button[aria-label=\"応答を停止\"]'); if (stopBtn && stopBtn.getBoundingClientRect().width > 0) return 'BUSY'; return 'READY'; })()"
           set status to execute t javascript checkJs
         on error
           set status to "ERROR"
@@ -187,7 +187,7 @@ tell application "Google Chrome"
   if tTitle does not contain "[J-WORKER" then
     return "NOT_WORKER"
   end if
-  set checkJs to "(() => { const e = document.querySelector('.ProseMirror'); if (!e) return 'NO_EDITOR'; const stopBtn = document.querySelector('button[aria-label=\"Stop Response\"]') || document.querySelector('button[aria-label=\"応答を停止\"]'); if (stopBtn && stopBtn.getBoundingClientRect().width > 0) return 'BUSY'; return 'READY'; })()"
+  set checkJs to "(() => { const e = document.querySelector('.ProseMirror'); if (!e) return 'NO_EDITOR'; const retry = document.querySelector('button[aria-label=\"Retry\"]') || document.querySelector('button[aria-label=\"再試行\"]'); if (retry) return 'READY'; const stopBtn = document.querySelector('button[aria-label=\"Stop Response\"]') || document.querySelector('button[aria-label=\"応答を停止\"]'); if (stopBtn && stopBtn.getBoundingClientRect().width > 0) return 'BUSY'; return 'READY'; })()"
   return execute t javascript checkJs
 end tell
 CHECKEOF
