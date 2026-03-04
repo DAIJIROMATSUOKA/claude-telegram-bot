@@ -101,6 +101,25 @@ def get_events(service, date_start: datetime.date, date_end: datetime.date) -> l
 
     return events
 
+# ===== 日時表現をタイトルから除去 =====
+import re as _re
+
+def _strip_datetime_from_title(title: str) -> str:
+    patterns = [
+        r"(今日|明日|明後日|昨日)",
+        r"(今週|来週|再来週|今月|来月)",
+        r"(月曜|火曜|水曜|木曜|金曜|土曜|日曜)日?",
+        r"\d{4}[/\-]\d{1,2}[/\-]\d{1,2}",
+        r"\d{1,2}[/\-]\d{1,2}",
+        r"(午前|午後)\d{1,2}時",
+        r"\d{1,2}時\d{0,2}分?",
+        r"\d{1,2}:\d{2}",
+    ]
+    result = title
+    for p in patterns:
+        result = _re.sub(p, "", result)
+    return _re.sub(r"[\s\u3000]+", " ", result).strip()
+
 # ===== イベント作成 =====
 def create_event(service, text: str) -> str:
     """自然言語テキストからイベントを作成 (Google quickAdd 使用)"""
@@ -108,6 +127,16 @@ def create_event(service, text: str) -> str:
         calendarId="primary",
         text=text,
     ).execute()
+
+    raw_summary = result.get("summary", "(無題)")
+    clean_summary = _strip_datetime_from_title(raw_summary) or raw_summary
+    if clean_summary != raw_summary:
+        service.events().patch(
+            calendarId="primary",
+            eventId=result["id"],
+            body={"summary": clean_summary},
+        ).execute()
+        result["summary"] = clean_summary
 
     start = result["start"].get("dateTime", result["start"].get("date", ""))
     is_allday = "T" not in start
@@ -117,7 +146,7 @@ def create_event(service, text: str) -> str:
         dt = datetime.datetime.fromisoformat(start).astimezone(TZ)
         time_str = dt.strftime("%m/%d %H:%M")
 
-    return f"✅ イベント作成: {result.get('summary', '(無題)')} @ {time_str}\nID: {result['id']}"
+    return f"\u2705 \u30a4\u30d9\u30f3\u30c8\u4f5c\u6210: {result.get('summary', '(\u7121\u984c)')} @ {time_str}\nID: {result['id']}"
 
 # ===== Todoist タスク取得 =====
 def get_todoist_tasks(token: str, filter_str: str = "today") -> list:
