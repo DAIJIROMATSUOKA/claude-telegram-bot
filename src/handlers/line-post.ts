@@ -24,13 +24,15 @@ async function getLineTargets(): Promise<LineTarget[]> {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        sql: `SELECT DISTINCT source_id,
+        sql: `SELECT source_id,
                 json_extract(source_detail, '$.group_name') as name,
                 json_extract(source_detail, '$.is_group') as is_group,
-                json_extract(source_detail, '$.sender_name') as sender
+                MAX(json_extract(source_detail, '$.sender_name')) as sender,
+                MAX(created_at) as last_msg
               FROM message_mappings
               WHERE source='line'
-              ORDER BY json_extract(source_detail, '$.is_group') DESC, created_at DESC
+              GROUP BY source_id
+              ORDER BY json_extract(source_detail, '$.is_group') DESC, last_msg DESC
               LIMIT 30`,
       }),
     });
