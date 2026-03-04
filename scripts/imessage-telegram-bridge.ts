@@ -8,6 +8,93 @@
  */
 
 import { Database } from "bun:sqlite";
+
+/**
+ * Resolve phone/email handle to contact name via AddressBook DB
+ * Caches results for the process lifetime
+ */
+const contactCache = new Map<string, string>();
+let contactCacheLoaded = false;
+
+function normalizePhone(phone: string): string {
+  // Strip all non-digits
+  const digits = phone.replace(/[^0-9]/g, "");
+  // Japanese: +81XXXXXXXXXX -> 0XXXXXXXXXX (last 10 digits)
+  if (digits.length >= 10) return digits.slice(-10);
+  return digits;
+}
+
+async function loadContactCache(): Promise<void> {
+  if (contactCacheLoaded) return;
+  contactCacheLoaded = true;
+  
+  try {
+    const { readdirSync } = await import("fs");
+    const basePath = process.env.HOME + "/Library/Application Support/AddressBook/Sources";
+    const sources = readdirSync(basePath);
+    
+    for (const src of sources) {
+      const dbPath = `${basePath}/${src}/AddressBook-v22.abcddb`;
+      try {
+        const db = new Database(dbPath, { readonly: true });
+        
+        // Phone numbers
+        const phoneRows = db.query(`
+          SELECT ZABCDRECORD.ZFIRSTNAME, ZABCDRECORD.ZLASTNAME, ZABCDPHONENUMBER.ZFULLNUMBER
+          FROM ZABCDPHONENUMBER
+          JOIN ZABCDRECORD ON ZABCDPHONENUMBER.ZOWNER = ZABCDRECORD.Z_PK
+          WHERE ZABCDPHONENUMBER.ZFULLNUMBER IS NOT NULL
+        `).all() as any[];
+        
+        for (const row of phoneRows) {
+          const name = [row.ZLASTNAME, row.ZFIRSTNAME].filter(Boolean).join("") || 
+                       row.ZFIRSTNAME || row.ZLASTNAME || "";
+          if (name && row.ZFULLNUMBER) {
+            const normalized = normalizePhone(row.ZFULLNUMBER);
+            if (normalized) contactCache.set(normalized, name);
+          }
+        }
+        
+        // Email addresses
+        const emailRows = db.query(`
+          SELECT ZABCDRECORD.ZFIRSTNAME, ZABCDRECORD.ZLASTNAME, ZABCDEMAILADDRESS.ZADDRESS
+          FROM ZABCDEMAILADDRESS
+          JOIN ZABCDRECORD ON ZABCDEMAILADDRESS.ZOWNER = ZABCDRECORD.Z_PK
+          WHERE ZABCDEMAILADDRESS.ZADDRESS IS NOT NULL
+        `).all() as any[];
+        
+        for (const row of emailRows) {
+          const name = [row.ZLASTNAME, row.ZFIRSTNAME].filter(Boolean).join("") ||
+                       row.ZFIRSTNAME || row.ZLASTNAME || "";
+          if (name && row.ZADDRESS) {
+            contactCache.set(row.ZADDRESS.toLowerCase(), name);
+          }
+        }
+        
+        db.close();
+      } catch {}
+    }
+    
+    console.log(`[iMessage Bridge] Loaded ${contactCache.size} contacts`);
+  } catch (e) {
+    console.error("[iMessage Bridge] Contact cache error:", e);
+  }
+}
+
+function resolveContactName(handleId: string): string {
+  if (!handleId) return "unknown";
+  
+  // Try exact match (email)
+  const lower = handleId.toLowerCase();
+  if (contactCache.has(lower)) return contactCache.get(lower)!;
+  
+  // Try normalized phone
+  const normalized = normalizePhone(handleId);
+  if (normalized && contactCache.has(normalized)) return contactCache.get(normalized)!;
+  
+  return handleId;
+}
+
 import { readFileSync, writeFileSync, existsSync } from "fs";
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
@@ -145,7 +232,7 @@ async function storeMapping(
 
 // --- Main ---
 
-function main() {
+async function main() {
   if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
     console.error("[iMessage Bridge] Missing Telegram env vars");
     process.exit(0);
@@ -162,6 +249,8 @@ function main() {
     console.error("  System Settings → Privacy & Security → Full Disk Access → add ~/.bun/bin/bun");
     process.exit(0); // exit(0) = don't crash-loop
   }
+
+  await loadContactCache();
 
   const state = loadState();
 
@@ -213,9 +302,10 @@ function main() {
   // Process synchronously to maintain order, async for telegram/gateway calls
   const processRows = async () => {
     for (const row of rows) {
-      const senderName = row.handle_id || "unknown";
+      const senderName = resolveContactName(row.handle_id || "");
       const text = row.text || "";
-      const isGroup = !!(row.group_id || row.cache_roomnames);
+      // group chats have chat_identifier starting with "chat" (e.g. "chat123456")
+      const isGroup = !!(row.cache_roomnames || (row.chat_guid || "").startsWith("iMessage;+;chat"));
       const chatGuid = row.chat_guid || "";
 
       const telegramMsgId = await sendToTelegram(
