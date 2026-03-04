@@ -44,25 +44,28 @@ async function extractWithGemini(
     ? `\n既存プロファイルキー（これらと重複する情報は抽出しない）:\n${existingKeys.join(', ')}`
     : '';
 
-  const prompt = `以下の会話から新規情報を抽出してJSONで返せ。前置き不要、JSONのみ。
+  const prompt = `DJのTelegram会話からDJに関する新規事実のみ抽出。JSON以外出力禁止。
 ${existingKeysStr}
 
-<conversation>
-User: ${userMessage.substring(0, 2000)}
-Assistant: ${assistantResponse.substring(0, 2000)}
-</conversation>
+<user_message>
+${userMessage.substring(0, 2000)}
+</user_message>
 
-JSON形式:
-{"facts": [{"key": "english_snake_case", "value": "値", "category": "identity|work|tech|rules|preferences", "confidence": 0.0-1.0}], "projects": [{"id": "snake_case", "name": "名前", "goals": "目標", "status": "active|done"}], "summary": "日本語1-2文要約", "topics": ["topic1"], "decisions": ["決定事項"]}
+<assistant_response>
+${assistantResponse.substring(0, 1000)}
+</assistant_response>
 
-厳格ルール:
-- 既存キーと重複する情報は絶対に含めない
-- 雑談・挨拶・コマンド実行結果からは空配列を返す
-- confidenceは厳しく: 明確な事実宣言=0.9、推測=0.5、曖昧=0.3
-- テスト目的の発言（「テスト」「試し」等）は抽出しない
-- keyは英語snake_case、valueは元言語のまま
-- categoryは5種のみ: identity, work, tech, rules, preferences
-- JSON以外出力禁止`;
+出力形式:
+{"facts": [{"key": "english_snake_case", "value": "値", "category": "identity|work|tech|rules|preferences", "confidence": 0.0-1.0}], "projects": [{"id": "snake_case", "name": "名前", "goals": "目標", "status": "active|done"}], "summary": "日本語1文要約", "topics": ["topic"], "decisions": ["決定事項"]}
+
+【最重要ルール — 違反は致命的エラー】
+1. DJが自分の言葉で述べた新事実のみ抽出せよ。Assistantの応答内容・過去の話題・技術的説明は絶対に抽出するな
+2. Assistant応答はDJの発言を理解する文脈としてのみ使え。Assistantが言及した機能名・コマンド名・技術用語をfactsに入れるな
+3. 既存キーと同じ情報は含めるな
+4. 雑談・挨拶・コマンド・テスト目的の発言 → 全て空配列を返せ: {"facts":[],"projects":[],"summary":"","topics":[],"decisions":[]}
+5. confidence基準: DJが明言した事実=0.9、文脈から推測可能=0.6、曖昧・仮定=0.4
+6. categoryは5種限定: identity, work, tech, rules, preferences
+7. keyは英語snake_case、valueは元の言語のまま`;
 
   return new Promise((resolve) => {
     const child = spawn('/opt/homebrew/bin/gemini', [], {
