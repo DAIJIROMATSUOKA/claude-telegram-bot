@@ -93,6 +93,9 @@ export async function handleInboxCallback(ctx: Context): Promise<boolean> {
       case "imrpl":
         await handleImessageReplyPrompt(ctx, sourceId, msgId);
         break;
+      case "draft":
+        await handleAiDraft(ctx, sourceId, msgId);
+        break;
       case "snz1h":
         await handleSnooze(ctx, sourceId, msgId, chatId, 1);
         break;
@@ -237,6 +240,101 @@ async function handleReplyPrompt(
 /**
  * Snooze: delete now, re-notify later
  */
+/**
+ * AI draft reply: generate a draft using Claude CLI (flat rate)
+ */
+async function handleAiDraft(
+  ctx: Context,
+  sourceId: string,
+  msgId?: number
+): Promise<void> {
+  await ctx.answerCallbackQuery({ text: "✏️ AI下書き生成中..." });
+
+  const originalText = ctx.callbackQuery?.message?.text || "";
+  const caption = (ctx.callbackQuery?.message as any)?.caption || "";
+  const msgContent = originalText || caption;
+
+  if (!msgContent || msgContent.length < 5) {
+    await ctx.reply("❌ メッセージ内容が取得できません", {
+      reply_to_message_id: msgId,
+    });
+    return;
+  }
+
+  let senderName = "";
+  try {
+    const data = await gatewayQuery(
+      "SELECT source, source_detail FROM message_mappings WHERE telegram_msg_id = ? ORDER BY created_at DESC LIMIT 1",
+      [msgId]
+    );
+    if (data?.results?.[0]) {
+      try {
+        const detail = JSON.parse(data.results[0].source_detail || "{}");
+        senderName = detail.sender_name || detail.from || "";
+      } catch {}
+    }
+  } catch {}
+
+  const draftMsg = await ctx.reply("✏️ AI下書き生成中...", {
+    reply_to_message_id: msgId,
+  });
+
+  try {
+    const isJapanese = /[぀-ゟ゠-ヿ一-龯]/.test(msgContent);
+    const langHint = isJapanese ? "日本語" : "English";
+    const prompt = [
+      "以下のメッセージに対する返信の下書きを1つだけ書いてください。",
+      `- ${langHint}で書いてください`,
+      "- 簡潔でプロフェッショナルなトーンで",
+      "- 挨拶と署名は不要",
+      "- 下書き本文のみを出力（説明不要）",
+      "",
+      `送信者: ${senderName}`,
+      "メッセージ:",
+      msgContent.substring(0, 1500),
+    ].join("\n");
+
+    const tmpFile = "/tmp/ai-draft-prompt.txt";
+    await Bun.write(tmpFile, prompt);
+
+    const proc = Bun.spawn(
+      ["bash", "-c", `cat ${tmpFile} | /opt/homebrew/bin/claude -p --model sonnet 2>/dev/null | head -100`],
+      {
+        stdout: "pipe",
+        stderr: "pipe",
+        env: { ...process.env, PATH: "/opt/homebrew/bin:/usr/local/bin:" + (process.env.PATH || "") },
+      }
+    );
+
+    const timeout = setTimeout(() => proc.kill(), 30000);
+    const exitCode = await proc.exited;
+    clearTimeout(timeout);
+    const stdout = await new Response(proc.stdout).text();
+
+    const chatId = ctx.chat?.id!;
+    try { await ctx.api.deleteMessage(chatId, draftMsg.message_id); } catch {}
+
+    if (exitCode === 0 && stdout.trim()) {
+      const draft = stdout.trim();
+      await ctx.reply(
+        `✏️ <b>AI下書き:</b>\n\n${draft.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")}`,
+        {
+          parse_mode: "HTML",
+          reply_to_message_id: msgId,
+        }
+      );
+    } else {
+      await ctx.reply("❌ AI下書き生成失敗", { reply_to_message_id: msgId });
+    }
+  } catch (e) {
+    const chatId = ctx.chat?.id!;
+    try { await ctx.api.deleteMessage(chatId, draftMsg.message_id); } catch {}
+    await ctx.reply("❌ AI下書きエラー: " + String(e).substring(0, 200), {
+      reply_to_message_id: msgId,
+    });
+  }
+}
+
 async function handleSnooze(
   ctx: Context,
   gmailId: string,
