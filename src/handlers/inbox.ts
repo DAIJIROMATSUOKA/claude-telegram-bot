@@ -323,7 +323,8 @@ async function handleAiDraft(
     const chatId = ctx.chat?.id!;
     try { await ctx.api.deleteMessage(chatId, draftMsg.message_id); } catch {}
 
-    if (exitCode === 0 && stdout.trim()) {
+    console.log("[AiDraft] exitCode=", exitCode, "stdout_len=", stdout.length, "stdout_start=", stdout.substring(0, 80));
+    if (stdout.trim()) {
       const draft = stdout.trim();
       await ctx.reply(
         `✏️ <b>AI下書き:</b>\n\n${draft.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")}`,
@@ -333,7 +334,8 @@ async function handleAiDraft(
         }
       );
     } else {
-      await ctx.reply("❌ AI下書き生成失敗", { reply_to_message_id: msgId });
+      console.error("[AiDraft] FAILED exitCode=", exitCode, "stdout=", stdout.substring(0, 200));
+      await ctx.reply("❌ AI下書き生成失敗 (exit=" + exitCode + ")", { reply_to_message_id: msgId });
     }
   } catch (e) {
     const chatId = ctx.chat?.id!;
