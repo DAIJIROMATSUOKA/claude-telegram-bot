@@ -107,6 +107,8 @@ class EmbedHandler(BaseHTTPRequestHandler):
             self._handle_search(body)
         elif self.path == '/delete':
             self._handle_delete(body)
+        elif self.path == '/gc':
+            self._handle_gc(body)
         else:
             self._json_response({'error': 'Not found'}, 404)
 
@@ -213,6 +215,35 @@ class EmbedHandler(BaseHTTPRequestHandler):
         results = results[:top_k]
 
         self._json_response({'results': results, 'total_searched': len(rows)})
+
+
+    def _handle_gc(self, body):
+        """Garbage collect old embeddings."""
+        max_age_days = body.get('max_age_days', 90)
+        max_entries = body.get('max_entries', 5000)
+        import time
+        cutoff = time.time() - (max_age_days * 86400)
+        
+        conn = sqlite3.connect(DB_PATH)
+        deleted = 0
+        
+        # Delete by age
+        cur = conn.execute('DELETE FROM embeddings WHERE created_at < ?', (cutoff,))
+        deleted += cur.rowcount
+        
+        # Cap total entries (keep newest)
+        total = conn.execute('SELECT COUNT(*) FROM embeddings').fetchone()[0]
+        if total > max_entries:
+            excess = total - max_entries
+            cur = conn.execute(
+                'DELETE FROM embeddings WHERE id IN (SELECT id FROM embeddings ORDER BY created_at ASC LIMIT ?)',
+                (excess,)
+            )
+            deleted += cur.rowcount
+        
+        conn.commit()
+        conn.close()
+        self._json_response({'deleted': deleted, 'remaining': total - deleted})
 
     def _handle_delete(self, body):
         """Delete embeddings by source_id or source_type."""

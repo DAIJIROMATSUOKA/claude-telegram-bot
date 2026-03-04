@@ -57,6 +57,8 @@ import { registerMediaCommands } from "./handlers/media-commands";
 import { handleCal } from "./handlers/cal-command";
 import { handleTaskCommand, handleStopCommand as handleOrchestratorStop, handleTaskStatusCommand } from "./task/task-command";
 import { handleTaskLogCommand } from "./task/tasklog-command";
+import { handleMemory, handleForget, handleRemember } from "./handlers/memory-commands";
+import { runVectorGC, runPendingGC, runSummaryGC } from "./services/jarvis-memory";
 import { ensureLearnedMemoryTable } from './utils/learned-memory';
 import { ensureSessionSummaryTable } from './utils/session-summary';
 import { startMemoryGCScheduler } from './utils/memory-gc';
@@ -210,6 +212,9 @@ bot.command("todoist", handleTodoist);
 bot.command("cal", handleCal);
 bot.command("alarm", handleAlarm);
 bot.command("recall", handleRecall);
+bot.command("memory", handleMemory);
+bot.command("forget", handleForget);
+bot.command("remember", handleRemember);
 
 // Meta-Agent commands
 

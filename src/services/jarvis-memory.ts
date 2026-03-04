@@ -1,24 +1,24 @@
 /**
- * JARVIS Memory Service v2
+ * JARVIS Memory Service v2 — Full Implementation
  *
  * ハイブリッドメモリ: D1構造化DB + ローカルベクトルRAG
- * claude.aiのuserMemories相当の文脈をClaude CLIに注入する。
  *
- * Read path (毎ターン):
- *   1. user_profile (D1) - 安定事実
- *   2. active projects (D1) - 現行案件
- *   3. relevant memories (Vector) - 意味検索
- *   4. recent decisions (D1) - 最近の決定事項
- *   5. learned memories (既存) - ルール/好み
- *
- * Write path (応答後非同期):
- *   Memory Extractor が facts/preferences/projects を抽出 → D1更新 + embedding保存
+ * Features:
+ *   - User Profile (stable facts, manual > extracted)
+ *   - Active Projects tracking
+ *   - Conversation Summaries
+ *   - Vector semantic search (local embed server)
+ *   - Pending Memory (low-confidence → DJ approval)
+ *   - Conflict Resolution (manual > extracted, higher confidence wins)
+ *   - Vector GC (age + cap)
+ *   - Delete operations for /forget command
  */
 
 import { callMemoryGateway } from '../handlers/ai-router';
 
 const EMBED_SERVER = process.env.EMBED_SERVER_URL || 'http://127.0.0.1:19823';
-const EMBED_TIMEOUT = 5000; // 5s
+const EMBED_TIMEOUT = 5000;
+const PENDING_CONFIDENCE_THRESHOLD = 0.7;
 
 // ─── D1 Schema Initialization ───
 
@@ -49,6 +49,16 @@ export async function ensureMemoryTables(): Promise<void> {
       key_facts_json TEXT,
       created_at TEXT DEFAULT (datetime('now'))
     )`,
+    `CREATE TABLE IF NOT EXISTS jarvis_pending_memory (
+      id TEXT PRIMARY KEY,
+      type TEXT NOT NULL DEFAULT 'fact',
+      key TEXT NOT NULL,
+      value TEXT NOT NULL,
+      category TEXT DEFAULT 'general',
+      confidence REAL DEFAULT 0.5,
+      source_conversation TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    )`,
   ];
 
   for (const sql of tables) {
@@ -58,7 +68,7 @@ export async function ensureMemoryTables(): Promise<void> {
       console.error('[Memory] Table creation failed:', e);
     }
   }
-  console.log('[Memory] Tables ensured');
+  console.log('✅ Memory tables initialized');
 }
 
 // ─── User Profile ───
@@ -66,14 +76,12 @@ export async function ensureMemoryTables(): Promise<void> {
 export async function getProfile(): Promise<Record<string, string>> {
   try {
     const res = await callMemoryGateway('/v1/db/query', 'POST', {
-      sql: 'SELECT key, value FROM jarvis_user_profile WHERE confidence >= 0.5 ORDER BY category, key',
+      sql: 'SELECT key, value, source, confidence FROM jarvis_user_profile WHERE confidence >= 0.5 ORDER BY category, key',
       params: [],
     });
     const rows = (res as any)?.data?.results || [];
     const profile: Record<string, string> = {};
-    for (const r of rows) {
-      profile[r.key] = r.value;
-    }
+    for (const r of rows) profile[r.key] = r.value;
     return profile;
   } catch (e) {
     console.error('[Memory] getProfile failed:', e);
@@ -81,23 +89,51 @@ export async function getProfile(): Promise<Record<string, string>> {
   }
 }
 
+/**
+ * Conflict-aware upsert:
+ * - source='manual' always wins over 'extracted'
+ * - Same source: higher confidence wins
+ */
 export async function upsertProfile(
-  key: string,
-  value: string,
-  category: string = 'general',
-  confidence: number = 0.8,
-  source: string = 'extracted'
-): Promise<void> {
+  key: string, value: string, category: string = 'general',
+  confidence: number = 0.8, source: string = 'extracted'
+): Promise<boolean> {
+  if (source === 'extracted') {
+    try {
+      const existing = await callMemoryGateway('/v1/db/query', 'POST', {
+        sql: 'SELECT source, confidence FROM jarvis_user_profile WHERE key = ?',
+        params: [key],
+      });
+      const rows = (existing as any)?.data?.results || [];
+      if (rows.length > 0) {
+        const ex = rows[0];
+        if (ex.source === 'manual') {
+          console.log(`[Memory] Skip: ${key} (manual protected)`);
+          return false;
+        }
+        if (ex.confidence > confidence) {
+          console.log(`[Memory] Skip: ${key} (confidence ${ex.confidence} > ${confidence})`);
+          return false;
+        }
+      }
+    } catch {}
+  }
+
   await callMemoryGateway('/v1/db/query', 'POST', {
     sql: `INSERT INTO jarvis_user_profile (key, value, category, confidence, source, updated_at)
           VALUES (?, ?, ?, ?, ?, datetime('now'))
           ON CONFLICT(key) DO UPDATE SET
-            value = excluded.value,
-            category = excluded.category,
-            confidence = MAX(confidence, excluded.confidence),
-            source = excluded.source,
+            value = excluded.value, category = excluded.category,
+            confidence = excluded.confidence, source = excluded.source,
             updated_at = datetime('now')`,
     params: [key, value, category, confidence, source],
+  });
+  return true;
+}
+
+export async function deleteProfileKey(key: string): Promise<void> {
+  await callMemoryGateway('/v1/db/query', 'POST', {
+    sql: 'DELETE FROM jarvis_user_profile WHERE key = ?', params: [key],
   });
 }
 
@@ -118,8 +154,7 @@ export async function getActiveProjects(): Promise<any[]> {
 }
 
 export async function upsertProject(
-  id: string,
-  name: string,
+  id: string, name: string,
   fields: { goals?: string; constraints?: string[]; decisions?: string[]; status?: string }
 ): Promise<void> {
   await callMemoryGateway('/v1/db/query', 'POST', {
@@ -133,23 +168,94 @@ export async function upsertProject(
             decisions_json = COALESCE(excluded.decisions_json, decisions_json),
             updated_at = datetime('now')`,
     params: [
-      id, name,
-      fields.status || 'active',
-      fields.goals || null,
+      id, name, fields.status || 'active', fields.goals || null,
       fields.constraints ? JSON.stringify(fields.constraints) : null,
       fields.decisions ? JSON.stringify(fields.decisions) : null,
     ],
   });
 }
 
+export async function deleteProject(id: string): Promise<void> {
+  await callMemoryGateway('/v1/db/query', 'POST', {
+    sql: 'DELETE FROM jarvis_projects WHERE id = ?', params: [id],
+  });
+}
+
+// ─── Pending Memory ───
+
+export async function addPendingMemory(
+  type: string, key: string, value: string, category: string,
+  confidence: number, sourceConversation?: string
+): Promise<void> {
+  const id = `pm_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 6)}`;
+  await callMemoryGateway('/v1/db/query', 'POST', {
+    sql: `INSERT INTO jarvis_pending_memory (id, type, key, value, category, confidence, source_conversation, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+    params: [id, type, key, value, category, confidence, sourceConversation || null],
+  });
+  console.log(`[Memory] Pending: ${type}/${key} (confidence=${confidence})`);
+}
+
+export async function getPendingMemories(): Promise<any[]> {
+  try {
+    const res = await callMemoryGateway('/v1/db/query', 'POST', {
+      sql: 'SELECT id, type, key, value, category, confidence, created_at FROM jarvis_pending_memory ORDER BY created_at DESC LIMIT 20',
+      params: [],
+    });
+    return (res as any)?.data?.results || [];
+  } catch { return []; }
+}
+
+export async function approvePendingMemory(id: string): Promise<boolean> {
+  try {
+    const res = await callMemoryGateway('/v1/db/query', 'POST', {
+      sql: 'SELECT type, key, value, category, confidence FROM jarvis_pending_memory WHERE id = ?',
+      params: [id],
+    });
+    const rows = (res as any)?.data?.results || [];
+    if (rows.length === 0) return false;
+    const item = rows[0];
+    if (item.type === 'fact' || item.type === 'preference') {
+      await upsertProfile(item.key, item.value, item.category, Math.max(item.confidence, 0.8), 'approved');
+    } else if (item.type === 'project') {
+      await upsertProject(item.key, item.value, { status: 'active' });
+    }
+    await callMemoryGateway('/v1/db/query', 'POST', {
+      sql: 'DELETE FROM jarvis_pending_memory WHERE id = ?', params: [id],
+    });
+    return true;
+  } catch { return false; }
+}
+
+export async function rejectPendingMemory(id: string): Promise<boolean> {
+  try {
+    const res = await callMemoryGateway('/v1/db/query', 'POST', {
+      sql: 'DELETE FROM jarvis_pending_memory WHERE id = ?', params: [id],
+    });
+    return ((res as any)?.data?.meta?.changes || 0) > 0;
+  } catch { return false; }
+}
+
+/**
+ * Route fact to profile or pending based on confidence
+ */
+export async function routeMemoryByConfidence(
+  key: string, value: string, category: string, confidence: number, sourceConversation?: string
+): Promise<'stored' | 'pending' | 'skipped'> {
+  if (confidence >= PENDING_CONFIDENCE_THRESHOLD) {
+    const stored = await upsertProfile(key, value, category, confidence, 'extracted');
+    return stored ? 'stored' : 'skipped';
+  } else if (confidence >= 0.4) {
+    await addPendingMemory('fact', key, value, category, confidence, sourceConversation);
+    return 'pending';
+  }
+  return 'skipped';
+}
+
 // ─── Conversation Summaries ───
 
 export async function saveConversationSummary(
-  id: string,
-  summary: string,
-  topics: string[],
-  decisions: string[],
-  keyFacts: string[]
+  id: string, summary: string, topics: string[], decisions: string[], keyFacts: string[]
 ): Promise<void> {
   await callMemoryGateway('/v1/db/query', 'POST', {
     sql: `INSERT OR REPLACE INTO jarvis_conversation_summaries
@@ -167,13 +273,10 @@ export async function getRecentSummaries(limit: number = 5): Promise<any[]> {
       params: [limit],
     });
     return (res as any)?.data?.results || [];
-  } catch (e) {
-    console.error('[Memory] getRecentSummaries failed:', e);
-    return [];
-  }
+  } catch { return []; }
 }
 
-// ─── Vector Search (via Embed Server) ───
+// ─── Vector Search ───
 
 async function embedServerCall(path: string, body: any): Promise<any> {
   try {
@@ -194,10 +297,7 @@ async function embedServerCall(path: string, body: any): Promise<any> {
 }
 
 export async function storeEmbedding(
-  sourceId: string,
-  sourceType: string,
-  text: string,
-  metadata?: Record<string, any>
+  sourceId: string, sourceType: string, text: string, metadata?: Record<string, any>
 ): Promise<boolean> {
   const result = await embedServerCall('/store', {
     chunks: [{ source_id: sourceId, source_type: sourceType, text, metadata }],
@@ -206,89 +306,110 @@ export async function storeEmbedding(
 }
 
 export async function searchMemories(
-  query: string,
-  topK: number = 5,
-  sourceType?: string
+  query: string, topK: number = 5, sourceType?: string
 ): Promise<Array<{ text: string; score: number; source_id: string; metadata: any }>> {
   const result = await embedServerCall('/search', {
-    query,
-    top_k: topK,
-    source_type: sourceType,
-    min_score: 0.35,
+    query, top_k: topK, source_type: sourceType, min_score: 0.35,
   });
   return result?.results || [];
 }
 
-// ─── Context Builder (毎ターン実行) ───
+// ─── GC Functions ───
+
+export async function runVectorGC(maxAgeDays: number = 90, maxEntries: number = 5000): Promise<number> {
+  try {
+    const res = await fetch(`${EMBED_SERVER}/gc`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ max_age_days: maxAgeDays, max_entries: maxEntries }),
+    });
+    const data = await res.json() as any;
+    return data?.deleted || 0;
+  } catch { return 0; }
+}
+
+export async function runSummaryGC(maxDays: number = 180): Promise<number> {
+  try {
+    const res = await callMemoryGateway('/v1/db/query', 'POST', {
+      sql: `DELETE FROM jarvis_conversation_summaries WHERE created_at < datetime('now', ?)`,
+      params: [`-${maxDays} days`],
+    });
+    return (res as any)?.data?.meta?.changes || 0;
+  } catch { return 0; }
+}
+
+export async function runPendingGC(maxDays: number = 30): Promise<number> {
+  try {
+    const res = await callMemoryGateway('/v1/db/query', 'POST', {
+      sql: `DELETE FROM jarvis_pending_memory WHERE created_at < datetime('now', ?)`,
+      params: [`-${maxDays} days`],
+    });
+    return (res as any)?.data?.meta?.changes || 0;
+  } catch { return 0; }
+}
+
+// ─── Context Builder ───
 
 export async function buildMemoryContext(userMessage: string): Promise<string> {
   const start = Date.now();
   const parts: string[] = [];
 
-  // 1. User Profile
-  const profile = await getProfile();
+  const [profile, projects, vectorResults, summaries, pending] = await Promise.all([
+    getProfile(),
+    getActiveProjects(),
+    searchMemories(userMessage, 3),
+    getRecentSummaries(3),
+    getPendingMemories(),
+  ]);
+
   if (Object.keys(profile).length > 0) {
-    const profileLines = Object.entries(profile)
-      .map(([k, v]) => `- ${k}: ${v}`)
-      .join('\n');
-    parts.push(`[DJ PROFILE]\n${profileLines}`);
+    parts.push(`[DJ PROFILE]\n${Object.entries(profile).map(([k, v]) => `- ${k}: ${v}`).join('\n')}`);
   }
 
-  // 2. Active Projects
-  const projects = await getActiveProjects();
   if (projects.length > 0) {
-    const projLines = projects.map((p: any) => {
+    parts.push(`[ACTIVE PROJECTS]\n${projects.map((p: any) => {
       let line = `- ${p.name} (${p.status})`;
       if (p.goals) line += `: ${p.goals}`;
       return line;
-    }).join('\n');
-    parts.push(`[ACTIVE PROJECTS]\n${projLines}`);
+    }).join('\n')}`);
   }
 
-  // 3. Vector Search (semantic relevance)
-  const vectorResults = await searchMemories(userMessage, 3);
   if (vectorResults.length > 0) {
-    const memLines = vectorResults
-      .map(r => `- [${r.score.toFixed(2)}] ${r.text.substring(0, 300)}`)
-      .join('\n');
-    parts.push(`[RELEVANT PAST CONTEXT]\n${memLines}`);
+    parts.push(`[RELEVANT PAST CONTEXT]\n${vectorResults.map(r => `- [${r.score.toFixed(2)}] ${r.text.substring(0, 300)}`).join('\n')}`);
   }
 
-  // 4. Recent Conversation Summaries
-  const summaries = await getRecentSummaries(3);
   if (summaries.length > 0) {
-    const sumLines = summaries.map((s: any) => {
+    parts.push(`[RECENT CONVERSATIONS]\n${summaries.map((s: any) => {
       const topics = s.topics_json ? JSON.parse(s.topics_json).join(', ') : '';
       return `- ${s.created_at}: ${s.summary.substring(0, 200)}${topics ? ` [${topics}]` : ''}`;
-    }).join('\n');
-    parts.push(`[RECENT CONVERSATIONS]\n${sumLines}`);
+    }).join('\n')}`);
+  }
+
+  if (pending.length > 0) {
+    parts.push(`[PENDING MEMORIES: ${pending.length}件 — DJに /memory pending を促せ]`);
   }
 
   const elapsed = Date.now() - start;
-  console.log(`[Memory] Context built in ${elapsed}ms: profile=${Object.keys(profile).length} projects=${projects.length} vectors=${vectorResults.length} summaries=${summaries.length}`);
+  console.log(`[Memory] Context built in ${elapsed}ms: profile=${Object.keys(profile).length} projects=${projects.length} vectors=${vectorResults.length} summaries=${summaries.length} pending=${pending.length}`);
 
-  if (parts.length === 0) return '';
-  return parts.join('\n\n') + '\n';
+  return parts.length === 0 ? '' : parts.join('\n\n') + '\n';
 }
 
-// ─── Seed Profile (初回セットアップ用) ───
+// ─── Seed Profile ───
 
 export async function seedDJProfile(): Promise<void> {
   const seeds: Array<[string, string, string]> = [
     ['name', '松岡大次郎（DJ）', 'identity'],
     ['company', 'キカイラボ（株式会社機械ラボ）CEO', 'identity'],
-    ['domain', 'FA（ファクトリーオートメーション）設計エンジニアリング・食品機械', 'work'],
-    ['ai_philosophy', '1行投げて何もしない。AIが設計・実装・テスト', 'preferences'],
-    ['cost_constraint', '従量課金API絶対禁止。フラット料金のみ', 'rules'],
-    ['time_cost', '¥100K/時。短いタイムアウトで失敗より長いタイムアウトで成功', 'rules'],
-    ['response_style', '最小限・簡潔・スキャン可能。前置き/挨拶/繰り返し禁止', 'preferences'],
-    ['brand_principle', 'DOGFOODING FIRST—実際のFA設計業務で使うツールのみ展開', 'work'],
-    ['hardware_m1', 'M1 MAX 64GB（mothership）: JARVIS/Poller/ComfyUI/mflux', 'tech'],
-    ['hardware_m3', 'M3 MAX 128GB: DJワークステーション', 'tech'],
+    ['domain', 'FA設計エンジニアリング・食品機械', 'work'],
+    ['ai_philosophy', '1行投げて何もしない', 'preferences'],
+    ['cost_constraint', '従量課金API絶対禁止', 'rules'],
+    ['time_cost', '¥100K/時', 'rules'],
+    ['response_style', '最小限・簡潔・スキャン可能', 'preferences'],
+    ['brand_principle', 'DOGFOODING FIRST', 'work'],
     ['key_clients', 'Primaham, 伊藤ハム米久プラント', 'work'],
     ['location', '柏（千葉県）', 'identity'],
   ];
-
   for (const [key, value, category] of seeds) {
     await upsertProfile(key, value, category, 1.0, 'manual');
   }

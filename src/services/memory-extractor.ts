@@ -1,26 +1,28 @@
 /**
- * Memory Extractor v2
+ * Memory Extractor v2 — Improved Accuracy
  *
- * 会話からfacts/preferences/projects/decisionsを自動抽出し、
- * D1 + ベクトルDBに保存する。
- *
- * 既存のlearned-memory.ts（regex方式）を補完・強化する。
- * AI駆動抽出で、regexでは捉えられない暗黙の情報も取得。
- *
- * 実行タイミング: 応答送信後、BgTaskManager経由で非同期
+ * Gemini CLI で会話から構造化情報を抽出。
+ * 改善点:
+ *   - 既存プロファイルとの重複排除
+ *   - confidence-based routing (high→直接保存, low→pending)
+ *   - カテゴリ検証
+ *   - ノイズフィルタリング（Gemini deprecation warnings等）
+ *   - 日本語最適化プロンプト
  */
 
 import { spawn } from 'node:child_process';
 import { ulid } from 'ulidx';
 import {
-  upsertProfile,
+  getProfile,
+  routeMemoryByConfidence,
   upsertProject,
   saveConversationSummary,
   storeEmbedding,
 } from './jarvis-memory';
 
-const EXTRACTION_TIMEOUT = 60_000; // 30s
-const MIN_MESSAGE_LENGTH = 20; // 短すぎるメッセージはスキップ
+const EXTRACTION_TIMEOUT = 60_000;
+const MIN_MESSAGE_LENGTH = 20;
+const VALID_CATEGORIES = ['identity', 'work', 'tech', 'rules', 'preferences', 'general'];
 
 interface ExtractionResult {
   facts: Array<{ key: string; value: string; category: string; confidence: number }>;
@@ -31,34 +33,36 @@ interface ExtractionResult {
 }
 
 /**
- * Claude CLIを使って会話から構造化情報を抽出
+ * Gemini CLI で構造化抽出
  */
-async function extractWithClaude(
+async function extractWithGemini(
   userMessage: string,
-  assistantResponse: string
+  assistantResponse: string,
+  existingKeys: string[]
 ): Promise<ExtractionResult | null> {
-  const prompt = `以下の会話から情報を抽出してJSON形式で返せ。前置き不要、JSONのみ。
+  const existingKeysStr = existingKeys.length > 0
+    ? `\n既存プロファイルキー（これらと重複する情報は抽出しない）:\n${existingKeys.join(', ')}`
+    : '';
+
+  const prompt = `以下の会話から新規情報を抽出してJSONで返せ。前置き不要、JSONのみ。
+${existingKeysStr}
 
 <conversation>
 User: ${userMessage.substring(0, 2000)}
 Assistant: ${assistantResponse.substring(0, 2000)}
 </conversation>
 
-以下のJSON形式で返せ:
-{
-  "facts": [{"key": "英語キー", "value": "値", "category": "identity|work|tech|rules|preferences", "confidence": 0.0-1.0}],
-  "projects": [{"id": "snake_case_id", "name": "名前", "goals": "目標", "status": "active|done", "decisions": ["決定事項"]}],
-  "summary": "この会話の1-2文要約",
-  "topics": ["トピック1", "トピック2"],
-  "decisions": ["この会話で決まったこと"]
-}
+JSON形式:
+{"facts": [{"key": "english_snake_case", "value": "値", "category": "identity|work|tech|rules|preferences", "confidence": 0.0-1.0}], "projects": [{"id": "snake_case", "name": "名前", "goals": "目標", "status": "active|done"}], "summary": "日本語1-2文要約", "topics": ["topic1"], "decisions": ["決定事項"]}
 
-ルール:
-- factsは新しい事実のみ（「DJの名前は松岡」のような既知情報は不要）
-- 確信度の低い推測は含めない (confidence < 0.5 は除外)
-- 雑談・挨拶からは何も抽出しない（空配列を返す）
-- summaryは必ず日本語
-- JSON以外は出力しない`;
+厳格ルール:
+- 既存キーと重複する情報は絶対に含めない
+- 雑談・挨拶・コマンド実行結果からは空配列を返す
+- confidenceは厳しく: 明確な事実宣言=0.9、推測=0.5、曖昧=0.3
+- テスト目的の発言（「テスト」「試し」等）は抽出しない
+- keyは英語snake_case、valueは元言語のまま
+- categoryは5種のみ: identity, work, tech, rules, preferences
+- JSON以外出力禁止`;
 
   return new Promise((resolve) => {
     const child = spawn('/opt/homebrew/bin/gemini', [], {
@@ -71,11 +75,7 @@ Assistant: ${assistantResponse.substring(0, 2000)}
     let done = false;
 
     const timer = setTimeout(() => {
-      if (!done) {
-        done = true;
-        try { child.kill('SIGTERM'); } catch {}
-        resolve(null);
-      }
+      if (!done) { done = true; try { child.kill('SIGTERM'); } catch {} resolve(null); }
     }, EXTRACTION_TIMEOUT);
 
     child.stdout?.on('data', (data: Buffer) => { stdout += data.toString(); });
@@ -87,21 +87,29 @@ Assistant: ${assistantResponse.substring(0, 2000)}
       clearTimeout(timer);
 
       if (code !== 0) {
-        console.error('[Memory Extractor] Claude CLI failed:', code, 'stderr:', stderr.substring(0, 300));
+        console.error('[Memory Extractor] Gemini failed:', code, stderr.substring(0, 200));
         resolve(null);
         return;
       }
 
       try {
-        console.log('[Memory Extractor] Raw output length:', stdout.length, 'first 100:', stdout.substring(0, 100));
-        // Strip markdown code fences if present
+        // Filter Gemini noise (DeprecationWarning, Loaded cached credentials, etc.)
         let cleaned = stdout.trim();
-        cleaned = cleaned.replace(/^```json\s*/i, '').replace(/```\s*$/, '').trim();
+        const jsonStart = cleaned.indexOf('{');
+        const jsonEnd = cleaned.lastIndexOf('}');
+        if (jsonStart === -1 || jsonEnd === -1) {
+          // Try stripping markdown fences
+          cleaned = cleaned.replace(/^```json\s*/i, '').replace(/```\s*$/, '').trim();
+        } else {
+          cleaned = cleaned.substring(jsonStart, jsonEnd + 1);
+        }
+
+        console.log('[Memory Extractor] Raw length:', stdout.length, 'cleaned:', cleaned.substring(0, 80));
         const result = JSON.parse(cleaned);
         resolve(result as ExtractionResult);
       } catch (e) {
         console.error('[Memory Extractor] JSON parse failed:', (e as Error).message);
-        console.error('[Memory Extractor] Raw output:', stdout.substring(0, 500));
+        console.error('[Memory Extractor] Raw:', stdout.substring(0, 300));
         resolve(null);
       }
     });
@@ -112,60 +120,56 @@ Assistant: ${assistantResponse.substring(0, 2000)}
 }
 
 /**
- * 抽出結果をD1 + ベクトルDBに保存
+ * 抽出結果を検証・保存
  */
 async function storeExtractionResults(
   result: ExtractionResult,
   userMessage: string,
   conversationId: string
-): Promise<{ facts: number; projects: number; embedded: boolean }> {
+): Promise<{ facts: number; pending: number; projects: number; embedded: boolean }> {
   let factsStored = 0;
+  let factsPending = 0;
   let projectsStored = 0;
 
-  // 1. Facts → user_profile
+  // 1. Facts → route by confidence (high→profile, low→pending)
   for (const fact of result.facts || []) {
-    if (fact.confidence >= 0.6 && fact.key && fact.value) {
-      try {
-        await upsertProfile(fact.key, fact.value, fact.category || 'general', fact.confidence);
-        factsStored++;
-      } catch (e) {
-        console.error('[Memory Extractor] Fact store failed:', fact.key, e);
-      }
-    }
+    if (!fact.key || !fact.value || fact.confidence < 0.3) continue;
+
+    // Validate category
+    const category = VALID_CATEGORIES.includes(fact.category) ? fact.category : 'general';
+
+    const outcome = await routeMemoryByConfidence(
+      fact.key, fact.value, category, fact.confidence, conversationId
+    );
+    if (outcome === 'stored') factsStored++;
+    else if (outcome === 'pending') factsPending++;
   }
 
-  // 2. Projects → jarvis_projects
+  // 2. Projects
   for (const proj of result.projects || []) {
-    if (proj.id && proj.name) {
-      try {
-        await upsertProject(proj.id, proj.name, {
-          goals: proj.goals,
-          decisions: proj.decisions,
-          status: proj.status,
-        });
-        projectsStored++;
-      } catch (e) {
-        console.error('[Memory Extractor] Project store failed:', proj.id, e);
-      }
+    if (!proj.id || !proj.name) continue;
+    try {
+      await upsertProject(proj.id, proj.name, {
+        goals: proj.goals, decisions: proj.decisions, status: proj.status,
+      });
+      projectsStored++;
+    } catch (e) {
+      console.error('[Memory Extractor] Project store failed:', proj.id, e);
     }
   }
 
-  // 3. Summary → conversation_summaries
+  // 3. Summary
   if (result.summary) {
     try {
       await saveConversationSummary(
-        conversationId,
-        result.summary,
-        result.topics || [],
+        conversationId, result.summary, result.topics || [],
         result.decisions || [],
         (result.facts || []).map(f => `${f.key}: ${f.value}`)
       );
-    } catch (e) {
-      console.error('[Memory Extractor] Summary store failed:', e);
-    }
+    } catch {}
   }
 
-  // 4. Embedding → vector DB
+  // 4. Embedding
   let embedded = false;
   const textToEmbed = [
     result.summary || '',
@@ -176,59 +180,48 @@ async function storeExtractionResults(
 
   if (textToEmbed.length > 20) {
     try {
-      embedded = await storeEmbedding(
-        conversationId,
-        'conversation',
-        textToEmbed,
-        {
-          topics: result.topics,
-          has_decisions: (result.decisions || []).length > 0,
-        }
-      );
-    } catch (e) {
-      console.warn('[Memory Extractor] Embedding failed (server down?):', (e as Error).message);
-    }
+      embedded = await storeEmbedding(conversationId, 'conversation', textToEmbed, {
+        topics: result.topics,
+        has_decisions: (result.decisions || []).length > 0,
+      });
+    } catch {}
   }
 
-  return { facts: factsStored, projects: projectsStored, embedded };
+  return { facts: factsStored, pending: factsPending, projects: projectsStored, embedded };
 }
 
 /**
- * メインエントリポイント: 会話後のメモリ抽出+保存
- * post-process.ts から BgTaskManager 経由で呼ばれる
+ * メインエントリ: post-process.ts → BgTaskManager 経由
  */
 export async function extractAndStoreMemories(
   userId: number | string,
   userMessage: string,
   assistantResponse: string
 ): Promise<void> {
-  // 短すぎるメッセージはスキップ
-  if (userMessage.length < MIN_MESSAGE_LENGTH && assistantResponse.length < MIN_MESSAGE_LENGTH) {
-    return;
-  }
-
-  // コマンド（/で始まる）はスキップ
-  if (userMessage.trim().startsWith('/')) {
-    return;
-  }
+  if (userMessage.length < MIN_MESSAGE_LENGTH && assistantResponse.length < MIN_MESSAGE_LENGTH) return;
+  if (userMessage.trim().startsWith('/')) return;
 
   const conversationId = `conv_${ulid()}`;
   const start = Date.now();
-
   console.log('[Memory Extractor] Starting extraction...');
 
-  // AI抽出
-  const result = await extractWithClaude(userMessage, assistantResponse);
+  // Get existing profile keys for dedup
+  let existingKeys: string[] = [];
+  try {
+    const profile = await getProfile();
+    existingKeys = Object.keys(profile);
+  } catch {}
+
+  const result = await extractWithGemini(userMessage, assistantResponse, existingKeys);
   if (!result) {
-    console.log('[Memory Extractor] No extraction result (timeout or error)');
+    console.log('[Memory Extractor] No result (timeout or error)');
     return;
   }
 
-  // 保存
   const stored = await storeExtractionResults(result, userMessage, conversationId);
   const elapsed = Date.now() - start;
 
   console.log(
-    `[Memory Extractor] Done in ${elapsed}ms: facts=${stored.facts} projects=${stored.projects} embedded=${stored.embedded} summary=${result.summary ? 'yes' : 'no'}`
+    `[Memory Extractor] Done in ${elapsed}ms: facts=${stored.facts} pending=${stored.pending} projects=${stored.projects} embedded=${stored.embedded} summary=${result.summary ? 'yes' : 'no'}`
   );
 }
