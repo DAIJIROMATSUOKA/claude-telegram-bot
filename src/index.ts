@@ -54,6 +54,7 @@ import { handleScout } from "./handlers/scout-command";
 import { handleManual } from "./handlers/manual-command";
 import { handleSearch } from "./handlers/search-command";
 import { registerMediaCommands } from "./handlers/media-commands";
+import { handleCal } from "./handlers/cal-command";
 import { handleTaskCommand, handleStopCommand as handleOrchestratorStop, handleTaskStatusCommand } from "./task/task-command";
 import { handleTaskLogCommand } from "./task/tasklog-command";
 import { ensureLearnedMemoryTable } from './utils/learned-memory';
@@ -206,6 +207,7 @@ bot.command("task_stop", handleTaskStop);
 bot.command("task_pause", handleTaskPause);
 bot.command("focus", handleFocus);
 bot.command("todoist", handleTodoist);
+bot.command("cal", handleCal);
 bot.command("alarm", handleAlarm);
 bot.command("recall", handleRecall);
 
