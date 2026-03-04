@@ -96,6 +96,10 @@ export async function handleInboxCallback(ctx: Context): Promise<boolean> {
       case "draft":
         await handleAiDraft(ctx, sourceId, msgId);
         break;
+      case "del":
+        await ctx.answerCallbackQuery({ text: "🗑 削除" });
+        try { if (chatId && msgId) await ctx.api.deleteMessage(chatId, msgId); } catch {}
+        break;
       case "snz1h":
         await handleSnooze(ctx, sourceId, msgId, chatId, 1);
         break;

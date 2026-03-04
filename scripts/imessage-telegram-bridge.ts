@@ -160,6 +160,10 @@ async function sendToTelegram(
     inline_keyboard: [
       [
         { text: "💬返信", callback_data: `ib:imrpl:${sourceId}` },
+        { text: "✏️下書き", callback_data: `ib:draft:${sourceId}` },
+        { text: "🗑", callback_data: `ib:del:${sourceId}` },
+      ],
+      [
         { text: "⏰1h", callback_data: `ib:snz1h:${sourceId}` },
         { text: "⏰3h", callback_data: `ib:snz3h:${sourceId}` },
         { text: "⏰明朝", callback_data: `ib:snzam:${sourceId}` },
