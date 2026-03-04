@@ -61,7 +61,7 @@ Assistant: ${assistantResponse.substring(0, 2000)}
 - JSON以外は出力しない`;
 
   return new Promise((resolve) => {
-    const child = spawn('/opt/homebrew/bin/claude', ['-p', '--model', 'claude-haiku-4-5-20251001', '--output-format', 'text'], {
+    const child = spawn('/opt/homebrew/bin/gemini', [], {
       stdio: ['pipe', 'pipe', 'pipe'],
       env: { ...process.env },
     });
