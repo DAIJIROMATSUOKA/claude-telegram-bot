@@ -15,6 +15,7 @@ import { detectInterruptableTask } from "../../utils/implementation-detector";
 import { saveInterruptSnapshot, type SnapshotData } from "../../utils/auto-resume";
 import { getJarvisContext } from "../../utils/jarvis-context";
 import { runBgTask } from "../../utils/bg-task-manager";
+import { extractAndStoreMemories } from "../../services/memory-extractor";
 
 // Session Summary: メッセージカウンター（20メッセージ毎に要約保存）
 let _sessionMsgCount = 0;
@@ -55,6 +56,12 @@ export async function runPostProcess(opts: PostProcessOptions): Promise<void> {
   runBgTask(
     () => processAndLearn(userId, message, response),
     { name: 'learned-memory', maxRetries: 2 }
+  );
+
+  // 3.5 Memory V2 Extraction（AI-powered、非同期）
+  runBgTask(
+    () => extractAndStoreMemories(userId, message, response),
+    { name: 'memory-v2-extraction', maxRetries: 1 }
   );
 
   // 4. Session Summary（20メッセージ毎）

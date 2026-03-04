@@ -11,6 +11,7 @@ import {
   type SDKMessage,
 } from "@anthropic-ai/claude-agent-sdk";
 import { readFileSync } from "fs";
+import { buildMemoryContext } from "./services/jarvis-memory";
 import type { Context } from "grammy";
 import {
   ALLOWED_PATHS,
@@ -330,6 +331,14 @@ class ClaudeSession {
     const contextFetchMs = Date.now() - contextFetchStart;
     console.log(`[Context Injection] Fetched in ${contextFetchMs}ms — jarvis:${jarvisContext ? 'ok' : 'empty'} chat:${chatHistory ? chatHistory.split('\n').length + 'lines' : 'empty'} learned:${learnedMemories.length} summaries:${sessionSummaries.length}`);
 
+    // ── MEMORY V2 CONTEXT ──
+    let memoryContext = '';
+    try {
+      memoryContext = await buildMemoryContext(message);
+    } catch (e) {
+      console.warn('[Memory V2] Context build failed:', (e as Error).message);
+    }
+
     // Build context block - always include SYSTEM CONTEXT
     const contextParts: string[] = ["[SYSTEM CONTEXT]"];
     contextParts.push("プロジェクト: /Users/daijiromatsuokam1/claude-telegram-bot");
@@ -368,6 +377,11 @@ class ClaudeSession {
       contextParts.push("[RECENT CONVERSATION]");
       contextParts.push(chatHistory);
       contextParts.push("");
+    }
+
+    // Memory V2: profile + projects + vector search + summaries
+    if (memoryContext) {
+      contextParts.push(memoryContext);
     }
 
     const contextBlock = contextParts.length > 0 ? contextParts.join("\n") + "\n" : "";
