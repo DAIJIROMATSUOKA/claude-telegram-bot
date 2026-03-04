@@ -24,8 +24,8 @@ case "$1" in
 # ============================================================
 start)
   # Check if already running
-  if [ -f "$PID_FILE" ] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
-    log "Night mode already running (PID=$(cat "$PID_FILE"))"
+  if [ -f "$CAFFEINATE_PID_FILE" ] && kill -0 "$(cat "$CAFFEINATE_PID_FILE")" 2>/dev/null; then
+    log "Night mode already running (caffeinate PID=$(cat "$CAFFEINATE_PID_FILE"))"
     exit 0
   fi
 
@@ -36,9 +36,6 @@ start)
   CAFF_PID=$!
   echo "$CAFF_PID" > "$CAFFEINATE_PID_FILE"
   log "caffeinate started (PID=$CAFF_PID) - system sleep disabled"
-
-  # 2. Save our PID
-  echo "$$" > "$PID_FILE"
 
   # 3. Check if worker tabs exist
   WORKERS=$("$TAB_MANAGER" list 2>/dev/null)
@@ -92,8 +89,8 @@ stop)
     log "caffeinate cleaned up"
   fi
 
-  # 2. Clean PID file
-  rm -f "$PID_FILE"
+  # 2. Clean PID files
+  rm -f "$PID_FILE" "$CAFFEINATE_PID_FILE"
 
   # 3. Unmark worker tabs (optional - keep them for quick restart)
   # "$TAB_MANAGER" unmark ...
@@ -120,8 +117,8 @@ status)
   fi
 
   # Night mode
-  if [ -f "$PID_FILE" ] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
-    echo "nightshift: ACTIVE (PID=$(cat "$PID_FILE"))"
+  if [ -f "$CAFFEINATE_PID_FILE" ] && kill -0 "$(cat "$CAFFEINATE_PID_FILE")" 2>/dev/null; then
+    echo "nightshift: ACTIVE"
   else
     echo "nightshift: INACTIVE"
   fi

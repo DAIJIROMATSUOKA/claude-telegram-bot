@@ -6,14 +6,14 @@
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 TAB_MANAGER="$SCRIPT_DIR/croppy-tab-manager.sh"
 NOTIFY="$SCRIPT_DIR/notify-dj.sh"
-NIGHTSHIFT_PID="/tmp/nightshift.pid"
+CAFFEINATE_PID="/tmp/nightshift-caffeinate.pid"
 HEALTH_LOG="/tmp/croppy-health.log"
 LAST_ALERT="/tmp/croppy-health-last-alert"
 
 log() { echo "[$(date '+%H:%M:%S')] $*" >> "$HEALTH_LOG"; }
 
-# Only run during night mode
-if [ ! -f "$NIGHTSHIFT_PID" ] || ! kill -0 "$(cat "$NIGHTSHIFT_PID")" 2>/dev/null; then
+# Only run during night mode (caffeinate active = nightshift on)
+if [ ! -f "$CAFFEINATE_PID" ] || ! kill -0 "$(cat "$CAFFEINATE_PID")" 2>/dev/null; then
   exit 0
 fi
 
