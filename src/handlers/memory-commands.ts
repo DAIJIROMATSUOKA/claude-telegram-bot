@@ -213,7 +213,8 @@ export async function handleForget(ctx: Context): Promise<void> {
   // 4. Vector: semantic search + delete
   try {
     const vectorResults = await searchMemories(keyword, 5);
-    const highMatches = vectorResults.filter(r => r.score > 0.5);
+    const kwLower = keyword.toLowerCase();
+    const highMatches = vectorResults.filter(r => r.score > 0.85 || (r.score > 0.6 && r.text.toLowerCase().includes(kwLower)));
     for (const r of highMatches) {
       try {
         await fetch('http://127.0.0.1:19823/delete', {
