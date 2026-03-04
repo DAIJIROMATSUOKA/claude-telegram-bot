@@ -19,7 +19,7 @@ import {
   storeEmbedding,
 } from './jarvis-memory';
 
-const EXTRACTION_TIMEOUT = 30_000; // 30s
+const EXTRACTION_TIMEOUT = 60_000; // 30s
 const MIN_MESSAGE_LENGTH = 20; // 短すぎるメッセージはスキップ
 
 interface ExtractionResult {
@@ -61,7 +61,7 @@ Assistant: ${assistantResponse.substring(0, 2000)}
 - JSON以外は出力しない`;
 
   return new Promise((resolve) => {
-    const child = spawn('claude', ['-p', '--model', 'claude-sonnet-4-5-20250929', '--output-format', 'text'], {
+    const child = spawn('/opt/homebrew/bin/claude', ['-p', '--model', 'claude-haiku-4-5-20251001', '--output-format', 'text'], {
       stdio: ['pipe', 'pipe', 'pipe'],
       env: { ...process.env },
     });
@@ -87,12 +87,13 @@ Assistant: ${assistantResponse.substring(0, 2000)}
       clearTimeout(timer);
 
       if (code !== 0) {
-        console.error('[Memory Extractor] Claude CLI failed:', code, stderr.substring(0, 200));
+        console.error('[Memory Extractor] Claude CLI failed:', code, 'stderr:', stderr.substring(0, 300));
         resolve(null);
         return;
       }
 
       try {
+        console.log('[Memory Extractor] Raw output length:', stdout.length, 'first 100:', stdout.substring(0, 100));
         // Strip markdown code fences if present
         let cleaned = stdout.trim();
         cleaned = cleaned.replace(/^```json\s*/i, '').replace(/```\s*$/, '').trim();
