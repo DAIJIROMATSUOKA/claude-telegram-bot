@@ -162,7 +162,7 @@ export async function checkJarvisNotifs(bot: Bot): Promise<void> {
 export async function checkTimeTimers(bot: Bot): Promise<void> {
   try {
     const active = await gatewayQuery(
-      "SELECT id, chat_id, msg_id, total_minutes, remaining_minutes FROM jarvis_timetimers WHERE done = 0 ORDER BY id ASC LIMIT 20",
+      "SELECT id, chat_id, msg_id, total_minutes, remaining_minutes, label FROM jarvis_timetimers WHERE done = 0 ORDER BY id ASC LIMIT 20",
       []
     );
     if (!active?.results?.length) return;
@@ -174,7 +174,8 @@ export async function checkTimeTimers(bot: Bot): Promise<void> {
         const total = Number(item.total_minutes);
         const remaining = Math.max(0, Number(item.remaining_minutes) - 1);
 
-        const text = buildTimerText(remaining, total);
+        const label: string = item.label || "";
+        const text = buildTimerText(remaining, total, label);
 
         if (remaining === 0) {
           // Timer done
@@ -184,7 +185,8 @@ export async function checkTimeTimers(bot: Bot): Promise<void> {
             reply_markup: { inline_keyboard: [] },
           });
           // 完了通知（サウンドあり）
-          const doneMsg = await bot.api.sendMessage(chatId, "⏱ <b>タイムタイマー完了！</b>", { parse_mode: "HTML" });
+          const labelStr = item.label ? `  ${item.label}` : "";
+          const doneMsg = await bot.api.sendMessage(chatId, `⏱ <b>Timer done!${labelStr}</b>`, { parse_mode: "HTML" });
           setTimeout(async () => {
             try { await bot.api.deleteMessage(chatId, doneMsg.message_id); } catch {}
           }, 10000);
@@ -194,7 +196,7 @@ export async function checkTimeTimers(bot: Bot): Promise<void> {
             parse_mode: "HTML",
             reply_markup: {
               inline_keyboard: [[
-                { text: "✅ 完了", callback_data: `tt_done:${item.id}` }
+                { text: "✅ Done", callback_data: `tt_done:${item.id}` }
               ]]
             },
           });
