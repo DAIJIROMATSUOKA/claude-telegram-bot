@@ -47,6 +47,15 @@ export async function handleCallback(ctx: Context): Promise<void> {
     if (handled) return;
   }
 
+  // Time Timer: done button — stop timer + delete message
+  if (callbackData.startsWith("tt_done:")) {
+    const timerId = callbackData.split(":")[1];
+    await gatewayQuery("UPDATE jarvis_timetimers SET done = 1 WHERE id = ?", [timerId]);
+    try { await ctx.deleteMessage(); } catch {}
+    await ctx.answerCallbackQuery({ text: "✅ タイマー停止" });
+    return;
+  }
+
   // Jarvis Notif: done button — stop snooze + delete message
   if (callbackData.startsWith("jn_done:")) {
     const notifId = callbackData.split(":")[1];

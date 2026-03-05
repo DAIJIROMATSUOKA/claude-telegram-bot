@@ -5,6 +5,7 @@
 
 import { Bot } from "grammy";
 import { gatewayQuery } from "./gateway-db";
+import { buildTimerText } from "../handlers/timetimer-command";
 
 const CHECK_INTERVAL = 60_000; // Check every 60 seconds
 
@@ -17,10 +18,11 @@ export function startSnoozeChecker(bot: Bot): void {
   if (snoozeTimer) return;
 
   console.log("[Snooze] Checker started (60s interval)");
-  snoozeTimer = setInterval(() => { checkSnoozeQueue(bot); checkJarvisNotifs(bot); }, CHECK_INTERVAL);
+  snoozeTimer = setInterval(() => { checkSnoozeQueue(bot); checkJarvisNotifs(bot); checkTimeTimers(bot); }, CHECK_INTERVAL);
   // Also check immediately
   checkSnoozeQueue(bot);
   checkJarvisNotifs(bot);
+  checkTimeTimers(bot);
 }
 
 /**
@@ -149,6 +151,55 @@ export async function checkJarvisNotifs(bot: Bot): Promise<void> {
     }
   } catch (error) {
     console.error("[Notif] Check error:", error);
+  }
+}
+
+
+// ============================================================
+// Time Timer Checker - 毎分カウントダウン更新
+// ============================================================
+
+export async function checkTimeTimers(bot: Bot): Promise<void> {
+  try {
+    const active = await gatewayQuery(
+      "SELECT id, chat_id, msg_id, total_minutes, remaining_minutes FROM jarvis_timetimers WHERE done = 0 ORDER BY id ASC LIMIT 20",
+      []
+    );
+    if (!active?.results?.length) return;
+
+    for (const item of active.results as any[]) {
+      try {
+        const chatId = Number(item.chat_id);
+        const msgId = Number(item.msg_id);
+        const total = Number(item.total_minutes);
+        const remaining = Math.max(0, Number(item.remaining_minutes) - 1);
+
+        const text = buildTimerText(remaining, total);
+
+        if (remaining === 0) {
+          // Timer done
+          await gatewayQuery("UPDATE jarvis_timetimers SET remaining_minutes = 0, done = 1 WHERE id = ?", [item.id]);
+          await bot.api.editMessageText(chatId, msgId, text, {
+            parse_mode: "HTML",
+            reply_markup: { inline_keyboard: [] },
+          });
+        } else {
+          await gatewayQuery("UPDATE jarvis_timetimers SET remaining_minutes = ? WHERE id = ?", [remaining, item.id]);
+          await bot.api.editMessageText(chatId, msgId, text, {
+            parse_mode: "HTML",
+            reply_markup: {
+              inline_keyboard: [[
+                { text: "✅ 完了", callback_data: `tt_done:${item.id}` }
+              ]]
+            },
+          });
+        }
+      } catch (e) {
+        console.error("[Timer] Update error:", e);
+      }
+    }
+  } catch (error) {
+    console.error("[Timer] Check error:", error);
   }
 }
 

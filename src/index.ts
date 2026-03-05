@@ -67,6 +67,7 @@ import { handleMailSend } from './handlers/mail-send';
 import { handleImsgSend } from './handlers/imsg-send';
 import { handleLinePost } from './handlers/line-post';
 import { handleJarvisNotif, initNotifTable } from './handlers/jarvisnotif-command';
+import { handleTimeTimer, initTimerTable } from './handlers/timetimer-command';
 import { handleFileMessage } from './handlers/file-message';
 import { getWorkState, formatWorkStateForContext, updateWorkStateSessionId, isWorkComplete } from './utils/work-state';
 import { session } from './session';
@@ -219,6 +220,7 @@ bot.command("mail", handleMailSend);
 bot.command("imsg", handleImsgSend);
 bot.command("line", handleLinePost);
 bot.command("jarvisnotif", handleJarvisNotif);
+bot.command("timetimer", handleTimeTimer);
 bot.command("alarm", handleAlarm);
 bot.command("recall", handleRecall);
 bot.command("memory", handleMemory);
@@ -373,6 +375,7 @@ const runner = run(bot);
     // Inbox Zero: snooze re-notification checker
     try { startSnoozeChecker(bot); } catch(e) { console.error("[Snooze] Init failed:", e); }
     try { initNotifTable(); } catch(e) { console.error("[Notif] Table init failed:", e); }
+    try { initTimerTable(); } catch(e) { console.error("[Timer] Table init failed:", e); }
     // テーブル初期化後にMemory GCスケジューラーを起動
     startMemoryGCScheduler();
   }).catch(err => {
