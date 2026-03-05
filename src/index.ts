@@ -63,6 +63,11 @@ import { ensureLearnedMemoryTable } from './utils/learned-memory';
 import { ensureSessionSummaryTable } from './utils/session-summary';
 import { startMemoryGCScheduler } from './utils/memory-gc';
 import { getPendingTask, clearPendingTask } from './utils/pending-task';
+import { handleMailSend } from './handlers/mail-send';
+import { handleImsgSend } from './handlers/imsg-send';
+import { handleLinePost } from './handlers/line-post';
+import { handleJarvisNotif, initNotifTable } from './handlers/jarvisnotif-command';
+import { handleFileMessage } from './handlers/file-message';
 import { getWorkState, formatWorkStateForContext, updateWorkStateSessionId, isWorkComplete } from './utils/work-state';
 import { session } from './session';
 import { convertMarkdownToHtml } from './formatting';
@@ -210,6 +215,10 @@ bot.command("task_pause", handleTaskPause);
 bot.command("focus", handleFocus);
 bot.command("todoist", handleTodoist);
 bot.command("cal", handleCal);
+bot.command("mail", handleMailSend);
+bot.command("imsg", handleImsgSend);
+bot.command("line", handleLinePost);
+bot.command("jarvisnotif", handleJarvisNotif);
 bot.command("alarm", handleAlarm);
 bot.command("recall", handleRecall);
 bot.command("memory", handleMemory);
@@ -270,6 +279,9 @@ bot.on("message:text", handleText);
 
 // Voice messages
 
+
+// Photo messages (store as pending attachment)
+bot.on("message:photo", handleFileMessage);
 
 // Document messages
 bot.on("message:document", handleDocument);
@@ -360,6 +372,7 @@ const runner = run(bot);
     console.log('✅ Memory tables initialized');
     // Inbox Zero: snooze re-notification checker
     try { startSnoozeChecker(bot); } catch(e) { console.error("[Snooze] Init failed:", e); }
+    try { initNotifTable(); } catch(e) { console.error("[Notif] Table init failed:", e); }
     // テーブル初期化後にMemory GCスケジューラーを起動
     startMemoryGCScheduler();
   }).catch(err => {

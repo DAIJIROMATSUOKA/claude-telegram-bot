@@ -17,9 +17,10 @@ export function startSnoozeChecker(bot: Bot): void {
   if (snoozeTimer) return;
 
   console.log("[Snooze] Checker started (60s interval)");
-  snoozeTimer = setInterval(() => checkSnoozeQueue(bot), CHECK_INTERVAL);
+  snoozeTimer = setInterval(() => { checkSnoozeQueue(bot); checkJarvisNotifs(bot); }, CHECK_INTERVAL);
   // Also check immediately
   checkSnoozeQueue(bot);
+  checkJarvisNotifs(bot);
 }
 
 /**
@@ -82,6 +83,71 @@ async function checkSnoozeQueue(bot: Bot): Promise<void> {
     }
   } catch (error) {
     console.error("[Snooze] Queue check error:", error);
+  }
+}
+
+
+
+// ============================================================
+// Jarvis Notif Checker - 5分スヌーズ通知
+// ============================================================
+
+/**
+ * Check jarvis_notifs table and fire due notifications.
+ * Called every 60s from startSnoozeChecker.
+ */
+export async function checkJarvisNotifs(bot: Bot): Promise<void> {
+  try {
+    const now = new Date().toISOString().replace("T", " ").substring(0, 19);
+
+    const due = await gatewayQuery(
+      "SELECT id, chat_id, label, last_msg_id FROM jarvis_notifs WHERE next_fire_at <= ? AND done = 0 ORDER BY next_fire_at ASC LIMIT 20",
+      [now]
+    );
+
+    if (!due?.results?.length) return;
+
+    for (const item of due.results as any[]) {
+      try {
+        const chatId = Number(item.chat_id);
+        const label: string = item.label;
+        const lastMsgId: number | null = item.last_msg_id;
+
+        // Delete previous snooze message
+        if (lastMsgId) {
+          try { await bot.api.deleteMessage(chatId, lastMsgId); } catch {}
+        }
+
+        // Send new notification with ✅完了 button
+        const sent = await bot.api.sendMessage(
+          chatId,
+          `⏰ <b>${label.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")}</b>`,
+          {
+            parse_mode: "HTML",
+            reply_markup: {
+              inline_keyboard: [[
+                { text: "✅ 完了", callback_data: `jn_done:${item.id}` }
+              ]]
+            }
+          }
+        );
+
+        // Schedule next snooze: 5 minutes from now
+        const nextFire = new Date(Date.now() + 5 * 60 * 1000)
+          .toISOString().replace("T", " ").substring(0, 19);
+
+        await gatewayQuery(
+          "UPDATE jarvis_notifs SET last_msg_id = ?, next_fire_at = ? WHERE id = ?",
+          [sent.message_id, nextFire, item.id]
+        );
+
+        console.log(`[Notif] Fired: id=${item.id} label="${label}"`);
+      } catch (e) {
+        console.error("[Notif] Fire error:", e);
+      }
+    }
+  } catch (error) {
+    console.error("[Notif] Check error:", error);
   }
 }
 

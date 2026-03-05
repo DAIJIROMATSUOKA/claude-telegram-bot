@@ -12,6 +12,7 @@ import { isAuthorized } from "../security";
 import { auditLog, startTypingIndicator } from "../utils";
 import { StreamingState, createStatusCallback } from "./streaming";
 import { handleInboxCallback } from "./inbox";
+import { gatewayQuery } from "../services/gateway-db";
 
 /**
  * Handle callback queries from inline keyboards.
@@ -44,6 +45,15 @@ export async function handleCallback(ctx: Context): Promise<void> {
   if (callbackData.startsWith("ib:")) {
     const handled = await handleInboxCallback(ctx);
     if (handled) return;
+  }
+
+  // Jarvis Notif: done button
+  if (callbackData.startsWith("jn_done:")) {
+    const notifId = callbackData.split(":")[1];
+    await gatewayQuery("UPDATE jarvis_notifs SET done = 1 WHERE id = ?", [notifId]);
+    try { await ctx.deleteMessage(); } catch {}
+    await ctx.answerCallbackQuery({ text: "✅ 完了" });
+    return;
   }
 
 
