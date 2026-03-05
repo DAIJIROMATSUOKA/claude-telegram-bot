@@ -4,10 +4,17 @@
  *   /line                    → list available targets (groups + individuals)
  *   /line <group> <message>  → post to group
  *   /line 1 <message>        → post by group number
+ *
+ * Attachment: Send an IMAGE first → bot stores it → /line picks it up
+ * Note: LINE API only supports image/video/audio - PDF and other files are unsupported
+ * Images are sent via Telegram CDN URL (valid ~1h)
  */
 import { Context } from "grammy";
+import { getPendingAttach, clearPendingAttach } from "../utils/attach-pending";
+import { getTgFilePath } from "../utils/tg-file";
 
 const LINE_WORKER_URL = process.env.LINE_WORKER_URL || "";
+const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
 const GATEWAY_URL =
   process.env.GATEWAY_URL ||
   "https://jarvis-memory-gateway.jarvis-matsuoka.workers.dev";
@@ -49,19 +56,24 @@ async function getLineTargets(): Promise<LineTarget[]> {
 
 export async function handleLinePost(ctx: Context): Promise<void> {
   const text = (ctx.message?.text || "").replace(/^\/line\s*/, "").trim();
+  const userId = ctx.from?.id;
 
   // No args: list groups
   if (!text) {
     const groups = await getLineTargets();
     if (groups.length === 0) {
-      await ctx.reply("📋 LINE\u30b0\u30eb\u30fc\u30d7\u304c\u898b\u3064\u304b\u308a\u307e\u305b\u3093");
+      await ctx.reply("📋 LINEグループが見つかりません");
       return;
     }
     const list = groups
       .map((g, i) => `<b>${i + 1}.</b> ${g.name || g.source_id}`)
       .join("\n");
+    const pendingFile = userId ? getPendingAttach(userId) : null;
+    const pendingNote = pendingFile
+      ? `\n\n📎 保留中: <b>${pendingFile.filename}</b>${!pendingFile.mimeType.startsWith("image/") ? " ⚠️ LINE非対応形式（画像のみ可）" : ""}`
+      : "";
     await ctx.reply(
-      `📋 LINE\u30b0\u30eb\u30fc\u30d7\u4e00\u89a7:\n${list}\n\n\u4f7f\u3044\u65b9: <code>/line \u756a\u53f7 \u30e1\u30c3\u30bb\u30fc\u30b8</code>`,
+      `📋 LINEグループ一覧:\n${list}\n\n使い方: <code>/line 番号 メッセージ</code>${pendingNote}`,
       { parse_mode: "HTML" }
     );
     return;
@@ -72,7 +84,7 @@ export async function handleLinePost(ctx: Context): Promise<void> {
   let targetGroup: LineTarget | undefined;
   let message: string;
 
-  const firstWord = text.split(/\s+/)[0];
+  const firstWord = text.split(/\s+/)[0]!;
   const rest = text.substring(firstWord.length).trim();
 
   // Try as number
@@ -81,7 +93,6 @@ export async function handleLinePost(ctx: Context): Promise<void> {
     targetGroup = groups[num - 1];
     message = rest;
   } else {
-    // Try as name match (partial)
     targetGroup = groups.find(
       (g) =>
         g.name?.toLowerCase().includes(firstWord.toLowerCase()) ||
@@ -89,51 +100,107 @@ export async function handleLinePost(ctx: Context): Promise<void> {
     );
     message = targetGroup ? rest : "";
     if (!targetGroup) {
-      // Maybe the whole thing is: /line <message> to the last active group
       await ctx.reply(
-        `\u274c \u30b0\u30eb\u30fc\u30d7 "${firstWord}" \u304c\u898b\u3064\u304b\u308a\u307e\u305b\u3093\u3002\n<code>/line</code> \u3067\u4e00\u89a7\u3092\u78ba\u8a8d\u3057\u3066\u304f\u3060\u3055\u3044\u3002`,
+        `❌ グループ "${firstWord}" が見つかりません。\n<code>/line</code> で一覧を確認してください。`,
         { parse_mode: "HTML" }
       );
       return;
     }
   }
 
-  if (!message) {
-    await ctx.reply("\u274c \u30e1\u30c3\u30bb\u30fc\u30b8\u3092\u5165\u529b\u3057\u3066\u304f\u3060\u3055\u3044\u3002\n<code>/line " + (num || firstWord) + " \u3053\u3093\u306b\u3061\u306f</code>", { parse_mode: "HTML" });
+  // Check pending attachment
+  const pendingFile = userId ? getPendingAttach(userId) : null;
+  const isImage = pendingFile?.mimeType.startsWith("image/");
+
+  if (!message && !pendingFile) {
+    await ctx.reply("❌ メッセージを入力してください。\n<code>/line " + (num || firstWord) + " こんにちは</code>", { parse_mode: "HTML" });
     return;
   }
 
   if (!LINE_WORKER_URL) {
-    await ctx.reply("\u274c LINE_WORKER_URL\u672a\u8a2d\u5b9a");
+    await ctx.reply("❌ LINE_WORKER_URL未設定");
     return;
   }
 
-  const sendingMsg = await ctx.reply(`\ud83d\udce4 LINE\u9001\u4fe1\u4e2d... \u2192 ${targetGroup.name || targetGroup.source_id}`);
+  // Check non-image file type early
+  if (pendingFile && !isImage) {
+    await ctx.reply(
+      `⚠️ LINE APIは画像のみ対応しています。\n<b>${pendingFile.filename}</b> (${pendingFile.mimeType}) は送信できません。\nテキストのみ送信しますか？（/line ${num || firstWord} ${message || "メッセージ"}）`,
+      { parse_mode: "HTML" }
+    );
+    clearPendingAttach(userId!);
+    return;
+  }
+
+  const tg = targetGroup!;
+  const attachLabel = isImage ? ` 🖼 ${pendingFile!.filename}` : "";
+  const sendingMsg = await ctx.reply(`📤 LINE送信中... → ${tg.name || tg.source_id}${attachLabel}`);
+  const chatId = ctx.chat?.id!;
 
   try {
-    const res = await fetch(`${LINE_WORKER_URL}/v1/reply`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        target_id: targetGroup.source_id,
-        text: message,
-        is_group: targetGroup.is_group,
-      }),
-    });
-    const result: any = await res.json();
+    let textOk = true;
+    let imageOk = true;
+    const errors: string[] = [];
 
-    const chatId = ctx.chat?.id!;
+    // Send image if pending
+    if (pendingFile && isImage && userId) {
+      try {
+        const { filePath } = await getTgFilePath(pendingFile.fileId, BOT_TOKEN);
+        const imageUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${filePath}`;
+
+        const res = await fetch(`${LINE_WORKER_URL}/v1/reply`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            target_id: tg.source_id,
+            is_group: tg.is_group,
+            image_url: imageUrl,
+          }),
+        });
+        const result: any = await res.json();
+        if (result.ok) {
+          clearPendingAttach(userId);
+        } else {
+          imageOk = false;
+          errors.push(`画像送信失敗: ${result.error || "unknown"}`);
+        }
+      } catch (e: any) {
+        imageOk = false;
+        errors.push(`画像取得失敗: ${e.message}`);
+      }
+    }
+
+    // Send text
+    if (message) {
+      const res = await fetch(`${LINE_WORKER_URL}/v1/reply`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          target_id: tg.source_id,
+          text: message,
+          is_group: tg.is_group,
+        }),
+      });
+      const result: any = await res.json();
+      textOk = result.ok;
+      if (!result.ok) errors.push(`テキスト送信失敗: ${result.error || "unknown"}`);
+    }
+
     try { await ctx.api.deleteMessage(chatId, sendingMsg.message_id); } catch {}
 
-    if (result.ok) {
-      const confirm = await ctx.reply(`\u2705 LINE\u9001\u4fe1\u5b8c\u4e86 \u2192 ${targetGroup.name || targetGroup.source_id}`);
+    if ((textOk || !message) && (imageOk || !pendingFile)) {
+      const parts = [
+        `✅ LINE送信完了 → ${tg.name || tg.source_id}`,
+        pendingFile && imageOk ? `🖼 ${pendingFile.filename}` : null,
+      ].filter(Boolean).join("\n");
+      const confirm = await ctx.reply(parts);
       setTimeout(async () => {
         try { await ctx.api.deleteMessage(chatId, confirm.message_id); } catch {}
       }, 5000);
     } else {
-      await ctx.reply(`\u274c LINE\u9001\u4fe1\u5931\u6557: ${result.error || "unknown"}`);
+      await ctx.reply(`❌ LINE送信失敗:\n${errors.join("\n")}`);
     }
   } catch (e) {
-    await ctx.reply(`\u274c LINE\u30a8\u30e9\u30fc: ${e}`);
+    await ctx.reply(`❌ LINEエラー: ${e}`);
   }
 }
