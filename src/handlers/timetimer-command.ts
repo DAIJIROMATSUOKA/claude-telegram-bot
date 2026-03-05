@@ -103,5 +103,13 @@ export async function handleTimeTimer(ctx: Context): Promise<void> {
         }
       });
     } catch {}
+    // Pin to top (silent)
+    try {
+      await ctx.api.raw.pinChatMessage({
+        chat_id: chatId,
+        message_id: sent.message_id,
+        disable_notification: true,
+      });
+    } catch {}
   }
 }

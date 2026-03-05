@@ -47,12 +47,18 @@ export async function handleCallback(ctx: Context): Promise<void> {
     if (handled) return;
   }
 
-  // Time Timer: done button — stop timer + delete message
+  // Time Timer: done button — unpin + stop + delete message
   if (callbackData.startsWith("tt_done:")) {
     const timerId = callbackData.split(":")[1];
     await gatewayQuery("UPDATE jarvis_timetimers SET done = 1 WHERE id = ?", [timerId]);
+    try {
+      await ctx.api.raw.unpinChatMessage({
+        chat_id: ctx.chat!.id,
+        message_id: ctx.callbackQuery!.message!.message_id,
+      });
+    } catch {}
     try { await ctx.deleteMessage(); } catch {}
-    await ctx.answerCallbackQuery({ text: "✅ タイマー停止" });
+    await ctx.answerCallbackQuery({ text: "✅ Timer stopped" });
     return;
   }
 

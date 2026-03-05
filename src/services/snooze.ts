@@ -178,7 +178,10 @@ export async function checkTimeTimers(bot: Bot): Promise<void> {
         const text = buildTimerText(remaining, total, label);
 
         if (remaining === 0) {
-          // Timer done
+          // Timer done — unpin first
+          try {
+            await bot.api.raw.unpinChatMessage({ chat_id: chatId, message_id: msgId });
+          } catch {}
           await gatewayQuery("UPDATE jarvis_timetimers SET remaining_minutes = 0, done = 1 WHERE id = ?", [item.id]);
           await bot.api.editMessageText(chatId, msgId, text, {
             parse_mode: "HTML",
