@@ -126,7 +126,8 @@ export async function checkJarvisNotifs(bot: Bot): Promise<void> {
             parse_mode: "HTML",
             reply_markup: {
               inline_keyboard: [[
-                { text: "✅ 完了", callback_data: `jn_done:${item.id}` }
+                { text: "✅ 完了", callback_data: `jn_done:${item.id}` },
+                { text: "⏸ 停止", callback_data: `jn_stop:${item.id}` }
               ]]
             }
           }

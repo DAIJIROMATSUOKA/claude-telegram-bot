@@ -126,6 +126,9 @@ export async function handleJarvisNotif(ctx: Context): Promise<void> {
   const minutesUntil = Math.round((fireUtc.getTime() - now.getTime()) / 60000);
   const untilStr = minutesUntil > 0 ? `（あと${minutesUntil}分）` : "（もうすぐ）";
 
+  // Delete original command message
+  try { await ctx.deleteMessage(); } catch {}
+
   const confirm = await ctx.reply(
     `✅ 通知セット\n⏰ ${timeStr} ${label} ${untilStr}`,
     { parse_mode: "HTML" }

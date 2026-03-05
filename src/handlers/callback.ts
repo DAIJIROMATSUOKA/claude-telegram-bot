@@ -47,12 +47,13 @@ export async function handleCallback(ctx: Context): Promise<void> {
     if (handled) return;
   }
 
-  // Jarvis Notif: done button
-  if (callbackData.startsWith("jn_done:")) {
+  // Jarvis Notif: done / stop buttons
+  if (callbackData.startsWith("jn_done:") || callbackData.startsWith("jn_stop:")) {
     const notifId = callbackData.split(":")[1];
     await gatewayQuery("UPDATE jarvis_notifs SET done = 1 WHERE id = ?", [notifId]);
     try { await ctx.deleteMessage(); } catch {}
-    await ctx.answerCallbackQuery({ text: "✅ 完了" });
+    const label = callbackData.startsWith("jn_done:") ? "✅ 完了" : "⏸ スヌーズ停止";
+    await ctx.answerCallbackQuery({ text: label });
     return;
   }
 
