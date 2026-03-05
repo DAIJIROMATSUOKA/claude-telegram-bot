@@ -277,6 +277,9 @@ bot.command("workers", handleBridgeCommand);
 bot.command("manual", handleManual);
 bot.command("search", handleSearch);
 bot.command("help", handleCroppyDispatch);
+// Auto-delete "X pinned" service messages
+bot.on("message:pinned_message", async (ctx) => { try { await ctx.deleteMessage(); } catch {} });
+
 bot.on("message:text", handleText);
 
 // Voice messages
