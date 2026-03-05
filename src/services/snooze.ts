@@ -183,6 +183,11 @@ export async function checkTimeTimers(bot: Bot): Promise<void> {
             parse_mode: "HTML",
             reply_markup: { inline_keyboard: [] },
           });
+          // 完了通知（サウンドあり）
+          const doneMsg = await bot.api.sendMessage(chatId, "⏱ <b>タイムタイマー完了！</b>", { parse_mode: "HTML" });
+          setTimeout(async () => {
+            try { await bot.api.deleteMessage(chatId, doneMsg.message_id); } catch {}
+          }, 10000);
         } else {
           await gatewayQuery("UPDATE jarvis_timetimers SET remaining_minutes = ? WHERE id = ?", [remaining, item.id]);
           await bot.api.editMessageText(chatId, msgId, text, {
