@@ -47,13 +47,24 @@ export async function handleCallback(ctx: Context): Promise<void> {
     if (handled) return;
   }
 
-  // Jarvis Notif: done / stop buttons
-  if (callbackData.startsWith("jn_done:") || callbackData.startsWith("jn_stop:")) {
+  // Jarvis Notif: done button — stop snooze + delete message
+  if (callbackData.startsWith("jn_done:")) {
     const notifId = callbackData.split(":")[1];
     await gatewayQuery("UPDATE jarvis_notifs SET done = 1 WHERE id = ?", [notifId]);
     try { await ctx.deleteMessage(); } catch {}
-    const label = callbackData.startsWith("jn_done:") ? "✅ 完了" : "⏸ スヌーズ停止";
-    await ctx.answerCallbackQuery({ text: label });
+    await ctx.answerCallbackQuery({ text: "✅ 完了" });
+    return;
+  }
+
+  // Jarvis Notif: stop button — stop snooze only, keep message visible
+  if (callbackData.startsWith("jn_stop:")) {
+    const notifId = callbackData.split(":")[1];
+    await gatewayQuery("UPDATE jarvis_notifs SET done = 1 WHERE id = ?", [notifId]);
+    // Remove buttons, keep message text
+    try {
+      await ctx.editMessageReplyMarkup({ reply_markup: { inline_keyboard: [] } });
+    } catch {}
+    await ctx.answerCallbackQuery({ text: "⏸ スヌーズ停止" });
     return;
   }
 
