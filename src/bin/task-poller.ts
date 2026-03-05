@@ -30,7 +30,8 @@ const ERROR_BURST_WINDOW_MS = 10 * 60 * 1000; // 10 minutes
 
 // === State ===
 let running = true;
-let isExecuting = false;
+let activeTasks = 0;
+const MAX_CONCURRENT = 3;
 const instanceToken = Math.random().toString(36).substring(2);
 const errorTimestamps: number[] = [];
 
@@ -198,29 +199,16 @@ async function executeCommand(
   return { stdout: '', stderr: 'unreachable', exitCode: 1 };
 }
 
-// === Poll and Execute ===
-async function pollAndExecute(): Promise<void> {
-  if (isExecuting) return;
-  isExecuting = true;
-
+// === Background Task Executor ===
+async function executeAndComplete(task: any): Promise<void> {
   try {
-    const pollRes = await fetchWithTimeout(`${GATEWAY_URL}/v1/exec/poll`);
-    const pollData: any = await pollRes.json();
-
-    if (!pollData.ok || !pollData.task) {
-      return; // No pending tasks
-    }
-
-    const task = pollData.task;
-    log(`Executing: ${task.id} | ${task.command.substring(0, 80)}...`);
-
     const result = await executeCommand(
       task.command,
       task.cwd,
       task.timeout_seconds || 300
     );
 
-    log(`Done: ${task.id} | exit=${result.exitCode} | stdout=${result.stdout.length}B`);
+    log(`Done: ${task.id} [${activeTasks}/${MAX_CONCURRENT}] | exit=${result.exitCode} | stdout=${result.stdout.length}B`);
     lastTaskTime = Date.now();
 
     await fetchWithTimeout(`${GATEWAY_URL}/v1/exec/complete`, {
@@ -235,6 +223,55 @@ async function pollAndExecute(): Promise<void> {
     });
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
+    logError(`Task ${task.id} failed: ${msg}`);
+    // Try to report failure to gateway
+    try {
+      await fetchWithTimeout(`${GATEWAY_URL}/v1/exec/complete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          task_id: task.id,
+          exit_code: 1,
+          stdout: '',
+          stderr: `Poller error: ${msg}`,
+        }),
+      });
+    } catch {}
+    recordError();
+    if (shouldEnterSafeMode()) {
+      logError(`SAFE MODE triggered from background task`);
+      running = false;
+      releaseLock();
+      process.exit(0);
+    }
+  } finally {
+    activeTasks--;
+    try { writeFileSync("/tmp/poller-heartbeat", String(Date.now())); } catch {}
+  }
+}
+
+// === Poll and Execute ===
+async function pollAndExecute(): Promise<void> {
+  if (activeTasks >= MAX_CONCURRENT) return;
+
+  try {
+    const pollRes = await fetchWithTimeout(`${GATEWAY_URL}/v1/exec/poll`);
+    const pollData: any = await pollRes.json();
+
+    if (!pollData.ok || !pollData.task) {
+      return; // No pending tasks
+    }
+
+    const task = pollData.task;
+    activeTasks++;
+    log(`Spawning: ${task.id} [${activeTasks}/${MAX_CONCURRENT}] | ${task.command.substring(0, 80)}...`);
+
+    // Fire-and-forget: execute in background, poll loop continues
+    executeAndComplete(task).catch(err => {
+      logError(`Task ${task.id} uncaught: ${err instanceof Error ? err.message : err}`);
+    });
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
     if (msg.includes('aborted') || msg.includes('AbortError')) {
       logError('Gateway fetch timeout (network issue, not crashing)');
     } else {
@@ -246,13 +283,11 @@ async function pollAndExecute(): Promise<void> {
       logError(`SAFE MODE: ${ERROR_BURST_LIMIT} errors in ${ERROR_BURST_WINDOW_MS / 60000}min. Stopping.`);
       running = false;
       releaseLock();
-      process.exit(0); // exit(0) = launchd won't restart (SuccessfulExit=false)
+      process.exit(0);
     }
-  } finally {
-    isExecuting = false;
-    // Heartbeat: prove to watchdog cron that poller is alive
-    try { writeFileSync("/tmp/poller-heartbeat", String(Date.now())); } catch {}
   }
+  // Heartbeat (poll-level, not task-level)
+  try { writeFileSync("/tmp/poller-heartbeat", String(Date.now())); } catch {}
 }
 
 
