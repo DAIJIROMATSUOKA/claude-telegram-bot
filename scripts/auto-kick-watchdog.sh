@@ -14,6 +14,8 @@ STOPPED_THRESHOLD=2
 TARGET_URL_FILE="/tmp/autokick-target-url"
 
 stopped_count=0
+kick_count=0
+MAX_KICKS=3
 
 echo "[$(date '+%H:%M:%S')] Watchdog started (PID $$)" >> "$LOG"
 
@@ -64,6 +66,7 @@ APPLESCRIPT
 
   if [ "$RESULT" = "RUNNING" ]; then
     stopped_count=0
+    kick_count=0
     sleep "$CHECK_INTERVAL"
     continue
   fi
@@ -120,7 +123,25 @@ APPLESCRIPT
 
       echo "[$(date '+%H:%M:%S')] Kick result: $KICK_RESULT" >> "$LOG"
       stopped_count=0
+      kick_count=$((kick_count + 1))
 
+      if [ "$kick_count" -ge "$MAX_KICKS" ]; then
+        echo "[$(date '+%H:%M:%S')] STALE TAB: $MAX_KICKS kicks with no RUNNING response. Auto-disarming." >> "$LOG"
+        rm -f "$ARMED_FLAG"
+        kick_count=0
+        # Notify DJ
+        source ~/claude-telegram-bot/.env 2>/dev/null
+        curl -s -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage"           -d "chat_id=$TELEGRAM_ALLOWED_USERS" -d "text=Auto-kick disarmed: stale tab detected (${MAX_KICKS} kicks, no response)" > /dev/null 2>&1
+      fi
+
+    fi
+  elif [ "$RESULT" = "NO_TAB" ] || [ "$RESULT" = "NO_CHROME" ]; then
+    stopped_count=0
+    kick_count=$((kick_count + 1))
+    if [ "$kick_count" -ge "$MAX_KICKS" ]; then
+      echo "[$(date '+%H:%M:%S')] NO_TAB/NO_CHROME ${MAX_KICKS}x. Auto-disarming." >> "$LOG"
+      rm -f "$ARMED_FLAG"
+      kick_count=0
     fi
   else
     stopped_count=0
