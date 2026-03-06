@@ -40,6 +40,8 @@ import type { TowerIdentifier } from "../types/control-tower";
 import { savePendingTask, clearPendingTask } from "../utils/pending-task";
 import { handleInboxReply } from "./inbox";
 
+import { dispatchToWorker } from "./croppy-bridge";
+
 /**
  * Handle incoming text messages.
  */
@@ -166,7 +168,16 @@ export async function handleText(ctx: Context): Promise<void> {
     return;
   }
 
-  const typing = startTypingIndicator(ctx);
+
+  // ── 🦞 Croppy Bridge: Route default messages to Worker tabs ──
+  const BRIDGE_MODE = true; // false → revert to Claude CLI (Jarvis direct)
+  if (BRIDGE_MODE) {
+    stopProcessing();
+    await dispatchToWorker(ctx, message);
+    return;
+  }
+
+    const typing = startTypingIndicator(ctx);
 
   const state = new StreamingState();
   state.replyToMessageId = ctx.message?.message_id;

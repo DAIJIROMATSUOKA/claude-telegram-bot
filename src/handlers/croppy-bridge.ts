@@ -171,7 +171,7 @@ async function handleNightshift(ctx: Context): Promise<void> {
 /**
  * Dispatch a task to the first available worker tab
  */
-async function dispatchToWorker(ctx: Context, task: string): Promise<void> {
+export async function dispatchToWorker(ctx: Context, task: string): Promise<void> {
   // 1. Find READY worker
   const readyWT = await runLocal(`bash ${TAB_MANAGER} ready`);
 
