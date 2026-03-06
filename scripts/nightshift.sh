@@ -61,9 +61,18 @@ start)
   HEALTH=$("$TAB_MANAGER" health 2>/dev/null)
   log "Worker health: $HEALTH"
 
-  # 5. Notify DJ
+  # 5. Start supervisor (watch-all)
+  SUPERVISOR="$SCRIPT_DIR/croppy-supervisor.sh"
+  if [ -x "$SUPERVISOR" ]; then
+    nohup bash "$SUPERVISOR" watch-all > /tmp/croppy-supervisor-out.log 2>&1 &
+    SUPER_PID=$!
+    echo "$SUPER_PID" > /tmp/croppy-supervisor.pid
+    log "Supervisor started (PID=$SUPER_PID) - watching all workers"
+  fi
+
+  # 6. Notify DJ
   if [ -x "$NOTIFY" ]; then
-    "$NOTIFY" "🌙 Night mode started. Workers: $WORKER_COUNT" 2>/dev/null
+    "$NOTIFY" "🌙 Night mode started. Workers: $WORKER_COUNT, Supervisor: ON" 2>/dev/null
   fi
 
   log "Night mode active"
@@ -89,7 +98,19 @@ stop)
     log "caffeinate cleaned up"
   fi
 
-  # 2. Clean PID files
+  # 2. Kill supervisor
+  if [ -f /tmp/croppy-supervisor.pid ]; then
+    SUPER_PID=$(cat /tmp/croppy-supervisor.pid)
+    if kill -0 "$SUPER_PID" 2>/dev/null; then
+      kill "$SUPER_PID" 2>/dev/null
+      # Also kill child watchers
+      pkill -P "$SUPER_PID" 2>/dev/null
+      log "Supervisor stopped (PID=$SUPER_PID)"
+    fi
+    rm -f /tmp/croppy-supervisor.pid
+  fi
+
+  # 3. Clean PID files
   rm -f "$PID_FILE" "$CAFFEINATE_PID_FILE"
 
   # 3. Unmark worker tabs (optional - keep them for quick restart)
@@ -121,6 +142,13 @@ status)
     echo "nightshift: ACTIVE"
   else
     echo "nightshift: INACTIVE"
+  fi
+
+  # Supervisor
+  if [ -f /tmp/croppy-supervisor.pid ] && kill -0 "$(cat /tmp/croppy-supervisor.pid)" 2>/dev/null; then
+    echo "supervisor: RUNNING (PID=$(cat /tmp/croppy-supervisor.pid))"
+  else
+    echo "supervisor: OFF"
   fi
 
   # Workers
