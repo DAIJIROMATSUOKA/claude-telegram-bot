@@ -278,12 +278,14 @@ async function waitAndRelayResponse(ctx: Context, wt: string, maxWaitMs = 180000
           ? lines.slice(nonEmpty[1].i).join('\n').trimStart()
           : response;
         // Split for Telegram 4096 char limit
+        const headerLen = dispatchHeader ? dispatchHeader.length + 2 : 0;
         const maxLen = 4000;
         const chunks: string[] = [];
         let remaining = cleanResponse;
         while (remaining.length > 0) {
-          chunks.push(remaining.substring(0, maxLen));
-          remaining = remaining.substring(maxLen);
+          const limit = chunks.length === 0 ? maxLen - headerLen : maxLen;
+          chunks.push(remaining.substring(0, limit));
+          remaining = remaining.substring(limit);
         }
         for (let i = 0; i < chunks.length; i++) {
           try {
