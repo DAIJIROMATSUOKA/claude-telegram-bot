@@ -274,10 +274,15 @@ async function waitAndRelayResponse(ctx: Context, wt: string, maxWaitMs = 180000
       const response = await runLocal(`bash ${TAB_MANAGER} read-response ${wt}`, 10000);
       
       if (response && !response.includes('NO_RESPONSE') && !response.includes('ERROR')) {
+        // Remove UI-generated duplicate first line
+        const lines = response.split('\n');
+        const cleanResponse = (lines.length >= 2 && lines[0].trim() === lines[1].trim() && lines[0].trim() !== '')
+          ? lines.slice(1).join('\n').trimStart()
+          : response;
         // Split for Telegram 4096 char limit
         const maxLen = 4000;
         const chunks: string[] = [];
-        let remaining = response;
+        let remaining = cleanResponse;
         while (remaining.length > 0) {
           chunks.push(remaining.substring(0, maxLen));
           remaining = remaining.substring(maxLen);
