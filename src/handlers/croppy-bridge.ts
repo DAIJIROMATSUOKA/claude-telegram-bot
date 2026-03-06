@@ -234,14 +234,11 @@ async function injectAndNotify(ctx: Context, wt: string, task: string, raw = fal
       ctx.api.deleteMessage(ctx.chat!.id, origMsgId).catch(() => {});
     }
 
-    const dispatchMsg = await ctx.reply(
-      `🦞 [${count}/${INJECT_HANDOFF_THRESHOLD}]${statusTag}`,
-      { parse_mode: 'HTML' }
-    );
+    const dispatchHeader = `🦞 Task dispatched to <code>${escapeHtml(wt)}</code> [${count}/${INJECT_HANDOFF_THRESHOLD}]\n📝 ${escapeHtml(task.substring(0, 100))}${task.length > 100 ? '...' : ''}${statusTag}`;
 
     // Wait for response and relay to Telegram (non-blocking for handoff case)
     if (count < INJECT_HANDOFF_THRESHOLD) {
-      waitAndRelayResponse(ctx, wt, 180000, dispatchMsg.message_id).catch(e => 
+      waitAndRelayResponse(ctx, wt, 180000, undefined, dispatchHeader).catch(e => 
         console.error('[Bridge] Relay error:', e)
       );
     }
@@ -258,7 +255,7 @@ async function injectAndNotify(ctx: Context, wt: string, task: string, raw = fal
 /**
  * Wait for worker to finish (BUSY → READY), then read response and relay to Telegram
  */
-async function waitAndRelayResponse(ctx: Context, wt: string, maxWaitMs = 180000, dispatchMsgId?: number): Promise<void> {
+async function waitAndRelayResponse(ctx: Context, wt: string, maxWaitMs = 180000, dispatchMsgId?: number, dispatchHeader?: string): Promise<void> {
   const pollInterval = 3000;
   const startTime = Date.now();
 
@@ -276,10 +273,9 @@ async function waitAndRelayResponse(ctx: Context, wt: string, maxWaitMs = 180000
       if (response && !response.includes('NO_RESPONSE') && !response.includes('ERROR')) {
         // Remove UI-generated duplicate first line
         const lines = response.split('\n');
-        const firstNonEmpty = lines.find(l => l.trim() !== '') || '';
-        const secondLine = lines.filter(l => l.trim() !== '')[1] || '';
-        const cleanResponse = (firstNonEmpty && firstNonEmpty.trim() === secondLine.trim())
-          ? lines.slice(lines.indexOf(secondLine)).join('\n').trimStart()
+        const nonEmpty = lines.map((l, i) => ({ l, i })).filter(x => x.l.trim() !== '');
+        const cleanResponse = (nonEmpty.length >= 2 && nonEmpty[0].l.trim() === nonEmpty[1].l.trim())
+          ? lines.slice(nonEmpty[1].i).join('\n').trimStart()
           : response;
         // Split for Telegram 4096 char limit
         const maxLen = 4000;
@@ -289,13 +285,10 @@ async function waitAndRelayResponse(ctx: Context, wt: string, maxWaitMs = 180000
           chunks.push(remaining.substring(0, maxLen));
           remaining = remaining.substring(maxLen);
         }
-        // Delete dispatch confirmation before first chunk
-        if (dispatchMsgId) {
-          try { await ctx.api.deleteMessage(ctx.chat!.id, dispatchMsgId); } catch {}
-        }
-        for (const chunk of chunks) {
+        for (let i = 0; i < chunks.length; i++) {
           try {
-            await ctx.reply(chunk);
+            const text = (i === 0 && dispatchHeader) ? `${dispatchHeader}\n\n${chunks[i]}` : chunks[i];
+            await ctx.reply(text, { parse_mode: i === 0 && dispatchHeader ? 'HTML' : undefined });
           } catch (e) {
             console.error('[Bridge] Reply error:', e);
           }
