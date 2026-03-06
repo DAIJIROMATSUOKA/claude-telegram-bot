@@ -17,6 +17,25 @@ const execAsync = promisify(exec);
 const SCRIPTS_DIR = `${process.env.HOME}/claude-telegram-bot/scripts`;
 const TAB_MANAGER = `${SCRIPTS_DIR}/croppy-tab-manager.sh`;
 const NIGHTSHIFT = `${SCRIPTS_DIR}/nightshift.sh`;
+const SUPERVISOR = `${SCRIPTS_DIR}/croppy-supervisor.sh`;
+
+// --- Worker inject counter (auto-handoff at threshold) ---
+const INJECT_WARN_THRESHOLD = 25;
+const INJECT_HANDOFF_THRESHOLD = 30;
+const workerInjectCounts: Map<string, number> = new Map(); // key = W:T
+
+function getInjectCount(wt: string): number {
+  return workerInjectCounts.get(wt) || 0;
+}
+function incrementInjectCount(wt: string): number {
+  const count = getInjectCount(wt) + 1;
+  workerInjectCounts.set(wt, count);
+  return count;
+}
+function resetInjectCount(wt: string): void {
+  workerInjectCounts.delete(wt);
+}
+
 
 /**
  * Run a local shell command on M1
@@ -47,7 +66,20 @@ function buildWorkerPrompt(task: string): string {
     ``,
     `${task}`,
     ``,
-    `完了したら必ず:`,
+    `## 作業ルール（厳守）`,
+    ``,
+    `### 粒度ルール`,
+    `- 1回の応答でツール呼び出しは最大2回まで`,
+    `- 2回で終わらない場合→途中結果をnotify-dj.shで報告して停止`,
+    `- 続行指示が来たら次の2回を実行`,
+    ``,
+    `### 応答ルール`,
+    `- Artifactを作成した場合、本文にも要約を書く（Artifact見なくても概要がわかるように）`,
+    `- 決定事項は【決定】マーク付きで明示`,
+    `- 応答は短く。長文はファイルに書き出してパスだけ返す`,
+    `- コード変更は差分のみ報告（全文貼り付け禁止）`,
+    ``,
+    `### 完了時`,
     `1. exec bridge経由で結果をM1に書き込む`,
     `2. bash /mnt/project/exec.sh "bash ~/claude-telegram-bot/scripts/notify-dj.sh '✅ 完了: ${task.substring(0, 40)}...'" "" 15`,
     `3. エラー時も通知: notify-dj.sh 'FAIL: 理由'`,
@@ -102,6 +134,15 @@ async function handleBridgeStatus(ctx: Context): Promise<void> {
         const icon = status === 'READY' ? '🟢' : status === 'BUSY' ? '🟡' : '🔴';
         msg += `${icon} <code>${wt}</code> ${status}\n`;
       }
+    }
+  }
+
+  // Inject counts
+  if (workerInjectCounts.size > 0) {
+    msg += '\n📊 <b>Inject counts:</b>\n';
+    for (const [wt, count] of workerInjectCounts) {
+      const bar = count >= INJECT_WARN_THRESHOLD ? '⚠️' : '✅';
+      msg += `${bar} <code>${escapeHtml(wt)}</code>: ${count}/${INJECT_HANDOFF_THRESHOLD}\n`;
     }
   }
 
@@ -175,10 +216,21 @@ async function injectAndNotify(ctx: Context, wt: string, task: string): Promise<
   );
 
   if (result.includes('INSERTED:SENT')) {
-    const workerNum = wt; // e.g. "1:3"
+    const count = incrementInjectCount(wt);
+    let statusTag = '';
+
+    if (count >= INJECT_HANDOFF_THRESHOLD) {
+      // Auto-handoff: rotate to new chat
+      statusTag = `\n🔄 Handoff triggered (${count} turns)`;
+      await runLocal(`bash ${SUPERVISOR} handoff ${wt}`, 60000);
+      resetInjectCount(wt);
+    } else if (count >= INJECT_WARN_THRESHOLD) {
+      statusTag = `\n⚠️ ${count}/${INJECT_HANDOFF_THRESHOLD} turns (auto-handoff soon)`;
+    }
+
     await ctx.reply(
-      `🦞 Task dispatched to <code>${escapeHtml(workerNum)}</code>\n` +
-      `📝 ${escapeHtml(task.substring(0, 100))}${task.length > 100 ? '...' : ''}`,
+      `🦞 Task dispatched to <code>${escapeHtml(wt)}</code> [${count}/${INJECT_HANDOFF_THRESHOLD}]\n` +
+      `📝 ${escapeHtml(task.substring(0, 100))}${task.length > 100 ? '...' : ''}${statusTag}`,
       { parse_mode: 'HTML' }
     );
   } else if (result.includes('BLOCKED')) {

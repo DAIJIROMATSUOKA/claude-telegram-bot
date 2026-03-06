@@ -174,10 +174,11 @@ do_handoff() {
   
   log "HANDOFF start for $WT"
   
-  # 1. Get current chat URL and last task context
+  # 1. Get current chat URL and project URL
   DETECT=$(do_detect "$WIDX" "$TIDX")
   PROJ_URL=$(echo "$DETECT" | python3 -c "import json,sys; print(json.loads(sys.stdin.read()).get('projUrl',''))" 2>/dev/null)
   CHAT_URL=$(echo "$DETECT" | python3 -c "import json,sys; print(json.loads(sys.stdin.read()).get('url',''))" 2>/dev/null)
+  STATE=$(echo "$DETECT" | python3 -c "import json,sys; print(json.loads(sys.stdin.read()).get('state',''))" 2>/dev/null)
   
   if [ -z "$PROJ_URL" ]; then
     log "HANDOFF FAILED: no project URL"
@@ -185,9 +186,64 @@ do_handoff() {
     return 1
   fi
   
-  # 2. Extract last few messages as handoff context
-  ASFILE="/tmp/croppy-extract-$$.as"
-  cat > "$ASFILE" << EXEOF
+  # 2. Self-summary: ask 🦞 to summarize before leaving
+  SUMMARY=""
+  SUMMARY_REQUEST="この会話で行った作業・決定事項・未完了タスクを5行以内で要約してください。次のチャットへの引き継ぎに使います。"
+  
+  if [ "$STATE" = "READY" ]; then
+    log "HANDOFF: injecting summary request"
+    "$TAB_MANAGER" inject "$WT" "$SUMMARY_REQUEST" 2>/dev/null
+    
+    # Wait for response (poll READY: BUSY->READY transition)
+    sleep 3  # Initial wait for BUSY state
+    local SUMMARY_WAIT=0
+    local SUMMARY_MAX=60  # 60 seconds max wait
+    while [ "$SUMMARY_WAIT" -lt "$SUMMARY_MAX" ]; do
+      sleep 3
+      SUMMARY_WAIT=$((SUMMARY_WAIT + 3))
+      local S_STATE
+      S_STATE=$(do_detect "$WIDX" "$TIDX" | python3 -c "import json,sys; print(json.loads(sys.stdin.read()).get('state',''))" 2>/dev/null)
+      if [ "$S_STATE" = "READY" ]; then
+        log "HANDOFF: summary response received (${SUMMARY_WAIT}s)"
+        break
+      fi
+      if [ "$S_STATE" = "ERROR" ] || [ "$S_STATE" = "RATE_LIMIT" ]; then
+        log "HANDOFF: summary failed ($S_STATE), proceeding without"
+        break
+      fi
+    done
+    
+    # Extract last assistant message as summary
+    ASFILE="/tmp/croppy-summary-$$.as"
+    cat > "$ASFILE" << SUMEOF
+tell application "Google Chrome"
+  set t to tab $TIDX of window $WIDX
+  set js to "(() => {
+    const msgs = document.querySelectorAll('[data-testid] .font-claude-message, [class*=\"claude\"] .whitespace-pre-wrap, [class*=\"assistant\"] .whitespace-pre-wrap');
+    if (msgs.length === 0) return '';
+    const last = msgs[msgs.length - 1];
+    return last.innerText.substring(0, 1500);
+  })()"
+  return execute t javascript js
+end tell
+SUMEOF
+    SUMMARY=$(osascript "$ASFILE" 2>&1)
+    rm -f "$ASFILE"
+    
+    if [ -n "$SUMMARY" ] && [ ${#SUMMARY} -gt 20 ]; then
+      log "HANDOFF: summary captured (${#SUMMARY} chars)"
+    else
+      log "HANDOFF: summary too short or empty, falling back to DOM extract"
+      SUMMARY=""
+    fi
+  else
+    log "HANDOFF: skipping summary (state=$STATE, not READY)"
+  fi
+  
+  # 3. Fallback: extract last messages if no summary
+  if [ -z "$SUMMARY" ]; then
+    ASFILE="/tmp/croppy-extract-$$.as"
+    cat > "$ASFILE" << EXEOF
 tell application "Google Chrome"
   set t to tab $TIDX of window $WIDX
   set js to "(() => {
@@ -198,38 +254,10 @@ tell application "Google Chrome"
   return execute t javascript js
 end tell
 EXEOF
-  CONTEXT=$(osascript "$ASFILE" 2>&1)
-  rm -f "$ASFILE"
-  
-  # Save handoff file
-  HANDOFF_FILE="$HANDOFF_DIR/handoff-$(date +%Y%m%d-%H%M%S).json"
-  cat > "$HANDOFF_FILE" << HEOF
-{
-  "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-  "from_chat": "$CHAT_URL",
-  "project_url": "$PROJ_URL",
-  "context": $CONTEXT
-}
-HEOF
-  log "HANDOFF context saved: $HANDOFF_FILE"
-  
-  # 3. Navigate to project URL (new chat)
-  do_new_chat "$WIDX" "$TIDX" "$PROJ_URL"
-  sleep 5  # Wait for page load
-  
-  # 4. Re-mark the tab
-  WORKER_NUM=$(echo "$WT" | python3 -c "
-import sys
-wt = sys.stdin.read().strip()
-# Detect worker number from the old title - default to W:T based
-print('1')
-" 2>/dev/null)
-  "$TAB_MANAGER" mark "$WT" "$WORKER_NUM" 2>/dev/null
-  sleep 2
-  
-  # 5. Inject handoff context
-  HANDOFF_MSG="[HANDOFF] 前のチャットから引き継ぎ。直前のコンテキスト:
-$(echo "$CONTEXT" | python3 -c "
+    FALLBACK_CONTEXT=$(osascript "$ASFILE" 2>&1)
+    rm -f "$ASFILE"
+    
+    SUMMARY=$(echo "$FALLBACK_CONTEXT" | python3 -c "
 import json, sys
 try:
     msgs = json.loads(sys.stdin.read())
@@ -239,12 +267,54 @@ try:
 except:
     print('(context extraction failed)')
 " 2>/dev/null)
+  fi
+  
+  # 4. Save summary to temp file for safe JSON serialization
+  printf '%s' "$SUMMARY" > /tmp/croppy-handoff-summary.txt
+  
+  # 5. Save handoff file
+  HANDOFF_FILE="$HANDOFF_DIR/handoff-$(date +%Y%m%d-%H%M%S).json"
+  python3 << PYSAVE
+import json
+data = {
+    "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+    "from_chat": "$CHAT_URL",
+    "project_url": "$PROJ_URL",
+    "summary": open("/tmp/croppy-handoff-summary.txt").read()[:2000] if __import__("os").path.exists("/tmp/croppy-handoff-summary.txt") else ""
+}
+with open("$HANDOFF_FILE", "w") as f:
+    json.dump(data, f, ensure_ascii=False, indent=2)
+PYSAVE
+  log "HANDOFF context saved: $HANDOFF_FILE"
+  
+  # 6. Extract worker number from tab title before navigation
+  WORKER_NUM=$("$TAB_MANAGER" list 2>/dev/null | grep "^${WT}" | python3 -c "
+import sys, re
+line = sys.stdin.read()
+m = re.search(r'\[J-WORKER-(\d+)\]', line)
+print(m.group(1) if m else '1')
+" 2>/dev/null)
+  
+  # 7. Navigate to project URL (new chat)
+  do_new_chat "$WIDX" "$TIDX" "$PROJ_URL"
+  sleep 5  # Wait for page load
+  
+  # 8. Re-mark the tab
+  "$TAB_MANAGER" mark "$WT" "$WORKER_NUM" 2>/dev/null
+  sleep 2
+  
+  # 9. Inject handoff context with summary
+  HANDOFF_MSG="[HANDOFF - 前チャットからの引き継ぎ]
 
+## 前チャット要約:
+$SUMMARY
+
+---
 引き続きタスクを実行してください。完了したらnotify-dj.shで通知。"
   
   "$TAB_MANAGER" inject "$WT" "$HANDOFF_MSG" 2>/dev/null
   
-  log "HANDOFF complete: $WT → new chat in $PROJ_URL"
+  log "HANDOFF complete: $WT → new chat in $PROJ_URL (summary=${#SUMMARY}chars)"
   echo "HANDOFF_OK"
 }
 
