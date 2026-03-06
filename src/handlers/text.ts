@@ -173,7 +173,7 @@ export async function handleText(ctx: Context): Promise<void> {
   const BRIDGE_MODE = true; // false → revert to Claude CLI (Jarvis direct)
   if (BRIDGE_MODE) {
     stopProcessing();
-    await dispatchToWorker(ctx, message);
+    await dispatchToWorker(ctx, message, { raw: true });
     return;
   }
 

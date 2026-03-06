@@ -171,7 +171,7 @@ async function handleNightshift(ctx: Context): Promise<void> {
 /**
  * Dispatch a task to the first available worker tab
  */
-export async function dispatchToWorker(ctx: Context, task: string): Promise<void> {
+export async function dispatchToWorker(ctx: Context, task: string, options?: { raw?: boolean }): Promise<void> {
   // 1. Find READY worker
   const readyWT = await runLocal(`bash ${TAB_MANAGER} ready`);
 
@@ -189,21 +189,21 @@ export async function dispatchToWorker(ctx: Context, task: string): Promise<void
         await ctx.reply('❌ Workers still busy after 30s. Try again later.');
         return;
       }
-      await injectAndNotify(ctx, retryWT.trim(), task);
+      await injectAndNotify(ctx, retryWT.trim(), task, options?.raw);
     } else {
       await ctx.reply(`❌ No workers available.\n<code>${escapeHtml(health)}</code>`, { parse_mode: 'HTML' });
     }
     return;
   }
 
-  await injectAndNotify(ctx, readyWT.trim(), task);
+  await injectAndNotify(ctx, readyWT.trim(), task, options?.raw);
 }
 
 /**
  * Inject task into worker tab and notify DJ
  */
-async function injectAndNotify(ctx: Context, wt: string, task: string): Promise<void> {
-  const prompt = buildWorkerPrompt(task);
+async function injectAndNotify(ctx: Context, wt: string, task: string, raw = false): Promise<void> {
+  const prompt = raw ? task : buildWorkerPrompt(task);
 
   // Escape for shell - write to temp file to avoid escaping issues
   const tmpFile = `/tmp/croppy-bridge-task-${Date.now()}.txt`;

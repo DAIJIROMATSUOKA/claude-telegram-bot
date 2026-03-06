@@ -327,7 +327,7 @@ read-response)
   cat > "$ASFILE" << READEOF
 tell application "Google Chrome"
   set t to tab $TIDX of window $WIDX
-  set readJs to "(() => { var r = document.querySelectorAll('.font-claude-response-body'); if (r.length === 0) return 'NO_RESPONSE'; var texts = []; for (var i = 0; i < r.length; i++) { texts.push(r[i].innerText); } var full = texts.join(String.fromCharCode(10)); return full.substring(full.length > 4000 ? full.length - 4000 : 0); })()"
+  set readJs to "(() => { var r = document.querySelectorAll('.font-claude-response'); if (r.length === 0) return 'NO_RESPONSE'; var longest = r[0]; for (var i = 1; i < r.length; i++) { if (r[i].innerText.length > longest.innerText.length) longest = r[i]; } var txt = longest.innerText; return txt.substring(txt.length > 4000 ? txt.length - 4000 : 0); })()"
   return execute t javascript readJs
 end tell
 READEOF
