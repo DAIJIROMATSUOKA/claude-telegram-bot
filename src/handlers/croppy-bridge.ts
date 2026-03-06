@@ -228,15 +228,20 @@ async function injectAndNotify(ctx: Context, wt: string, task: string, raw = fal
       statusTag = `\n⚠️ ${count}/${INJECT_HANDOFF_THRESHOLD} turns (auto-handoff soon)`;
     }
 
-    await ctx.reply(
-      `🦞 Task dispatched to <code>${escapeHtml(wt)}</code> [${count}/${INJECT_HANDOFF_THRESHOLD}]\n` +
-      `📝 ${escapeHtml(task.substring(0, 100))}${task.length > 100 ? '...' : ''}${statusTag}`,
+    // Delete original DJ message immediately
+    const origMsgId = ctx.message?.message_id;
+    if (origMsgId) {
+      ctx.api.deleteMessage(ctx.chat!.id, origMsgId).catch(() => {});
+    }
+
+    const dispatchMsg = await ctx.reply(
+      `🦞 [${count}/${INJECT_HANDOFF_THRESHOLD}]${statusTag}`,
       { parse_mode: 'HTML' }
     );
 
     // Wait for response and relay to Telegram (non-blocking for handoff case)
     if (count < INJECT_HANDOFF_THRESHOLD) {
-      waitAndRelayResponse(ctx, wt).catch(e => 
+      waitAndRelayResponse(ctx, wt, 180000, dispatchMsg.message_id).catch(e => 
         console.error('[Bridge] Relay error:', e)
       );
     }
@@ -253,7 +258,7 @@ async function injectAndNotify(ctx: Context, wt: string, task: string, raw = fal
 /**
  * Wait for worker to finish (BUSY → READY), then read response and relay to Telegram
  */
-async function waitAndRelayResponse(ctx: Context, wt: string, maxWaitMs = 180000): Promise<void> {
+async function waitAndRelayResponse(ctx: Context, wt: string, maxWaitMs = 180000, dispatchMsgId?: number): Promise<void> {
   const pollInterval = 3000;
   const startTime = Date.now();
 
