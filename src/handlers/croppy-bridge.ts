@@ -233,6 +233,13 @@ async function injectAndNotify(ctx: Context, wt: string, task: string): Promise<
       `📝 ${escapeHtml(task.substring(0, 100))}${task.length > 100 ? '...' : ''}${statusTag}`,
       { parse_mode: 'HTML' }
     );
+
+    // Wait for response and relay to Telegram (non-blocking for handoff case)
+    if (count < INJECT_HANDOFF_THRESHOLD) {
+      waitAndRelayResponse(ctx, wt).catch(e => 
+        console.error('[Bridge] Relay error:', e)
+      );
+    }
   } else if (result.includes('BLOCKED')) {
     await ctx.reply(`⚠️ Worker ${wt} blocked: <code>${escapeHtml(result)}</code>`, { parse_mode: 'HTML' });
   } else {
@@ -240,6 +247,62 @@ async function injectAndNotify(ctx: Context, wt: string, task: string): Promise<
     // Cleanup temp file
     await runLocal(`rm -f ${tmpFile}`);
   }
+}
+
+
+/**
+ * Wait for worker to finish (BUSY → READY), then read response and relay to Telegram
+ */
+async function waitAndRelayResponse(ctx: Context, wt: string, maxWaitMs = 180000): Promise<void> {
+  const pollInterval = 3000;
+  const startTime = Date.now();
+
+  // Wait for worker to start processing
+  await new Promise(r => setTimeout(r, 3000));
+
+  // Poll using position-based check (not title-based health)
+  while (Date.now() - startTime < maxWaitMs) {
+    const status = await runLocal(`bash ${TAB_MANAGER} check-status ${wt}`, 10000);
+
+    if (status.trim() === 'READY') {
+      await new Promise(r => setTimeout(r, 1500)); // Settle delay
+      const response = await runLocal(`bash ${TAB_MANAGER} read-response ${wt}`, 10000);
+      
+      if (response && !response.includes('NO_RESPONSE') && !response.includes('ERROR')) {
+        // Split for Telegram 4096 char limit
+        const maxLen = 4000;
+        const chunks: string[] = [];
+        let remaining = response;
+        while (remaining.length > 0) {
+          chunks.push(remaining.substring(0, maxLen));
+          remaining = remaining.substring(maxLen);
+        }
+        for (const chunk of chunks) {
+          try {
+            await ctx.reply(chunk);
+          } catch (e) {
+            console.error('[Bridge] Reply error:', e);
+          }
+        }
+      }
+
+      // Re-mark tab title (claude.ai overwrites it with conversation title)
+      const workerList = await runLocal(`bash ${TAB_MANAGER} list`);
+      if (!workerList.includes(wt)) {
+        // Title was overwritten, re-mark
+        const num = wt.endsWith(':5') ? '1' : wt.endsWith(':6') ? '2' : '1';
+        await runLocal(`bash ${TAB_MANAGER} mark ${wt} ${num}`);
+      }
+      return;
+    }
+    
+    await new Promise(r => setTimeout(r, pollInterval));
+  }
+  
+  // Timeout
+  try {
+    await ctx.reply('⏱ Worker still running after 3min. Check /workers for status.');
+  } catch {}
 }
 
 function escapeHtml(text: string): string {

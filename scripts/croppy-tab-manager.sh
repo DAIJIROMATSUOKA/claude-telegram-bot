@@ -310,6 +310,66 @@ for w in config.get('workers', []):
   ;;
 
 # ============================================================
+# READ-RESPONSE: Read the last assistant response from DOM
+# Usage: read-response 1:5
+# Returns: text content of last assistant message
+# ============================================================
+read-response)
+  WT="$2"
+  if [ -z "$WT" ]; then
+    echo "Usage: $0 read-response <W:T>"
+    exit 1
+  fi
+  WIDX=$(echo "$WT" | cut -d: -f1)
+  TIDX=$(echo "$WT" | cut -d: -f2)
+  
+  ASFILE="/tmp/croppy-read-resp-$$.as"
+  cat > "$ASFILE" << READEOF
+tell application "Google Chrome"
+  set t to tab $TIDX of window $WIDX
+  set readJs to "(() => { var r = document.querySelectorAll('.font-claude-response-body'); if (r.length === 0) return 'NO_RESPONSE'; var texts = []; for (var i = 0; i < r.length; i++) { texts.push(r[i].innerText); } var full = texts.join(String.fromCharCode(10)); return full.substring(full.length > 4000 ? full.length - 4000 : 0); })()"
+  return execute t javascript readJs
+end tell
+READEOF
+  RESULT=$(osascript "$ASFILE" 2>&1)
+  rm -f "$ASFILE"
+  echo "$RESULT"
+  ;;
+
+
+# ============================================================
+# CHECK-STATUS: Check tab status by position (no title check)
+# Usage: check-status 1:5
+# Returns: READY/BUSY/NO_EDITOR/ERROR
+# ============================================================
+check-status)
+  WT="$2"
+  if [ -z "$WT" ]; then
+    echo "Usage: $0 check-status <W:T>"
+    exit 1
+  fi
+  WIDX=$(echo "$WT" | cut -d: -f1)
+  TIDX=$(echo "$WT" | cut -d: -f2)
+  
+  # Use base64-encoded JS to avoid all escaping issues
+  JS_B64=$(printf '%s' '(() => { var e = document.querySelector(".ProseMirror"); if (!e) return "NO_EDITOR"; var btns = document.querySelectorAll("button"); var hasRetry = false; var hasStop = false; for (var i = 0; i < btns.length; i++) { var al = btns[i].getAttribute("aria-label") || ""; if (al === "Retry" || al.indexOf("\u518d") >= 0) hasRetry = true; if ((al === "Stop Response" || al.indexOf("\u505c\u6b62") >= 0) && btns[i].getBoundingClientRect().width > 0) hasStop = true; } if (hasRetry) return "READY"; if (hasStop) return "BUSY"; return "READY"; })()' | base64 | tr -d '\n')
+  
+  ASFILE="/tmp/croppy-check-status-$$.as"
+  cat > "$ASFILE" << CSEOF
+tell application "Google Chrome"
+  set t to tab $TIDX of window $WIDX
+  set b64Js to "$JS_B64"
+  set decodedJs to do shell script "echo " & quoted form of b64Js & " | base64 -d"
+  return execute t javascript decodedJs
+end tell
+CSEOF
+  RESULT=$(osascript "$ASFILE" 2>&1)
+  rm -f "$ASFILE"
+  echo "$RESULT"
+  ;;
+
+
+# ============================================================
 *)
   echo "croppy-tab-manager.sh - Manage claude.ai worker tabs"
   echo ""
