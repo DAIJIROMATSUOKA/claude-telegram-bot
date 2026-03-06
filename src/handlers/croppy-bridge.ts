@@ -276,8 +276,10 @@ async function waitAndRelayResponse(ctx: Context, wt: string, maxWaitMs = 180000
       if (response && !response.includes('NO_RESPONSE') && !response.includes('ERROR')) {
         // Remove UI-generated duplicate first line
         const lines = response.split('\n');
-        const cleanResponse = (lines.length >= 2 && lines[0].trim() === lines[1].trim() && lines[0].trim() !== '')
-          ? lines.slice(1).join('\n').trimStart()
+        const firstNonEmpty = lines.find(l => l.trim() !== '') || '';
+        const secondLine = lines.filter(l => l.trim() !== '')[1] || '';
+        const cleanResponse = (firstNonEmpty && firstNonEmpty.trim() === secondLine.trim())
+          ? lines.slice(lines.indexOf(secondLine)).join('\n').trimStart()
           : response;
         // Split for Telegram 4096 char limit
         const maxLen = 4000;
@@ -286,6 +288,10 @@ async function waitAndRelayResponse(ctx: Context, wt: string, maxWaitMs = 180000
         while (remaining.length > 0) {
           chunks.push(remaining.substring(0, maxLen));
           remaining = remaining.substring(maxLen);
+        }
+        // Delete dispatch confirmation before first chunk
+        if (dispatchMsgId) {
+          try { await ctx.api.deleteMessage(ctx.chat!.id, dispatchMsgId); } catch {}
         }
         for (const chunk of chunks) {
           try {
