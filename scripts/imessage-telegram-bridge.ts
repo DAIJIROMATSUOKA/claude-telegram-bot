@@ -118,16 +118,43 @@ function cocoaToISO(cocoaNano: number): string {
   return new Date(cocoaToUnix(cocoaNano) * 1000).toISOString();
 }
 
-function loadState(): { lastRowId: number } {
+function cocoaToJSTTimeStr(cocoaNano: number): string {
+  const d = new Date(cocoaToUnix(cocoaNano) * 1000);
+  return d.toLocaleTimeString("ja-JP", {
+    timeZone: "Asia/Tokyo",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
+
+interface BridgeState {
+  lastRowId: number;
+  dedupHashes?: string[];  // recent message hashes for dedup
+}
+
+const DEDUP_MAX = 200;  // keep last 200 hashes
+
+function loadState(): BridgeState {
   try {
     if (existsSync(STATE_FILE))
       return JSON.parse(readFileSync(STATE_FILE, "utf-8"));
   } catch {}
-  return { lastRowId: 0 };
+  return { lastRowId: 0, dedupHashes: [] };
 }
 
-function saveState(state: { lastRowId: number }): void {
+function saveState(state: BridgeState): void {
+  // trim dedup list to max size
+  if (state.dedupHashes && state.dedupHashes.length > DEDUP_MAX) {
+    state.dedupHashes = state.dedupHashes.slice(-DEDUP_MAX);
+  }
   writeFileSync(STATE_FILE, JSON.stringify(state));
+}
+
+function makeDedupHash(handleId: string, text: string, cocoaDate: number): string {
+  // Normalize: round date to nearest second to handle minor drift
+  const sec = Math.floor(cocoaDate / 1_000_000_000);
+  return `${handleId}|${text}|${sec}`;
 }
 
 function escapeHtml(str: string): string {
@@ -144,14 +171,16 @@ async function sendToTelegram(
   text: string,
   chatId: string,
   rowId: number,
-  isGroup: boolean
+  isGroup: boolean,
+  sentTimeStr: string
 ): Promise<number | null> {
   const sourceId = `imsg:${rowId}`;
   const icon = "📱";
   const groupTag = isGroup ? " (グループ)" : "";
+  const timeTag = sentTimeStr ? ` ${sentTimeStr}` : "";
 
   let body =
-    `${icon} <b>${escapeHtml(senderName)}</b>${groupTag}\n` +
+    `${icon} <b>${escapeHtml(senderName)}</b>${timeTag}${groupTag}\n` +
     escapeHtml(text);
 
   body = body.substring(0, 4000);
@@ -304,6 +333,8 @@ async function main() {
   let forwarded = 0;
 
   // Process synchronously to maintain order, async for telegram/gateway calls
+  const dedupSet = new Set(state.dedupHashes || []);
+
   const processRows = async () => {
     for (const row of rows) {
       const senderName = resolveContactName(row.handle_id || "");
@@ -312,12 +343,25 @@ async function main() {
       const isGroup = !!(row.cache_roomnames || (row.chat_guid || "").startsWith("iMessage;+;chat"));
       const chatGuid = row.chat_guid || "";
 
+      // B) Dedup: skip if same handle+text+date already sent
+      const hash = makeDedupHash(row.handle_id || "", text, row.date || 0);
+      if (dedupSet.has(hash)) {
+        console.log(`[iMessage Bridge] Dedup skip ROWID ${row.ROWID}`);
+        if (row.ROWID > maxRowId) maxRowId = row.ROWID;
+        continue;
+      }
+      dedupSet.add(hash);
+
+      // A) Original send time
+      const sentTimeStr = row.date ? cocoaToJSTTimeStr(row.date) : "";
+
       const telegramMsgId = await sendToTelegram(
         senderName,
         text,
         chatGuid,
         row.ROWID,
-        isGroup
+        isGroup,
+        sentTimeStr
       );
 
       if (telegramMsgId) {
@@ -339,6 +383,7 @@ async function main() {
   processRows()
     .then(() => {
       state.lastRowId = maxRowId;
+      state.dedupHashes = [...dedupSet];
       saveState(state);
       if (forwarded > 0)
         console.log(`[iMessage Bridge] Forwarded ${forwarded} messages`);
@@ -347,6 +392,7 @@ async function main() {
     .catch((e) => {
       console.error("[iMessage Bridge] Process error:", e);
       state.lastRowId = maxRowId;
+      state.dedupHashes = [...dedupSet];
       saveState(state);
       db.close();
     });
