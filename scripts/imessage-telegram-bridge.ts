@@ -343,6 +343,13 @@ async function main() {
       const isGroup = !!(row.cache_roomnames || (row.chat_guid || "").startsWith("iMessage;+;chat"));
       const chatGuid = row.chat_guid || "";
 
+      // Skip /alarm iMessages (format: HH:MM|label)
+      if (/^\d{2}:\d{2}\|/.test(text)) {
+        console.log(`[iMessage Bridge] Alarm skip ROWID ${row.ROWID}: ${text.substring(0, 30)}`);
+        if (row.ROWID > maxRowId) maxRowId = row.ROWID;
+        continue;
+      }
+
       // B) Dedup: skip if same handle+text+date already sent
       const hash = makeDedupHash(row.handle_id || "", text, row.date || 0);
       if (dedupSet.has(hash)) {

@@ -1,11 +1,9 @@
 name: Golden Tests CI
 
+# Auto-trigger disabled until test scripts are implemented
+# Re-enable push/pull_request triggers when test:golden and test:policy exist in package.json
 on:
-  push:
-    branches: [ main, develop ]
-  pull_request:
-    branches: [ main, develop ]
-  workflow_dispatch: # Manual trigger
+  workflow_dispatch: # Manual trigger only
 
 env:
   NODE_ENV: test
