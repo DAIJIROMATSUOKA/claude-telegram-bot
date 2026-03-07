@@ -826,7 +826,14 @@ export async function handleAlarm(ctx: Context): Promise<void> {
     await execAsync(
       `osascript -e 'tell application "Messages" to send "${iMessageFormat}" to buddy "+818065560713"'`
     );
-    await ctx.reply(`⏰ ${time}のアラーム（${label}）をセットした`);
+    // Auto-delete command + confirmation after 3s
+    const confirmMsg = await ctx.reply(`⏰ ${time}のアラーム（${label}）をセットした`);
+    const autoDeleteAlarm = async () => {
+      await new Promise(r => setTimeout(r, 3000));
+      try { await ctx.api.deleteMessage(ctx.chat!.id, ctx.message!.message_id); } catch {}
+      try { await ctx.api.deleteMessage(ctx.chat!.id, confirmMsg.message_id); } catch {}
+    };
+    autoDeleteAlarm();
   } catch (error) {
     await ctx.reply(`❌ アラーム設定エラー: ${error}`);
   }
