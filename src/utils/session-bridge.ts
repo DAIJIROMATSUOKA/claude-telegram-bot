@@ -54,13 +54,13 @@ export const AI_INFO: Record<
   { name: string; emoji: string; capabilities: string }
 > = {
   claude: {
-    name: "Claude Opus 4.5",
+    name: "Claude Opus 4.6",
     emoji: "\u{1F9E0}",
     capabilities:
       "\u30D5\u30A1\u30A4\u30EB\u7DE8\u96C6\u30FB\u30B3\u30DE\u30F3\u30C9\u5B9F\u884C\u30FBgit\u64CD\u4F5C\u30FB\u30C6\u30B9\u30C8\u5B9F\u884C",
   },
   gemini: {
-    name: "Gemini 2.5 Pro",
+    name: "Gemini 3.1 Pro",
     emoji: "\u{1F52E}",
     capabilities:
       "\u30D5\u30A1\u30A4\u30EB\u7DE8\u96C6\u30FB\u30B3\u30DE\u30F3\u30C9\u5B9F\u884C\u30FBgit\u64CD\u4F5C",
@@ -465,7 +465,7 @@ export async function sendToSession(
 
       result = await spawnCLI(
         "gemini",
-        ["--yolo", "-p", "-"],
+        ["--model", "gemini-3.1-pro", "--yolo", "-p", "-"],
         fullPrompt,
         300_000,
       );

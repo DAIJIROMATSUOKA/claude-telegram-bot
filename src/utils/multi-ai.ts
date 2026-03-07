@@ -98,7 +98,7 @@ export async function askClaude(prompt: string, timeoutMs = 600_000): Promise<AI
  */
 export async function askGemini(prompt: string, timeoutMs = 600_000): Promise<AIResponse> {
   const start = Date.now();
-  const r = await spawnCLI("gemini", [], prompt, timeoutMs);
+  const r = await spawnCLI("gemini", ["--model", "gemini-3.1-pro"], prompt, timeoutMs);
   return {
     output: (r.code === 0 || r.stdout) ? r.stdout : "",
     backend: "gemini",
