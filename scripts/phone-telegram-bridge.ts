@@ -15,7 +15,7 @@ const GATEWAY_URL = process.env.GATEWAY_URL || "https://jarvis-memory-gateway.ja
 const GATEWAY_KEY = process.env.GATEWAY_API_KEY || "";
 
 const CALLHISTORY_DB = `${process.env.HOME}/Library/Application Support/CallHistoryDB/CallHistory.storedata`;
-const STATE_FILE = "/tmp/phone-bridge-state.json";
+const STATE_FILE = `${process.env.HOME}/.jarvis/phone-bridge-state.json`;
 // Core Data epoch: 2001-01-01 00:00:00 UTC
 const COREDATA_EPOCH = new Date("2001-01-01T00:00:00Z").getTime() / 1000;
 
