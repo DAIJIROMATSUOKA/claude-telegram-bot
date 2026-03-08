@@ -190,6 +190,21 @@ export async function dispatchToWorker(ctx: Context, task: string, options?: { r
         return;
       }
       await injectAndNotify(ctx, retryWT.trim(), task, options?.raw);
+    } else if (health.includes('NO_WORKERS') || health.includes('CHROME_NOT_RUNNING')) {
+      // Auto-recover: restore worker tabs from config
+      console.log('[Bridge] No workers found, attempting auto-recover...');
+      const recoverResult = await runLocal(`bash ${TAB_MANAGER} recover`, 30000);
+      if (recoverResult.includes('RESTORED')) {
+        // Wait for tabs to load
+        await new Promise(r => setTimeout(r, 8000));
+        const recoveredWT = await runLocal(`bash ${TAB_MANAGER} ready`);
+        if (recoveredWT && recoveredWT.trim() !== '' && !recoveredWT.includes('ERROR')) {
+          console.log(`[Bridge] Auto-recovered, dispatching to ${recoveredWT.trim()}`);
+          await injectAndNotify(ctx, recoveredWT.trim(), task, options?.raw);
+          return;
+        }
+      }
+      await ctx.reply(`❌ Auto-recover failed.\n<code>${escapeHtml(recoverResult)}</code>`, { parse_mode: 'HTML' });
     } else {
       await ctx.reply(`❌ No workers available.\n<code>${escapeHtml(health)}</code>`, { parse_mode: 'HTML' });
     }
