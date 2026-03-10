@@ -369,7 +369,388 @@ CSEOF
   ;;
 
 
+
 # ============================================================
+# TOKEN-ESTIMATE: Estimate token usage of current chat via DOM
+# Usage: token-estimate 1:5
+# Returns: estimated tokens, percentage of 200K, recommendation
+# ============================================================
+token-estimate)
+  WT=""
+  if [ -z "" ]; then
+    echo "Usage: /bin/sh token-estimate <W:T>"
+    exit 1
+  fi
+  WIDX=""
+  TIDX=""
+  
+  JS_B64=KCgpID0+IHsKICAgIHZhciBtc2dzID0gZG9jdW1lbnQucXVlcnlTZWxlY3RvckFsbChcIltkYXRhLWlzLXN0cmVhbWluZ10sLmZvbnQtY2xhdWRlLXJlc3BvbnNlLC5mb250LXVzZXItbWVzc2FnZSwud2hpdGVzcGFjZS1wcmUtd3JhcFwiKTsKICAgIGlmIChtc2dzLmxlbmd0aCA9PT0gMCkgewogICAgICBtc2dzID0gZG9jdW1lbnQucXVlcnlTZWxlY3RvckFsbChcIi5wcm9zZSwgLmZvbnQtY2xhdWRlLXJlc3BvbnNlXCIpOwogICAgfQogICAgdmFyIHRvdGFsQ2hhcnMgPSAwOwogICAgdmFyIG1zZ0NvdW50ID0gMDsKICAgIGZvciAodmFyIGkgPSAwOyBpIDwgbXNncy5sZW5ndGg7IGkrKykgewogICAgICB0b3RhbENoYXJzICs9IChtc2dzW2ldLmlubmVyVGV4dCB8fCBcIlwiKS5sZW5ndGg7CiAgICAgIG1zZ0NvdW50Kys7CiAgICB9CiAgICB2YXIgc3lzUHJvbXB0RXN0ID0gNjAwMDA7CiAgICB2YXIganBSYXRpbyA9IDEuNTsKICAgIHZhciBlc3RUb2tlbnMgPSBNYXRoLnJvdW5kKHRvdGFsQ2hhcnMgKiBqcFJhdGlvKSArIHN5c1Byb21wdEVzdDsKICAgIHZhciBtYXhUb2tlbnMgPSAyMDAwMDA7CiAgICB2YXIgcGN0ID0gTWF0aC5yb3VuZCgoZXN0VG9rZW5zIC8gbWF4VG9rZW5zKSAqIDEwMCk7CiAgICB2YXIgcmVjID0gXCJPS1wiOwogICAgaWYgKHBjdCA+PSA4NSkgcmVjID0gXCJIQU5ET0ZGX05PV1wiOwogICAgZWxzZSBpZiAocGN0ID49IDc1KSByZWMgPSBcIlBSRVBBUkVfSEFORE9GRlwiOwogICAgZWxzZSBpZiAocGN0ID49IDYwKSByZWMgPSBcIk1PTklUT1JcIjsKICAgIHJldHVybiBKU09OLnN0cmluZ2lmeSh7Y2hhcnM6IHRvdGFsQ2hhcnMsIG1lc3NhZ2VzOiBtc2dDb3VudCwgZXN0X3Rva2VuczogZXN0VG9rZW5zLCBwY3Q6IHBjdCwgcmVjb21tZW5kYXRpb246IHJlY30pOwogIH0pKCk=
+  
+  ASFILE="/tmp/croppy-token-est-9.as"
+  cat > "" << TEEOF
+tell application "Google Chrome"
+  set t to tab  of window 
+  set b64Js to ""
+  set decodedJs to do shell script "echo " & quoted form of b64Js & " | base64 -d"
+  return execute t javascript decodedJs
+end tell
+TEEOF
+  RESULT=/bin/sh: 62: osascript: not found
+  rm -f ""
+  
+  echo "" | python3 -c '
+import json,sys
+try:
+    d = json.loads(sys.stdin.read().strip())
+    print(f"Messages: {d["messages"]}")
+    print(f"Chars: {d["chars"]:,}")
+    print(f"Est tokens: {d["est_tokens"]:,} / 200,000")
+    print(f"Usage: {d["pct"]}%")
+    print(f"Status: {d["recommendation"]}")
+except:
+    print("PARSE_ERROR")
+' 2>/dev/null || echo ""
+  ;;
+
+# ============================================================
+# HANDOFF: Full chat handoff orchestration
+# Usage: handoff <W:T> <project_url> [summary_method]
+#   summary_method: "gemini" (default) or "self"
+# Flow: read chat -> summarize -> open new tab -> mark -> inject -> unmark old
+# ============================================================
+handoff)
+  WT=""
+  PROJECT_URL=""
+  SUMMARY_METHOD="gemini"
+  
+  if [ -z "" ] || [ -z "" ]; then
+    echo "Usage: /bin/sh handoff <W:T> <project_url> [gemini|self]"
+    exit 1
+  fi
+  
+  log "HANDOFF START:  ->  (method=)"
+  echo "=== HANDOFF START ==="
+  
+  STATUS=
+  if [ "" = "BUSY" ]; then
+    echo "ERROR: Worker  is BUSY. Wait for response to complete."
+    exit 1
+  fi
+  echo "[1/7] Status: "
+  
+  RESPONSE=
+  echo "[2/7] Read response: 0 chars"
+  
+  TOKEN_EST=
+  echo "[3/7] Token estimate: "
+  
+  echo "[4/7] Generating summary ()..."
+  
+  WIDX=""
+  TIDX=""
+  
+  CONV_JS_B64=KCgpID0+IHsKICAgIHZhciBibG9ja3MgPSBkb2N1bWVudC5xdWVyeVNlbGVjdG9yQWxsKFwiLmZvbnQtY2xhdWRlLXJlc3BvbnNlLCAuZm9udC11c2VyLW1lc3NhZ2UsIC53aGl0ZXNwYWNlLXByZS13cmFwXCIpOwogICAgdmFyIGNvbnYgPSBbXTsKICAgIGZvciAodmFyIGkgPSAwOyBpIDwgYmxvY2tzLmxlbmd0aDsgaSsrKSB7CiAgICAgIHZhciB0ZXh0ID0gKGJsb2Nrc1tpXS5pbm5lclRleHQgfHwgXCJcIikuc3Vic3RyaW5nKDAsIDUwMCk7CiAgICAgIGlmICh0ZXh0Lmxlbmd0aCA+IDEwKSBjb252LnB1c2godGV4dCk7CiAgICB9CiAgICB2YXIgbGFzdDIwID0gY29udi5zbGljZSgtMjApOwogICAgcmV0dXJuIGxhc3QyMC5qb2luKFwiXFxuLS0tXFxuXCIpLnN1YnN0cmluZygwLCA4MDAwKTsKICB9KSgp
+  
+  CONV_AS="/tmp/croppy-handoff-conv-9.as"
+  cat > "" << CONVEOF
+tell application "Google Chrome"
+  set t to tab  of window 
+  set b64Js to ""
+  set decodedJs to do shell script "echo " & quoted form of b64Js & " | base64 -d"
+  return execute t javascript decodedJs
+end tell
+CONVEOF
+  CONVERSATION=/bin/sh: 136: osascript: not found
+  rm -f ""
+  
+  SUMMARY_FILE="/tmp/croppy-handoff-summary.md"
+  
+  if [ "" = "gemini" ]; then
+    printf '%s' "以下の会話を引き継ぎ用に要約してください。重要な決定事項、未完了タスク、次のアクションを箇条書きで。500文字以内。
+
+" > /tmp/croppy-handoff-prompt.txt
+    gemini < /tmp/croppy-handoff-prompt.txt > "" 2>/dev/null
+    rm -f /tmp/croppy-handoff-prompt.txt
+  else
+    echo "" | tail -c 3000 > ""
+  fi
+  
+  SUMMARY=
+  echo "[4/7] Summary: 0 chars"
+  
+  echo "[5/7] Opening new tab..."
+  "/bin/sh" open ""
+  sleep 6
+  
+  NEW_WT=
+  if [ -z "" ]; then
+    echo "ERROR: Could not find new tab"
+    exit 1
+  fi
+  
+  OLD_NUM=
+  OLD_NUM="1"
+  
+  "/bin/sh" mark "" ""
+  echo "[6/7] Marked  as [J-WORKER-]"
+  
+  sleep 2
+  HANDOFF_MSG="前チャットからの引き継ぎです。
+
+## 要約
+
+
+## 指示
+croppy-notes.mdとM1.mdを読んで、上記の文脈を踏まえて作業を再開してください。"
+  
+  "/bin/sh" inject "" ""
+  echo "[7/7] Injected summary into "
+  
+  "/bin/sh" unmark ""
+  
+  printf '%s' "2026-03-10 06:47 HANDOFF:  ->  (tokens~)
+" >> ~/Machinelab\ Dropbox/Matsuoka\ Daijiro/JARVIS-Journal/croppy-notes.md
+  
+  log "HANDOFF COMPLETE:  -> "
+  echo ""
+  echo "=== HANDOFF COMPLETE ==="
+  echo "Old:  (unmarked)"
+  echo "New:  [J-WORKER-]"
+  echo "Summary: "
+  ;;
+
+# ============================================================
+# FALLBACK-CHECK: DOM health check for UI breakage detection
+# Usage: fallback-check <W:T>
+# Returns: HEALTHY / DEGRADED / BROKEN + details
+# ============================================================
+fallback-check)
+  WT=""
+  if [ -z "" ]; then
+    echo "Usage: /bin/sh fallback-check <W:T>"
+    exit 1
+  fi
+  WIDX=""
+  TIDX=""
+  
+  JS_B64=KCgpID0+IHsKICAgIHZhciBjaGVja3MgPSB7fTsKICAgIGNoZWNrcy5wcm9zZW1pcnJvciA9ICEhZG9jdW1lbnQucXVlcnlTZWxlY3RvcihcIi5Qcm9zZU1pcnJvclwiKTsKICAgIGNoZWNrcy5jbGF1ZGVSZXNwb25zZSA9IGRvY3VtZW50LnF1ZXJ5U2VsZWN0b3JBbGwoXCIuZm9udC1jbGF1ZGUtcmVzcG9uc2VcIikubGVuZ3RoOwogICAgY2hlY2tzLmVycm9yRGlhbG9nID0gISEoCiAgICAgIGRvY3VtZW50LnF1ZXJ5U2VsZWN0b3IoXCJbcm9sZT1kaWFsb2ddXCIpIHx8CiAgICAgIGRvY3VtZW50LnF1ZXJ5U2VsZWN0b3IoXCIuZXJyb3JcIikgfHwKICAgICAgZG9jdW1lbnQuYm9keS5pbm5lclRleHQubWF0Y2goL2NvbnZlcnNhdGlvbiBpcyB0b28gbG9uZ3zkvJroqbHjgYzplbfjgZnjgY58c29tZXRoaW5nIHdlbnQgd3Jvbmd85ZWP6aGM44GM55m655SfLykKICAgICk7CiAgICBjaGVja3Muc2VuZEJ1dHRvbiA9ICEhKAogICAgICBkb2N1bWVudC5xdWVyeVNlbGVjdG9yKFwiYnV0dG9uW2FyaWEtbGFiZWw9XFxcIlNlbmQgTWVzc2FnZVxcXCJdXCIpIHx8CiAgICAgIGRvY3VtZW50LnF1ZXJ5U2VsZWN0b3IoXCJidXR0b25bYXJpYS1sYWJlbD1cXFwi44Oh44OD44K744O844K444KS6YCB5L+hXFxcIl1cIikgfHwKICAgICAgZG9jdW1lbnQucXVlcnlTZWxlY3RvcihcImZpZWxkc2V0IGJ1dHRvblt0eXBlPVxcXCJidXR0b25cXFwiXVwiKQogICAgKTsKICAgIGNoZWNrcy5yYXRlTGltaXQgPSAhISgKICAgICAgZG9jdW1lbnQuYm9keS5pbm5lclRleHQubWF0Y2goL3JhdGUgbGltaXR8dXNhZ2UgbGltaXR844Os44O844OI5Yi26ZmQfOWIqeeUqOWItumZkC8pCiAgICApOwogICAgCiAgICB2YXIgc3RhdHVzID0gXCJIRUFMVEhZXCI7CiAgICB2YXIgaXNzdWVzID0gW107CiAgICBpZiAoIWNoZWNrcy5wcm9zZW1pcnJvcikgeyBzdGF0dXMgPSBcIkJST0tFTlwiOyBpc3N1ZXMucHVzaChcIk5PX0VESVRPUlwiKTsgfQogICAgaWYgKGNoZWNrcy5lcnJvckRpYWxvZykgeyBzdGF0dXMgPSBcIkJST0tFTlwiOyBpc3N1ZXMucHVzaChcIkVSUk9SX0RJQUxPR1wiKTsgfQogICAgaWYgKGNoZWNrcy5yYXRlTGltaXQpIHsgc3RhdHVzID0gXCJCUk9LRU5cIjsgaXNzdWVzLnB1c2goXCJSQVRFX0xJTUlURURcIik7IH0KICAgIGlmICghY2hlY2tzLnNlbmRCdXR0b24gJiYgY2hlY2tzLnByb3NlbWlycm9yKSB7IHN0YXR1cyA9IFwiREVHUkFERURcIjsgaXNzdWVzLnB1c2goXCJOT19TRU5EX0JUTlwiKTsgfQogICAgCiAgICByZXR1cm4gSlNPTi5zdHJpbmdpZnkoe3N0YXR1czogc3RhdHVzLCBpc3N1ZXM6IGlzc3VlcywgZGV0YWlsczogY2hlY2tzfSk7CiAgfSkoKQ==
+  
+  ASFILE="/tmp/croppy-fallback-9.as"
+  cat > "" << FBEOF
+tell application "Google Chrome"
+  set t to tab  of window 
+  set b64Js to ""
+  set decodedJs to do shell script "echo " & quoted form of b64Js & " | base64 -d"
+  return execute t javascript decodedJs
+end tell
+FBEOF
+  RESULT=/bin/sh: 246: osascript: not found
+  rm -f ""
+  
+  echo "" | python3 -c '
+import json,sys
+try:
+    d = json.loads(sys.stdin.read().strip())
+    print(f"Status: {d["status"]}")
+    if d["issues"]:
+        print(f"Issues: {", ".join(d["issues"])}")
+    det = d["details"]
+    print(f"  Editor: {"OK" if det["prosemirror"] else "MISSING"}")
+    print(f"  Responses: {det["claudeResponse"]}")
+    print(f"  Send button: {"OK" if det["sendButton"] else "MISSING"}")
+    print(f"  Error dialog: {"YES" if det["errorDialog"] else "no"}")
+    print(f"  Rate limit: {"YES" if det["rateLimit"] else "no"}")
+except:
+    print("PARSE_ERROR")
+    import traceback; traceback.print_exc()
+' 2>/dev/null || echo ""
+  
+  HEALTH_STATUS=
+  if [ "" = "BROKEN" ]; then
+    log "FALLBACK-CHECK: BROKEN at  - "
+    if [ -f ~/claude-telegram-bot/scripts/notify-dj.sh ]; then
+      bash ~/claude-telegram-bot/scripts/notify-dj.sh "Worker  BROKEN: . claude.aiを直接使ってください。"
+    fi
+  fi
+  ;;
+
+
+# ============================================================
+# ============================================================
+# NEW-CHAT: Open new claude.ai project tab, inject message, poll for title
+# Usage: new-chat "message"
+# Output: CHAT_TITLE:<title>  WT:<W:T>
+# ============================================================
+new-chat)
+  MESSAGE="$2"
+  if [ -z "$MESSAGE" ]; then
+    echo "ERROR: usage: new-chat \"message\""
+    exit 1
+  fi
+
+  # Get project URL from config
+  CONFIG="/tmp/croppy-workers.json"
+  PROJECT_URL="https://claude.ai/project/019c15f4-3d2d-7263-a308-e7f6ccd6b3f8"
+  if [ -f "$CONFIG" ]; then
+    PROJECT_URL=$(python3 -c "import json; d=json.load(open('$CONFIG')); print(d['workers'][0]['url'])" 2>/dev/null || echo "$PROJECT_URL")
+  fi
+
+  # Get front window index and current tab count
+  BEFORE_INFO=$(osascript 2>/dev/null -e 'tell application "Google Chrome" to return ((index of front window as text) & " " & ((count of tabs of front window) as text))')
+  WIDX=$(echo "$BEFORE_INFO" | awk '{print $1}')
+  TBEFORE=$(echo "$BEFORE_INFO" | awk '{print $2}')
+
+  if [ -z "$WIDX" ] || [ -z "$TBEFORE" ]; then
+    echo "ERROR: Chrome not responding"
+    exit 1
+  fi
+
+  # Open new tab at project URL
+  osascript 2>/dev/null -e "
+tell application \"Google Chrome\"
+  activate
+  tell window $WIDX
+    set newTab to make new tab
+    set URL of newTab to \"$PROJECT_URL\"
+  end tell
+end tell"
+
+  TIDX=$((TBEFORE + 1))
+  NEW_WT="${WIDX}:${TIDX}"
+  log "new-chat: opened $NEW_WT"
+
+  # Wait for page load
+  sleep 6
+
+  # Write message to tmp file and inject
+  MSG_TMP="/tmp/croppy-newchat-msg-$$.txt"
+  printf '%s' "$MESSAGE" > "$MSG_TMP"
+  INJECT_RESULT=$(bash "$0" inject "$NEW_WT" "$(cat "$MSG_TMP")")
+  rm -f "$MSG_TMP"
+
+  if ! echo "$INJECT_RESULT" | grep -q "INSERTED:SENT"; then
+    echo "ERROR: inject failed on $NEW_WT: $INJECT_RESULT"
+    exit 1
+  fi
+
+  log "new-chat: injected into $NEW_WT"
+
+  # Poll for title to update (max 30s, claude.ai sets title after first response)
+  TITLE=""
+  for i in $(seq 1 10); do
+    sleep 3
+    CURRENT_TITLE=$(osascript 2>/dev/null -e "
+tell application \"Google Chrome\"
+  try
+    return title of tab $TIDX of window $WIDX
+  on error
+    return \"\"
+  end try
+end tell")
+    # Accept title if non-empty and not a default loading title
+    if [ -n "$CURRENT_TITLE" ] && \
+       ! echo "$CURRENT_TITLE" | grep -qiE "^(Jarvis|New conversation|新しい会話|Claude|Untitled|Loading|claude\.ai)"; then
+      TITLE="$CURRENT_TITLE"
+      break
+    fi
+  done
+
+  if [ -z "$TITLE" ]; then
+    TITLE="Chat-$(date +%H%M%S)"
+  fi
+
+  echo "CHAT_TITLE: $TITLE"
+  echo "WT: $NEW_WT"
+  ;;
+
+# ============================================================
+# INJECT-BY-TITLE: Find claude.ai tab by partial title and inject
+# Usage: inject-by-title "partial_title" "message"
+# Output: INSERTED:SENT or NOT_FOUND:<query>
+# ============================================================
+inject-by-title)
+  QUERY="$2"
+  MESSAGE="$3"
+  if [ -z "$QUERY" ] || [ -z "$MESSAGE" ]; then
+    echo "ERROR: usage: inject-by-title \"partial_title\" \"message\""
+    exit 1
+  fi
+
+  # Get all claude.ai tabs
+  ALL_TABS=$(bash "$0" list-all 2>/dev/null)
+
+  # Try exact match first, then case-insensitive partial
+  MATCH=$(echo "$ALL_TABS" | grep -F "$QUERY" | head -1)
+  if [ -z "$MATCH" ]; then
+    MATCH=$(echo "$ALL_TABS" | grep -i "$QUERY" | head -1)
+  fi
+
+  if [ -z "$MATCH" ]; then
+    echo "NOT_FOUND: $QUERY"
+    exit 1
+  fi
+
+  # Extract W:T (first field before |)
+  WT=$(echo "$MATCH" | awk -F'|' '{print $1}' | tr -d ' ')
+  FOUND_TITLE=$(echo "$MATCH" | awk -F'|' '{print $2}' | sed 's/^ *//;s/ *$//')
+  log "inject-by-title: found \"$FOUND_TITLE\" at $WT"
+
+  # Write message to tmp and inject
+  MSG_TMP2="/tmp/croppy-ibt-msg-$$.txt"
+  printf '%s' "$MESSAGE" > "$MSG_TMP2"
+  RESULT=$(bash "$0" inject "$WT" "$(cat "$MSG_TMP2")")
+  rm -f "$MSG_TMP2"
+  echo "$RESULT"
+  ;;
+
+# ============================================================
+# SETUP-WORKERS: Open N worker tabs, mark them, update config
+# Usage: setup-workers [N=10]
+# ============================================================
+setup-workers)
+  N="${2:-10}"
+
+  CONFIG="/tmp/croppy-workers.json"
+  PROJECT_URL="https://claude.ai/project/019c15f4-3d2d-7263-a308-e7f6ccd6b3f8"
+  if [ -f "$CONFIG" ]; then
+    PROJECT_URL=$(python3 -c "import json; d=json.load(open('$CONFIG')); print(d['workers'][0]['url'])" 2>/dev/null || echo "$PROJECT_URL")
+  fi
+
+  echo "Opening $N worker tabs at: $PROJECT_URL"
+
+  for i in $(seq 1 $N); do
+    BEFORE=$(osascript 2>/dev/null -e 'tell application "Google Chrome" to return ((index of front window as text) & " " & ((count of tabs of front window) as text))')
+    WX=$(echo "$BEFORE" | awk '{print $1}')
+    TX=$(echo "$BEFORE" | awk '{print $2}')
+
+    osascript 2>/dev/null -e "
+tell application \"Google Chrome\"
+  activate
+  tell window $WX
+    set newTab to make new tab
+    set URL of newTab to \"$PROJECT_URL\"
+  end tell
+end tell"
+
+    sleep 3
+    NEW_TX=$((TX + 1))
+    WT="${WX}:${NEW_TX}"
+    bash "$0" mark "$WT" "$i"
+    echo "Worker $i: $WT"
+    sleep 1
+  done
+
+  # Update config
+  python3 << PYEOF2
+import json
+workers = [{"num": i, "url": "$PROJECT_URL"} for i in range(1, $N + 1)]
+with open("$CONFIG", "w") as f:
+    json.dump({"workers": workers}, f, indent=2)
+print(f"Config updated: $N workers in $CONFIG")
+PYEOF2
+  ;;
+
+
 *)
   echo "croppy-tab-manager.sh - Manage claude.ai worker tabs"
   echo ""
@@ -384,5 +765,8 @@ CSEOF
   echo "  inject-worker <N> \"msg\"  Send to worker N by name"
   echo "  open <URL>               Open new tab"
   echo "  recover                  Restore missing workers"
+  echo "  token-estimate <W:T>     Estimate token usage"
+  echo "  handoff <W:T> <URL>      Full chat handoff"
+  echo "  fallback-check <W:T>     DOM health check"
   ;;
 esac
