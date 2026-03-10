@@ -1,5 +1,4 @@
 import { exec } from "child_process";
-import { waitAndRelayResponse } from "./croppy-bridge";
 import { promisify } from "util";
 import { readFileSync, writeFileSync, existsSync } from "fs";
 import type { Context } from "grammy";
@@ -13,9 +12,10 @@ const CHAT_MAP_FILE = "/tmp/croppy-chat-map.json";
 
 interface ChatEntry {
   wt: string;
-  createdAt: string;   // YYYY-MM-DD_HHmm (JST)
-  title: string | null; // null = not yet confirmed from claude.ai
-  notifMsgId: number;  // Telegram msg id of the /chat status message
+  createdAt: string;        // YYYY-MM-DD_HHmm (JST)
+  title: string | null;     // null = not yet confirmed from claude.ai
+  notifMsgId: number;       // current reply-target message ID
+  lastResponseMsgId?: number; // previous response msg to delete on next reply
 }
 
 // telegram_msg_id -> ChatEntry
@@ -41,7 +41,6 @@ function loadChatMap(): void {
       const data = JSON.parse(readFileSync(CHAT_MAP_FILE, "utf-8")) as Record<string, any>;
       for (const [k, v] of Object.entries(data)) {
         if (typeof v === "string") {
-          // Legacy: string -> migrate to new format without wt/createdAt
           chatReplyMap.set(Number(k), { wt: "", createdAt: "", title: v, notifMsgId: Number(k) });
         } else {
           chatReplyMap.set(Number(k), v as ChatEntry);
@@ -89,36 +88,90 @@ function escapeHtml(t: string): string {
 async function writeTmpMsg(msg: string): Promise<string> {
   const tmp = `/tmp/croppy-chatmsg-${Date.now()}.txt`;
   const b64 = Buffer.from(msg).toString("base64");
-  await runLocal(`echo \'${b64}\' | base64 -d > ${tmp}`);
+  await runLocal(`echo '${b64}' | base64 -d > ${tmp}`);
   return tmp;
 }
 
 /**
- * Try to confirm title from the tab. If confirmed, update document.title and
- * edit the Telegram notification. Returns the confirmed title or null.
+ * Wait for claude.ai tab to finish responding and return cleaned text.
  */
-async function tryConfirmTitle(entry: ChatEntry, chatId: number, api: any): Promise<string | null> {
+async function waitForChatResponse(wt: string, maxWaitMs = 180000): Promise<string | null> {
+  const pollInterval = 3000;
+  const startTime = Date.now();
+
+  await new Promise(r => setTimeout(r, 3000)); // wait for response to start
+
+  while (Date.now() - startTime < maxWaitMs) {
+    const status = await runLocal(`bash "${TAB_MANAGER}" check-status ${wt}`, 10000);
+
+    if (status.trim() === "READY") {
+      await new Promise(r => setTimeout(r, 1500)); // settle
+      const response = await runLocal(`bash "${TAB_MANAGER}" read-response ${wt}`, 10000);
+
+      if (!response || response.includes("NO_RESPONSE") || response.includes("ERROR")) {
+        return null;
+      }
+
+      // Remove UI-generated duplicate first line
+      const lines = response.split("\n");
+      const nonEmpty = lines.map((l, i) => ({ l, i })).filter(x => x.l.trim() !== "");
+      return (nonEmpty.length >= 2 && nonEmpty[0]!.l.trim() === nonEmpty[1]!.l.trim())
+        ? lines.slice(nonEmpty[1]!.i).join("\n").trimStart()
+        : response;
+    }
+
+    await new Promise(r => setTimeout(r, pollInterval));
+  }
+
+  return null; // timeout
+}
+
+/**
+ * Confirm title from claude.ai tab, update document.title.
+ * Returns confirmed formatted title or null.
+ */
+async function tryConfirmTitle(entry: ChatEntry): Promise<string | null> {
   if (!entry.wt || !entry.createdAt) return null;
 
   const raw = await runLocal(`bash "${TAB_MANAGER}" get-title "${entry.wt}"`, 8000);
   if (!raw || raw.startsWith("ERROR") || isDefaultTitle(raw)) return null;
 
   const formatted = formatTitle(entry.createdAt, raw);
-
-  // Set document.title in Chrome tab
-  const escapedFormatted = formatted.replace(/\'/g, "'\''");
-  await runLocal(`bash "${TAB_MANAGER}" set-title "${entry.wt}" \'${escapedFormatted}\'`, 8000);
-
-  // Edit the original Telegram notification
-  try {
-    await api.editMessageText(
-      chatId, entry.notifMsgId,
-      `💬 <b>${escapeHtml(formatted)}</b>\n<code>${escapeHtml(entry.wt)}</code>\n\nこのメッセージにリプライで続けて投稿できます。`,
-      { parse_mode: "HTML" }
-    );
-  } catch (_) { /* ignore if already edited */ }
+  const escapedFormatted = formatted.replace(/'/g, "'\\''");
+  await runLocal(`bash "${TAB_MANAGER}" set-title "${entry.wt}" '${escapedFormatted}'`, 8000);
 
   return formatted;
+}
+
+/**
+ * Delete a Telegram message silently (ignore errors).
+ */
+async function tryDeleteMsg(ctx: Context, msgId: number): Promise<void> {
+  try {
+    await ctx.api.deleteMessage(ctx.chat!.id, msgId);
+  } catch (_) { /* ignore */ }
+}
+
+/**
+ * Send formatted response message and register it as new reply target.
+ * Format: 💬 {title}\n> DJ: {djMsg}\n\n{response}
+ */
+async function sendResponseMsg(
+  ctx: Context,
+  entry: ChatEntry,
+  djMsg: string,
+  responseText: string
+): Promise<number> {
+  const title = entry.title || (entry.createdAt ? `${entry.createdAt}_???` : "???");
+  const header = `💬 <b>${escapeHtml(title)}</b>\n&gt; DJ: ${escapeHtml(djMsg)}`;
+
+  const maxBody = 4000 - header.length - 4;
+  const body = responseText.length > maxBody
+    ? responseText.substring(0, maxBody) + "…"
+    : responseText;
+
+  const sent = await ctx.reply(`${header}\n\n${body}`, { parse_mode: "HTML" });
+  return sent.message_id;
 }
 
 /**
@@ -133,7 +186,7 @@ export async function handleChatCommand(ctx: Context): Promise<void> {
     return;
   }
 
-  const statusMsg = await ctx.reply("💬 新しいチャットを開いています...");
+  const statusMsg = await ctx.reply("⏳ 送信中...");
 
   try {
     const tmp = await writeTmpMsg(message);
@@ -156,28 +209,38 @@ export async function handleChatCommand(ctx: Context): Promise<void> {
 
     const wt = wtMatch[1]!.trim();
     const createdAt = (createdAtMatch?.[1] || "").trim();
-    const pendingTitle = createdAt ? `${createdAt}_???` : "???" ;
-
-    await ctx.api.editMessageText(
-      ctx.chat!.id, statusMsg.message_id,
-      `💬 <b>${escapeHtml(pendingTitle)}</b>\n<code>${escapeHtml(wt)}</code>\n\nこのメッセージにリプライで続けて投稿できます。`,
-      { parse_mode: "HTML" }
-    );
 
     const entry: ChatEntry = { wt, createdAt, title: null, notifMsgId: statusMsg.message_id };
     chatReplyMap.set(statusMsg.message_id, entry);
     saveChatMap();
-    // Relay initial response back to Telegram
-    waitAndRelayResponse(ctx, wt, 180000).then(async () => {
-      // After response completes, claude.ai has auto-named the chat — confirm title now
-      const confirmed = await tryConfirmTitle(entry, ctx.chat!.id, ctx.api);
+
+    // Fire-and-forget: wait for response → delete ⏳ → send formatted response
+    (async () => {
+      const responseText = await waitForChatResponse(wt, 180000);
+
+      // Confirm title after response
+      const confirmed = await tryConfirmTitle(entry);
       if (confirmed) {
         entry.title = confirmed;
-        saveChatMap();
       }
-    }).catch(e =>
-      console.error("[ClaudeChat] initial waitAndRelayResponse error:", e)
-    );
+
+      // Delete ⏳ message
+      await tryDeleteMsg(ctx, statusMsg.message_id);
+      chatReplyMap.delete(statusMsg.message_id);
+
+      if (!responseText) {
+        const timeoutMsg = await ctx.reply("⏱ 応答タイムアウト (3分)");
+        chatReplyMap.set(timeoutMsg.message_id, { ...entry, notifMsgId: timeoutMsg.message_id });
+        saveChatMap();
+        return;
+      }
+
+      const responseMsgId = await sendResponseMsg(ctx, entry, message, responseText);
+      entry.notifMsgId = responseMsgId;
+      chatReplyMap.set(responseMsgId, entry);
+      saveChatMap();
+    })().catch(e => console.error("[ClaudeChat] handleChatCommand async error:", e));
+
   } catch (e: any) {
     await ctx.api.editMessageText(
       ctx.chat!.id, statusMsg.message_id,
@@ -255,8 +318,7 @@ export async function handleChatsCommand(ctx: Context): Promise<void> {
 }
 
 /**
- * Reply intercept — route replies to /chat notifications into the correct tab.
- * On first reply: try to confirm title from claude.ai.
+ * Reply intercept — route replies to chat response messages into the correct tab.
  */
 export async function handleChatReply(ctx: Context): Promise<boolean> {
   const replyToId = ctx.message?.reply_to_message?.message_id;
@@ -268,16 +330,12 @@ export async function handleChatReply(ctx: Context): Promise<boolean> {
   const rawMessage = ctx.message?.text || "";
   if (!rawMessage || rawMessage.startsWith("/")) return false;
 
-  // Try to confirm title on first reply (title === null)
-  let displayTitle = entry.title;
+  // Try to confirm title if not yet set
   if (!entry.title) {
-    const confirmed = await tryConfirmTitle(entry, ctx.chat!.id, ctx.api);
+    const confirmed = await tryConfirmTitle(entry);
     if (confirmed) {
       entry.title = confirmed;
-      displayTitle = confirmed;
       saveChatMap();
-    } else {
-      displayTitle = entry.createdAt ? `${entry.createdAt}_???` : "???";
     }
   }
 
@@ -289,29 +347,46 @@ export async function handleChatReply(ctx: Context): Promise<boolean> {
     20000
   );
 
-  if (result.includes("INSERTED:SENT")) {
-    const sentMsg = await ctx.reply(
-      `✅ → <b>${escapeHtml(displayTitle || injectTitle)}</b>`,
-      { parse_mode: "HTML" }
-    );
-    // Chain: replies to confirmation also route to same chat
-    chatReplyMap.set(sentMsg.message_id, { ...entry, notifMsgId: sentMsg.message_id });
-    saveChatMap();
-    // Relay claude.ai response back to Telegram
-    waitAndRelayResponse(ctx, entry.wt, 180000).catch(e =>
-      console.error("[ClaudeChat] waitAndRelayResponse error:", e)
-    );
-  } else if (result.includes("NOT_FOUND")) {
-    await ctx.reply(
-      `❌ タブが閉じられています: <b>${escapeHtml(displayTitle || injectTitle)}</b>\n<code>/chats</code> で確認`,
-      { parse_mode: "HTML" }
-    );
-  } else {
-    await ctx.reply(
-      `❌ <code>${escapeHtml(result.substring(0, 200))}</code>`,
-      { parse_mode: "HTML" }
-    );
+  if (!result.includes("INSERTED:SENT")) {
+    if (result.includes("NOT_FOUND")) {
+      await ctx.reply(
+        `❌ タブが閉じられています: <b>${escapeHtml(injectTitle)}</b>\n<code>/chats</code> で確認`,
+        { parse_mode: "HTML" }
+      );
+    } else {
+      await ctx.reply(
+        `❌ <code>${escapeHtml(result.substring(0, 200))}</code>`,
+        { parse_mode: "HTML" }
+      );
+    }
+    return true;
   }
+
+  // Show ⏳ and fire-and-forget response relay
+  const waitMsg = await ctx.reply("⏳ 送信中...");
+  const prevResponseMsgId = replyToId; // the message DJ replied to
+
+  (async () => {
+    const responseText = await waitForChatResponse(entry.wt, 180000);
+
+    // Delete ⏳
+    await tryDeleteMsg(ctx, waitMsg.message_id);
+    // Delete previous response message
+    await tryDeleteMsg(ctx, prevResponseMsgId);
+    chatReplyMap.delete(prevResponseMsgId);
+
+    if (!responseText) {
+      const timeoutMsg = await ctx.reply("⏱ 応答タイムアウト (3分)");
+      chatReplyMap.set(timeoutMsg.message_id, { ...entry, notifMsgId: timeoutMsg.message_id });
+      saveChatMap();
+      return;
+    }
+
+    const responseMsgId = await sendResponseMsg(ctx, entry, rawMessage, responseText);
+    entry.notifMsgId = responseMsgId;
+    chatReplyMap.set(responseMsgId, entry);
+    saveChatMap();
+  })().catch(e => console.error("[ClaudeChat] handleChatReply async error:", e));
 
   return true;
 }
