@@ -473,8 +473,9 @@ export async function handleInboxReply(ctx: Context): Promise<boolean> {
     );
 
     // If no mapping, check parent (prompt -> notification chain)
-    if (!mapping?.results?.[0] && replyTo.reply_to_message) {
-      const parentMsgId = replyTo.reply_to_message.message_id;
+    const parentReply = (replyTo as any).reply_to_message;
+    if (!mapping?.results?.[0] && parentReply) {
+      const parentMsgId = parentReply.message_id;
       mapping = await gatewayQuery(
         "SELECT source, source_id, source_detail FROM message_mappings WHERE telegram_msg_id = ? AND telegram_chat_id = ?",
         [parentMsgId, chatId]
@@ -583,13 +584,37 @@ async function handleLineReplyPrompt(
   msgId?: number
 ): Promise<void> {
   await ctx.answerCallbackQuery();
-  await ctx.reply(
+  const sent = await ctx.reply(
     "↩️ このメッセージに<b>引用リプライ</b>でLINE返信内容を送信してください。",
     {
       parse_mode: "HTML",
       reply_to_message_id: msgId,
     }
   );
+
+
+  // Register prompt message in mapping so quote-reply routing works
+  if (sent.message_id && ctx.chat?.id) {
+    try {
+      let detail = "{}";
+      if (msgId) {
+        const orig = await gatewayQuery(
+          "SELECT source_detail FROM message_mappings WHERE telegram_msg_id = ? AND telegram_chat_id = ?",
+          [msgId, ctx.chat.id]
+        );
+        if (orig?.results?.[0]) {
+          detail = (orig.results[0] as any).source_detail || "{}";
+        }
+      }
+      await gatewayQuery(
+        "INSERT INTO message_mappings (telegram_msg_id, telegram_chat_id, source, source_id, source_detail) VALUES (?, ?, 'line', ?, ?)",
+        [sent.message_id, ctx.chat.id, targetId, detail]
+      );
+      console.log('[Inbox] LINE reply prompt registered: msg=' + sent.message_id);
+    } catch (e) {
+      console.error('[Inbox] LINE prompt mapping error:', e);
+    }
+  }
 }
 
 /**
