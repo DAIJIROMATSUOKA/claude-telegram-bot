@@ -89,14 +89,9 @@ export async function handleText(ctx: Context): Promise<void> {
         appendMemo(memoText);
       } catch (e) { console.error('[Memo] Obsidian write failed:', e); }
     }
-    // Send clean memo with delete button
-    await ctx.api.sendMessage(chatId, memoText || '。', {
-      reply_markup: {
-        inline_keyboard: [[
-          { text: '🗑', callback_data: 'ib:del:memo' },
-        ]],
-      },
-    });
+    // Brief confirmation, then auto-delete
+    const memoConfirm = await ctx.api.sendMessage(chatId, '📝 ✓');
+    setTimeout(() => { ctx.api.deleteMessage(chatId, memoConfirm.message_id).catch(() => {}); }, 2000);
     return;
   }
 
@@ -110,13 +105,9 @@ export async function handleText(ctx: Context): Promise<void> {
         appendTask(taskText);
       } catch (e) { console.error('[Task] Obsidian write failed:', e); }
     }
-    await ctx.api.sendMessage(chatId, '☑️ ' + (taskText || '、'), {
-      reply_markup: {
-        inline_keyboard: [[
-          { text: '🗑', callback_data: 'ib:del:memo' },
-        ]],
-      },
-    });
+    // Brief confirmation, then auto-delete
+    const taskConfirm = await ctx.api.sendMessage(chatId, '☑️ ✓');
+    setTimeout(() => { ctx.api.deleteMessage(chatId, taskConfirm.message_id).catch(() => {}); }, 2000);
     return;
   }
 
