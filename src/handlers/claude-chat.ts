@@ -168,7 +168,14 @@ export async function handleChatCommand(ctx: Context): Promise<void> {
     chatReplyMap.set(statusMsg.message_id, entry);
     saveChatMap();
     // Relay initial response back to Telegram
-    waitAndRelayResponse(ctx, wt, 180000).catch(e =>
+    waitAndRelayResponse(ctx, wt, 180000).then(async () => {
+      // After response completes, claude.ai has auto-named the chat — confirm title now
+      const confirmed = await tryConfirmTitle(entry, ctx.chat!.id, ctx.api);
+      if (confirmed) {
+        entry.title = confirmed;
+        saveChatMap();
+      }
+    }).catch(e =>
       console.error("[ClaudeChat] initial waitAndRelayResponse error:", e)
     );
   } catch (e: any) {
