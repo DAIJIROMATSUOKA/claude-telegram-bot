@@ -17,8 +17,12 @@ function getDailyNotePath(): string {
   const now = new Date();
   // JST = UTC+9
   const jst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
-  const date = jst.toISOString().split("T")[0]; // YYYY-MM-DD
-  return join(VAULT_PATH, `${date}.md`);
+  const y = jst.getUTCFullYear();
+  const m = String(jst.getUTCMonth() + 1).padStart(2, "0");
+  const d = String(jst.getUTCDate()).padStart(2, "0");
+  const dir = join(VAULT_PATH, String(y), m);
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+  return join(dir, `${d}.md`);
 }
 
 /**
@@ -108,5 +112,28 @@ export async function appendNews(title: string, summary: string, url?: string): 
     appendToSection(path, "📰 News", entry);
   } catch (error) {
     console.error("[Obsidian] News append error:", error);
+  }
+}
+
+/**
+ * Append memo to daily note (from Telegram 。command)
+ */
+export function appendMemo(text: string): void {
+  try {
+    const now = new Date();
+    const jst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+    const y = jst.getUTCFullYear();
+    const m = String(jst.getUTCMonth() + 1).padStart(2, "0");
+    const d = String(jst.getUTCDate()).padStart(2, "0");
+    const path = join(VAULT_PATH, String(y), m, d + ".md");
+    // Ensure directory exists
+    const dir = join(VAULT_PATH, String(y), m);
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+    const time = jst.toISOString().substring(11, 16);
+    const entry = `- ${time} ${text}`;
+    appendToSection(path, "📝 メモ", entry);
+    console.log(`[Obsidian] Memo: ${text.substring(0, 50)}`);
+  } catch (error) {
+    console.error('[Obsidian] Memo error:', error);
   }
 }

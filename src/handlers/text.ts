@@ -82,6 +82,13 @@ export async function handleText(ctx: Context): Promise<void> {
     const memoText = ctx.message.text.substring(1).trim();
     // Delete user's original message
     try { await ctx.api.deleteMessage(chatId, ctx.message.message_id); } catch {}
+    // Append to Obsidian daily note
+    if (memoText) {
+      try {
+        const { appendMemo } = await import("../services/obsidian-writer");
+        appendMemo(memoText);
+      } catch (e) { console.error('[Memo] Obsidian write failed:', e); }
+    }
     // Send clean memo with delete button
     await ctx.api.sendMessage(chatId, memoText || '。', {
       reply_markup: {
