@@ -637,8 +637,11 @@ end tell"
 
   # Return immediately - title set lazily on first reply
   CREATED_AT=$(TZ=Asia/Tokyo date '+%Y-%m-%d_%H%M')
+  # Get conversation URL from tab
+  CONV_URL=$(osascript 2>/dev/null -e "tell application \"Google Chrome\" to return URL of tab $TIDX of window $WIDX" || echo "")
   echo "CREATED_AT: $CREATED_AT"
   echo "WT: $NEW_WT"
+  echo "CONV_URL: $CONV_URL"
   ;;
 
 # ============================================================
@@ -757,6 +760,50 @@ PYEOF
   rm -f "$ASFILE"
   log "RENAME-CONV $WT -> $NEW_NAME: $RESULT"
   echo "$RESULT"
+  ;;
+
+# ============================================================
+# REOPEN-AND-INJECT: Open a conversation URL in new tab and inject message
+# Usage: reopen-and-inject <url> "message"
+# Output: CREATED_AT:<t>  WT:<w:t>  INSERTED:SENT or ERROR
+# ============================================================
+reopen-and-inject)
+  URL="$2"
+  MESSAGE="$3"
+  if [ -z "$URL" ] || [ -z "$MESSAGE" ]; then
+    echo "ERROR: usage: reopen-and-inject <url> \"message\""
+    exit 1
+  fi
+
+  BEFORE_INFO=$(osascript 2>/dev/null -e 'tell application "Google Chrome" to return ((index of front window as text) & " " & ((count of tabs of front window) as text))')
+  WIDX=$(echo "$BEFORE_INFO" | awk '{print $1}')
+  TBEFORE=$(echo "$BEFORE_INFO" | awk '{print $2}')
+
+  osascript 2>/dev/null -e "
+tell application \"Google Chrome\"
+  activate
+  tell window $WIDX
+    set newTab to make new tab
+    set URL of newTab to \"$URL\"
+  end tell
+end tell"
+
+  TIDX=$((TBEFORE + 1))
+  NEW_WT="${WIDX}:${TIDX}"
+
+  # Write message and inject
+  MSG_TMP="/tmp/croppy-reopen-msg-$$.txt"
+  printf '%s' "$MESSAGE" > "$MSG_TMP"
+  INJECT_RESULT=$(bash "$0" inject-raw "$NEW_WT" "$(cat "$MSG_TMP")")
+  rm -f "$MSG_TMP"
+
+  if ! echo "$INJECT_RESULT" | grep -q "INSERTED:SENT"; then
+    echo "ERROR: inject failed: $INJECT_RESULT"
+    exit 1
+  fi
+
+  echo "WT: $NEW_WT"
+  echo "INSERTED:SENT"
   ;;
 
 # INJECT-BY-TITLE: Find claude.ai tab by partial title and inject

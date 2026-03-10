@@ -16,6 +16,7 @@ interface ChatEntry {
   title: string | null;     // null = not yet confirmed from claude.ai
   notifMsgId: number;       // current reply-target message ID
   lastResponseMsgId?: number; // previous response msg to delete on next reply
+  convUrl?: string;         // claude.ai conversation URL for auto-reopen
 }
 
 // telegram_msg_id -> ChatEntry
@@ -176,6 +177,21 @@ async function sendResponseMsg(
 }
 
 /**
+ * Reopen a closed conversation tab and inject message.
+ * Returns new W:T or null on failure.
+ */
+async function reopenAndInject(convUrl: string, message: string): Promise<string | null> {
+  const tmp = await writeTmpMsg(message);
+  const result = await runLocal(
+    `bash "${TAB_MANAGER}" reopen-and-inject "${convUrl}" "$(cat ${tmp})"; rm -f ${tmp}`,
+    60000
+  );
+  const wtMatch = result.match(/^WT:\s*(\S+)/m);
+  if (!wtMatch || !result.includes("INSERTED:SENT")) return null;
+  return wtMatch[1]!.trim();
+}
+
+/**
  * /chat <message>
  */
 export async function handleChatCommand(ctx: Context): Promise<void> {
@@ -198,6 +214,7 @@ export async function handleChatCommand(ctx: Context): Promise<void> {
 
     const createdAtMatch = result.match(/^CREATED_AT:\s*(.+)$/m);
     const wtMatch = result.match(/^WT:\s*(.+)$/m);
+    const convUrlMatch = result.match(/^CONV_URL:\s*(.+)$/m);
 
     if (!wtMatch || result.startsWith("ERROR")) {
       await ctx.api.editMessageText(
@@ -211,7 +228,8 @@ export async function handleChatCommand(ctx: Context): Promise<void> {
     const wt = wtMatch[1]!.trim();
     const createdAt = (createdAtMatch?.[1] || "").trim();
 
-    const entry: ChatEntry = { wt, createdAt, title: null, notifMsgId: statusMsg.message_id };
+    const convUrl = (convUrlMatch?.[1] || "").trim();
+    const entry: ChatEntry = { wt, createdAt, title: null, notifMsgId: statusMsg.message_id, convUrl };
     chatReplyMap.set(statusMsg.message_id, entry);
     saveChatMap();
 
@@ -373,7 +391,34 @@ export async function handleChatReply(ctx: Context): Promise<boolean> {
   );
 
   if (!result.includes("INSERTED:SENT")) {
-    if (result.includes("NOT_FOUND")) {
+    if (result.includes("NOT_FOUND") && entry.convUrl) {
+      // Auto-reopen closed tab
+      const waitMsg = await ctx.reply("🔄 タブ再オープン中...");
+      const newWt = await reopenAndInject(entry.convUrl, rawMessage);
+      if (newWt) {
+        entry.wt = newWt;
+        saveChatMap();
+        await tryDeleteMsg(ctx, waitMsg.message_id);
+        // Fall through to response relay below
+        const responseText2 = await waitForChatResponse(newWt, 180000);
+        await tryDeleteMsg(ctx, replyToId);
+        chatReplyMap.delete(replyToId);
+        if (!responseText2) {
+          const tm = await ctx.reply("⏱ 応答タイムアウト (3分)");
+          chatReplyMap.set(tm.message_id, { ...entry, notifMsgId: tm.message_id });
+          saveChatMap();
+          return true;
+        }
+        const rMsgId = await sendResponseMsg(ctx, entry, rawMessage, responseText2);
+        entry.notifMsgId = rMsgId;
+        chatReplyMap.set(rMsgId, entry);
+        saveChatMap();
+        return true;
+      } else {
+        await ctx.api.editMessageText(ctx.chat!.id, waitMsg.message_id,
+          `❌ 再オープン失敗: <b>${escapeHtml(injectTitle)}</b>`, { parse_mode: "HTML" });
+      }
+    } else if (result.includes("NOT_FOUND")) {
       await ctx.reply(
         `❌ タブが閉じられています: <b>${escapeHtml(injectTitle)}</b>\n<code>/chats</code> で確認`,
         { parse_mode: "HTML" }
