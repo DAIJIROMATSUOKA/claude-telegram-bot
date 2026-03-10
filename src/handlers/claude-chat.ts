@@ -214,6 +214,9 @@ export async function handleChatCommand(ctx: Context): Promise<void> {
     chatReplyMap.set(statusMsg.message_id, entry);
     saveChatMap();
 
+    // Delete DJ's /chat command message
+    await tryDeleteMsg(ctx, ctx.message!.message_id);
+
     // Fire-and-forget: wait for response → delete ⏳ → send formatted response
     (async () => {
       const responseText = await waitForChatResponse(wt, 180000);
@@ -361,6 +364,9 @@ export async function handleChatReply(ctx: Context): Promise<boolean> {
     }
     return true;
   }
+
+  // Delete DJ's reply message
+  await tryDeleteMsg(ctx, ctx.message!.message_id);
 
   // Show ⏳ and fire-and-forget response relay
   const waitMsg = await ctx.reply("⏳ 送信中...");
