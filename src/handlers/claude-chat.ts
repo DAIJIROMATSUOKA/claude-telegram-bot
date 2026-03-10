@@ -28,7 +28,11 @@ function isDefaultTitle(t: string): boolean {
 }
 
 function formatTitle(createdAt: string, autoTitle: string): string {
-  return `${createdAt}_${autoTitle.trim()}`;
+  const cleaned = autoTitle.trim()
+    .replace(/^\[J-WORKER-\d+\]\s*/i, "")
+    .replace(/\s*-\s*Claude\s*$/i, "")
+    .trim();
+  return `${createdAt}_${cleaned || autoTitle.trim()}`;
 }
 
 function loadChatMap(): void {
