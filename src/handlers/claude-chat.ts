@@ -8,6 +8,7 @@ const execAsync = promisify(exec);
 const HOME = process.env.HOME || "/Users/daijiromatsuokam1";
 const SCRIPTS_DIR = `${HOME}/claude-telegram-bot/scripts`;
 const TAB_MANAGER = `${SCRIPTS_DIR}/croppy-tab-manager.sh`;
+const SUPERVISOR = `${SCRIPTS_DIR}/croppy-supervisor.sh`;
 const CHAT_MAP_FILE = "/tmp/croppy-chat-map.json";
 
 interface ChatEntry {
@@ -192,6 +193,56 @@ async function reopenAndInject(convUrl: string, message: string): Promise<string
 }
 
 /**
+ * Detect LONG_CHAT after response and auto-handoff to a new conversation.
+ */
+async function maybeAutoHandoff(
+  ctx: Context,
+  entry: ChatEntry,
+  chatReplyMap: Map<number, ChatEntry>
+): Promise<void> {
+  try {
+    const detectOut = await runLocal(`bash "${SUPERVISOR}" detect ${entry.wt}`, 12000);
+    if (!detectOut.includes("LONG_CHAT")) return;
+
+    const notifMsg = await ctx.reply("\u{1F504} \u30C1\u30E3\u30C3\u30C8\u4E0A\u9650\u306B\u8FD1\u3065\u3044\u3066\u3044\u307E\u3059\u3002\u81EA\u52D5\u5F15\u3081\u7D99\u304E\u4E2D...");
+
+    const handoffOut = await runLocal(
+      `bash "${SUPERVISOR}" handoff-chat ${entry.wt}`,
+      120000
+    );
+
+    if (!handoffOut.includes("HANDOFF_OK")) {
+      await ctx.api.editMessageText(
+        ctx.chat!.id, notifMsg.message_id,
+        "\u274C \u81EA\u52D5\u5F15\u304D\u7D99\u304E\u5931\u6557\u3002\u624B\u52D5\u3067\u65B0\u30C1\u30E3\u30C3\u30C8\u3092\u4F5C\u6210\u3057\u3066\u304F\u3060\u3055\u3044\u3002"
+      ).catch(() => {});
+      return;
+    }
+
+    const newConvUrlMatch = handoffOut.match(/^CONV_URL:\s*(.+)$/m);
+    if (newConvUrlMatch?.[1]) entry.convUrl = newConvUrlMatch[1].trim();
+
+    const responseText = await waitForChatResponse(entry.wt, 180000);
+    await ctx.api.deleteMessage(ctx.chat!.id, notifMsg.message_id).catch(() => {});
+
+    if (responseText) {
+      // Clean up old map entries for this wt
+      for (const [k, v] of chatReplyMap.entries()) {
+        if (v.wt === entry.wt && k !== entry.notifMsgId) chatReplyMap.delete(k);
+      }
+      const rMsgId = await sendResponseMsg(ctx, entry, "[\u5F15\u3066\u7D99\u304E\u5B8C\u4E86]", responseText);
+      entry.notifMsgId = rMsgId;
+      chatReplyMap.set(rMsgId, entry);
+      saveChatMap();
+    } else {
+      await ctx.reply("\u{1F504} \u5F15\u3066\u7D99\u304E\u5B8C\u4E86\u3002\u6B21\u306E\u30E1\u30C3\u30BB\u30FC\u30B8\u304B\u3089\u65B0\u30C1\u30E3\u30C3\u30C8\u3067\u7D99\u7D9A\u3057\u307E\u3059\u3002");
+    }
+  } catch (e) {
+    console.error("[ClaudeChat] maybeAutoHandoff error:", e);
+  }
+}
+
+/**
  * /chat <message>
  */
 export async function handleChatCommand(ctx: Context): Promise<void> {
@@ -261,6 +312,7 @@ export async function handleChatCommand(ctx: Context): Promise<void> {
       entry.notifMsgId = responseMsgId;
       chatReplyMap.set(responseMsgId, entry);
       saveChatMap();
+      maybeAutoHandoff(ctx, entry, chatReplyMap).catch(() => {});
     })().catch(e => console.error("[ClaudeChat] handleChatCommand async error:", e));
 
   } catch (e: any) {
@@ -459,6 +511,7 @@ export async function handleChatReply(ctx: Context): Promise<boolean> {
     entry.notifMsgId = responseMsgId;
     chatReplyMap.set(responseMsgId, entry);
     saveChatMap();
+    maybeAutoHandoff(ctx, entry, chatReplyMap).catch(() => {});
   })().catch(e => console.error("[ClaudeChat] handleChatReply async error:", e));
 
   return true;

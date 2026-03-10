@@ -165,6 +165,96 @@ NCEOF
 }
 
 # ============================================================
+# ============================================================
+# HANDOFF-CHAT: Handoff for /chat tabs (no J-WORKER marking, inject-raw)
+# Usage: handoff-chat <W:T>
+# Output: HANDOFF_OK  WT:<w:t>  CONV_URL:<url>
+# ============================================================
+do_handoff_chat() {
+  local WT="$1"
+  local WIDX=$(echo "$WT" | cut -d: -f1)
+  local TIDX=$(echo "$WT" | cut -d: -f2)
+
+  log "HANDOFF-CHAT start for $WT"
+
+  # 1. Detect current state + URLs
+  DETECT=$(do_detect "$WIDX" "$TIDX")
+  PROJ_URL=$(echo "$DETECT" | python3 -c "import json,sys; print(json.loads(sys.stdin.read()).get('projUrl',''))" 2>/dev/null)
+
+  if [ -z "$PROJ_URL" ]; then
+    # Fallback: use default project URL
+    PROJ_URL="https://claude.ai/project/019c15f4-3d2d-7263-a308-e7f6ccd6b3f8"
+  fi
+
+  # 2. Ask for summary via inject-raw
+  SUMMARY=""
+  SUMMARY_REQUEST="この会話で行った作業・決定事項・未完了タスクを5行以内で要約してください。次のチャットへの引き継ぎに使います。"
+  STATE=$(echo "$DETECT" | python3 -c "import json,sys; print(json.loads(sys.stdin.read()).get('state',''))" 2>/dev/null)
+
+  if [ "$STATE" = "READY" ]; then
+    "$TAB_MANAGER" inject-raw "$WT" "$SUMMARY_REQUEST" 2>/dev/null
+    sleep 3
+    local WAIT=0
+    while [ "$WAIT" -lt 60 ]; do
+      sleep 3; WAIT=$((WAIT+3))
+      S=$(do_detect "$WIDX" "$TIDX" | python3 -c "import json,sys; print(json.loads(sys.stdin.read()).get('state',''))" 2>/dev/null)
+      [ "$S" = "READY" ] && break
+      [ "$S" = "ERROR" ] || [ "$S" = "RATE_LIMIT" ] && break
+    done
+
+    # Extract last assistant message
+    ASFILE="/tmp/croppy-hc-sum-$$.as"
+    cat > "$ASFILE" << SUMEOF
+tell application "Google Chrome"
+  set t to tab $TIDX of window $WIDX
+  set js to "(() => { const msgs = document.querySelectorAll('[data-testid] .font-claude-message, [class*=\"claude\"] .whitespace-pre-wrap, [class*=\"assistant\"] .whitespace-pre-wrap'); if (msgs.length === 0) return ''; return msgs[msgs.length-1].innerText.substring(0,1500); })()"
+  return execute t javascript js
+end tell
+SUMEOF
+    SUMMARY=$(osascript "$ASFILE" 2>&1)
+    rm -f "$ASFILE"
+    [ ${#SUMMARY} -lt 20 ] && SUMMARY=""
+  fi
+
+  # 3. Navigate same tab to project URL (new chat)
+  NAVFILE="/tmp/croppy-hc-nav-$$.as"
+  cat > "$NAVFILE" << NAVEOF
+tell application "Google Chrome"
+  set URL of tab $TIDX of window $WIDX to "$PROJ_URL"
+end tell
+NAVEOF
+  osascript "$NAVFILE" 2>/dev/null
+  rm -f "$NAVFILE"
+  sleep 6  # Wait for page load + editor ready
+
+  # 4. Build handoff message
+  HANDOFF_MSG="[HANDOFF - 前チャットからの引き継ぎ]
+
+## 前チャット要約:
+${SUMMARY:-（要約取得失敗）}
+
+---
+引き続き会話を続けてください。"
+
+  # 5. Inject via inject-raw
+  "$TAB_MANAGER" inject-raw "$WT" "$HANDOFF_MSG" 2>/dev/null
+
+  # 6. Get new conversation URL
+  URLFILE="/tmp/croppy-hc-url-$$.as"
+  cat > "$URLFILE" << URLEOF
+tell application "Google Chrome"
+  return URL of tab $TIDX of window $WIDX
+end tell
+URLEOF
+  NEW_URL=$(osascript "$URLFILE" 2>/dev/null)
+  rm -f "$URLFILE"
+
+  log "HANDOFF-CHAT complete: $WT → $PROJ_URL (summary=${#SUMMARY}chars)"
+  echo "HANDOFF_OK"
+  echo "WT: $WT"
+  echo "CONV_URL: $NEW_URL"
+}
+
 # HANDOFF: Save context from current chat, open new chat, inject context
 # ============================================================
 do_handoff() {
@@ -521,6 +611,13 @@ case "$1" in
     [ -z "$WT" ] && { echo "Usage: $0 handoff <W:T>"; exit 1; }
     do_handoff "$WT"
     ;;
+
+  handoff-chat)
+    WT="$2"
+    [ -z "$WT" ] && { echo "Usage: $0 handoff-chat <W:T>"; exit 1; }
+    do_handoff_chat "$WT"
+    ;;
+
   
   watch)
     WT="$2"
