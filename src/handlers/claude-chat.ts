@@ -163,6 +163,10 @@ export async function handleChatCommand(ctx: Context): Promise<void> {
     const entry: ChatEntry = { wt, createdAt, title: null, notifMsgId: statusMsg.message_id };
     chatReplyMap.set(statusMsg.message_id, entry);
     saveChatMap();
+    // Relay initial response back to Telegram
+    waitAndRelayResponse(ctx, wt, 180000).catch(e =>
+      console.error("[ClaudeChat] initial waitAndRelayResponse error:", e)
+    );
   } catch (e: any) {
     await ctx.api.editMessageText(
       ctx.chat!.id, statusMsg.message_id,
