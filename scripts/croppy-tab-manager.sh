@@ -635,31 +635,9 @@ end tell"
 
   log "new-chat: injected into $NEW_WT"
 
-  # Poll for title to update (max 30s, claude.ai sets title after first response)
-  TITLE=""
-  for i in $(seq 1 10); do
-    sleep 3
-    CURRENT_TITLE=$(osascript 2>/dev/null -e "
-tell application \"Google Chrome\"
-  try
-    return title of tab $TIDX of window $WIDX
-  on error
-    return \"\"
-  end try
-end tell")
-    # Accept title if non-empty and not a default loading title
-    if [ -n "$CURRENT_TITLE" ] && \
-       ! echo "$CURRENT_TITLE" | grep -qiE "^(Jarvis|New conversation|新しい会話|Claude|Untitled|Loading|claude\.ai)"; then
-      TITLE="$CURRENT_TITLE"
-      break
-    fi
-  done
-
-  if [ -z "$TITLE" ]; then
-    TITLE="Chat-$(date +%H%M%S)"
-  fi
-
-  echo "CHAT_TITLE: $TITLE"
+  # Return immediately - title set lazily on first reply
+  CREATED_AT=$(TZ=Asia/Tokyo date '+%Y-%m-%d_%H%M')
+  echo "CREATED_AT: $CREATED_AT"
   echo "WT: $NEW_WT"
   ;;
 
@@ -749,6 +727,45 @@ with open("$CONFIG", "w") as f:
 print(f"Config updated: $N workers in $CONFIG")
 PYEOF2
   ;;
+
+# ============================================================
+# GET-TITLE: Get current tab title
+# Usage: get-title <W:T>
+# ============================================================
+get-title)
+  WT="$2"
+  if [ -z "$WT" ]; then echo "ERROR: usage: get-title <W:T>"; exit 1; fi
+  WIDX="${WT%%:*}"; TIDX="${WT##*:}"
+  osascript 2>/dev/null -e "
+tell application \"Google Chrome\"
+  try
+    return title of tab $TIDX of window $WIDX
+  on error
+    return \"\"
+  end try
+end tell"
+  ;;
+
+# ============================================================
+# SET-TITLE: Set document.title of a tab
+# Usage: set-title <W:T> <new_title>
+# ============================================================
+set-title)
+  WT="$2"; NEW_TITLE="$3"
+  if [ -z "$WT" ] || [ -z "$NEW_TITLE" ]; then echo "ERROR: usage: set-title <W:T> <title>"; exit 1; fi
+  WIDX="${WT%%:*}"; TIDX="${WT##*:}"
+  ESCAPED=$(printf '%s' "$NEW_TITLE" | sed 's/\\/\\\\/g; s/"/\\"/g')
+  osascript 2>/dev/null -e "
+tell application \"Google Chrome\"
+  try
+    execute tab $TIDX of window $WIDX javascript \"document.title = \\\"$ESCAPED\\\"\"
+    return \"OK\"
+  on error e
+    return \"ERROR: \" & e
+  end try
+end tell"
+  ;;
+
 
 
 *)

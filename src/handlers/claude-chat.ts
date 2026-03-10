@@ -10,15 +10,37 @@ const SCRIPTS_DIR = `${HOME}/claude-telegram-bot/scripts`;
 const TAB_MANAGER = `${SCRIPTS_DIR}/croppy-tab-manager.sh`;
 const CHAT_MAP_FILE = "/tmp/croppy-chat-map.json";
 
-// telegram_msg_id → chat_title
-const chatReplyMap = new Map<number, string>();
+interface ChatEntry {
+  wt: string;
+  createdAt: string;   // YYYY-MM-DD_HHmm (JST)
+  title: string | null; // null = not yet confirmed from claude.ai
+  notifMsgId: number;  // Telegram msg id of the /chat status message
+}
+
+// telegram_msg_id -> ChatEntry
+const chatReplyMap = new Map<number, ChatEntry>();
+
+const DEFAULT_TITLE_RE = /^(Jarvis|New conversation|新しい会話|Claude|Untitled|Loading|claude\.ai|\s*)$/i;
+
+function isDefaultTitle(t: string): boolean {
+  return DEFAULT_TITLE_RE.test(t.trim());
+}
+
+function formatTitle(createdAt: string, autoTitle: string): string {
+  return `${createdAt}_${autoTitle.trim()}`;
+}
 
 function loadChatMap(): void {
   try {
     if (existsSync(CHAT_MAP_FILE)) {
-      const data = JSON.parse(readFileSync(CHAT_MAP_FILE, "utf-8")) as Record<string, string>;
+      const data = JSON.parse(readFileSync(CHAT_MAP_FILE, "utf-8")) as Record<string, any>;
       for (const [k, v] of Object.entries(data)) {
-        chatReplyMap.set(Number(k), v);
+        if (typeof v === "string") {
+          // Legacy: string -> migrate to new format without wt/createdAt
+          chatReplyMap.set(Number(k), { wt: "", createdAt: "", title: v, notifMsgId: Number(k) });
+        } else {
+          chatReplyMap.set(Number(k), v as ChatEntry);
+        }
       }
       console.log(`[ClaudeChat] Loaded ${chatReplyMap.size} chat mappings`);
     }
@@ -29,7 +51,7 @@ function loadChatMap(): void {
 
 function saveChatMap(): void {
   try {
-    const obj: Record<string, string> = {};
+    const obj: Record<string, ChatEntry> = {};
     for (const [k, v] of chatReplyMap) obj[String(k)] = v;
     writeFileSync(CHAT_MAP_FILE, JSON.stringify(obj, null, 2));
   } catch (e) {
@@ -59,16 +81,43 @@ function escapeHtml(t: string): string {
   return t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-// base64 encode message → write to tmp file (avoids all shell escaping issues)
 async function writeTmpMsg(msg: string): Promise<string> {
   const tmp = `/tmp/croppy-chatmsg-${Date.now()}.txt`;
   const b64 = Buffer.from(msg).toString("base64");
-  await runLocal(`echo '${b64}' | base64 -d > ${tmp}`);
+  await runLocal(`echo \'${b64}\' | base64 -d > ${tmp}`);
   return tmp;
 }
 
 /**
- * /chat <message> — Open new claude.ai chat in project, inject, return title
+ * Try to confirm title from the tab. If confirmed, update document.title and
+ * edit the Telegram notification. Returns the confirmed title or null.
+ */
+async function tryConfirmTitle(entry: ChatEntry, chatId: number, api: any): Promise<string | null> {
+  if (!entry.wt || !entry.createdAt) return null;
+
+  const raw = await runLocal(`bash "${TAB_MANAGER}" get-title "${entry.wt}"`, 8000);
+  if (!raw || raw.startsWith("ERROR") || isDefaultTitle(raw)) return null;
+
+  const formatted = formatTitle(entry.createdAt, raw);
+
+  // Set document.title in Chrome tab
+  const escapedFormatted = formatted.replace(/\'/g, "'\''");
+  await runLocal(`bash "${TAB_MANAGER}" set-title "${entry.wt}" \'${escapedFormatted}\'`, 8000);
+
+  // Edit the original Telegram notification
+  try {
+    await api.editMessageText(
+      chatId, entry.notifMsgId,
+      `💬 <b>${escapeHtml(formatted)}</b>\n<code>${escapeHtml(entry.wt)}</code>\n\nこのメッセージにリプライで続けて投稿できます。`,
+      { parse_mode: "HTML" }
+    );
+  } catch (_) { /* ignore if already edited */ }
+
+  return formatted;
+}
+
+/**
+ * /chat <message>
  */
 export async function handleChatCommand(ctx: Context): Promise<void> {
   const text = ctx.message?.text || "";
@@ -88,10 +137,10 @@ export async function handleChatCommand(ctx: Context): Promise<void> {
       90000
     );
 
-    const titleMatch = result.match(/^CHAT_TITLE:\s*(.+)$/m);
+    const createdAtMatch = result.match(/^CREATED_AT:\s*(.+)$/m);
     const wtMatch = result.match(/^WT:\s*(.+)$/m);
 
-    if (!titleMatch) {
+    if (!wtMatch || result.startsWith("ERROR")) {
       await ctx.api.editMessageText(
         ctx.chat!.id, statusMsg.message_id,
         `❌ チャット作成失敗\n<code>${escapeHtml(result.substring(0, 300))}</code>`,
@@ -100,17 +149,18 @@ export async function handleChatCommand(ctx: Context): Promise<void> {
       return;
     }
 
-    const chatTitle = (titleMatch[1] || "").trim();
-    const wt = (wtMatch?.[1] || "").trim();
+    const wt = wtMatch[1].trim();
+    const createdAt = (createdAtMatch?.[1] || "").trim();
+    const pendingTitle = createdAt ? `${createdAt}_???` : "???" ;
 
     await ctx.api.editMessageText(
       ctx.chat!.id, statusMsg.message_id,
-      `💬 <b>${escapeHtml(chatTitle)}</b>\n<code>${escapeHtml(wt)}</code>\n\nこのメッセージにリプライで続けて投稿できます。`,
+      `💬 <b>${escapeHtml(pendingTitle)}</b>\n<code>${escapeHtml(wt)}</code>\n\nこのメッセージにリプライで続けて投稿できます。`,
       { parse_mode: "HTML" }
     );
 
-    // Store for reply routing
-    chatReplyMap.set(statusMsg.message_id, chatTitle);
+    const entry: ChatEntry = { wt, createdAt, title: null, notifMsgId: statusMsg.message_id };
+    chatReplyMap.set(statusMsg.message_id, entry);
     saveChatMap();
   } catch (e: any) {
     await ctx.api.editMessageText(
@@ -122,7 +172,7 @@ export async function handleChatCommand(ctx: Context): Promise<void> {
 }
 
 /**
- * /post <partial_title> <message> — Inject to existing chat by title
+ * /post <partial_title> <message>
  */
 export async function handlePostCommand(ctx: Context): Promise<void> {
   const text = ctx.message?.text || "";
@@ -189,21 +239,35 @@ export async function handleChatsCommand(ctx: Context): Promise<void> {
 }
 
 /**
- * Called from text handler to intercept replies to claude.ai chat notifications.
- * Returns true if handled (caller must return immediately).
+ * Reply intercept — route replies to /chat notifications into the correct tab.
+ * On first reply: try to confirm title from claude.ai.
  */
 export async function handleChatReply(ctx: Context): Promise<boolean> {
   const replyToId = ctx.message?.reply_to_message?.message_id;
   if (!replyToId) return false;
 
-  const chatTitle = chatReplyMap.get(replyToId);
-  if (!chatTitle) return false;
+  const entry = chatReplyMap.get(replyToId);
+  if (!entry) return false;
 
   const rawMessage = ctx.message?.text || "";
   if (!rawMessage || rawMessage.startsWith("/")) return false;
 
+  // Try to confirm title on first reply (title === null)
+  let displayTitle = entry.title;
+  if (!entry.title) {
+    const confirmed = await tryConfirmTitle(entry, ctx.chat!.id, ctx.api);
+    if (confirmed) {
+      entry.title = confirmed;
+      displayTitle = confirmed;
+      saveChatMap();
+    } else {
+      displayTitle = entry.createdAt ? `${entry.createdAt}_???` : "???";
+    }
+  }
+
+  const injectTitle = entry.title || (entry.createdAt ? `${entry.createdAt}_???` : "");
   const tmp = await writeTmpMsg(rawMessage);
-  const escapedTitle = chatTitle.replace(/"/g, '\\"');
+  const escapedTitle = injectTitle.replace(/"/g, '\\"');
   const result = await runLocal(
     `bash "${TAB_MANAGER}" inject-by-title "${escapedTitle}" "$(cat ${tmp})"; rm -f ${tmp}`,
     20000
@@ -211,15 +275,15 @@ export async function handleChatReply(ctx: Context): Promise<boolean> {
 
   if (result.includes("INSERTED:SENT")) {
     const sentMsg = await ctx.reply(
-      `✅ → <b>${escapeHtml(chatTitle)}</b>`,
+      `✅ → <b>${escapeHtml(displayTitle || injectTitle)}</b>`,
       { parse_mode: "HTML" }
     );
-    // Chain: replies to THIS confirmation also route to the same chat
-    chatReplyMap.set(sentMsg.message_id, chatTitle);
+    // Chain: replies to confirmation also route to same chat
+    chatReplyMap.set(sentMsg.message_id, { ...entry, notifMsgId: sentMsg.message_id });
     saveChatMap();
   } else if (result.includes("NOT_FOUND")) {
     await ctx.reply(
-      `❌ タブが閉じられています: <b>${escapeHtml(chatTitle)}</b>\n<code>/chats</code> で確認`,
+      `❌ タブが閉じられています: <b>${escapeHtml(displayTitle || injectTitle)}</b>\n<code>/chats</code> で確認`,
       { parse_mode: "HTML" }
     );
   } else {
