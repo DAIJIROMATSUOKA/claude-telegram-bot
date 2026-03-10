@@ -8,6 +8,41 @@ import type { Context } from "grammy";
 import { ALLOWED_USERS } from "../config";
 import { isAuthorized } from "../security";
 import { archiveToObsidian } from "../services/obsidian-writer";
+
+// ============================================================
+// Batch Delete Queue - 3s debounce for consecutive deletes
+// ============================================================
+interface BatchDeleteEntry {
+  msgIds: Set<number>;
+  timer: ReturnType<typeof setTimeout>;
+  botApi: any;
+}
+const batchDeleteQueue = new Map<number, BatchDeleteEntry>();
+const BATCH_DELETE_DELAY = 3000;
+
+function queueBatchDelete(chatId: number, msgId: number, botApi: any): number {
+  let entry = batchDeleteQueue.get(chatId);
+  if (entry) {
+    clearTimeout(entry.timer);
+    entry.msgIds.add(msgId);
+  } else {
+    entry = { msgIds: new Set([msgId]), timer: null as any, botApi };
+    batchDeleteQueue.set(chatId, entry);
+  }
+  entry.timer = setTimeout(() => executeBatchDelete(chatId), BATCH_DELETE_DELAY);
+  return entry.msgIds.size;
+}
+
+async function executeBatchDelete(chatId: number): Promise<void> {
+  const entry = batchDeleteQueue.get(chatId);
+  if (!entry) return;
+  batchDeleteQueue.delete(chatId);
+  const count = entry.msgIds.size;
+  console.log("[Batch Del] Executing: " + count + " messages in chat " + chatId);
+  for (const mid of entry.msgIds) {
+    try { await entry.botApi.deleteMessage(chatId, mid); } catch {}
+  }
+}
 import { gatewayQuery } from "../services/gateway-db";
 
 // GAS Web App URL (set in .env)
@@ -96,10 +131,15 @@ export async function handleInboxCallback(ctx: Context): Promise<boolean> {
       case "draft":
         await handleAiDraft(ctx, sourceId, msgId);
         break;
-      case "del":
-        try { if (chatId && msgId) await ctx.api.deleteMessage(chatId, msgId); } catch {}
-        try { await ctx.answerCallbackQuery(); } catch {}
+      case "del": {
+        if (chatId && msgId) {
+          const count = queueBatchDelete(chatId, msgId, ctx.api);
+          try { await ctx.answerCallbackQuery({ text: `削除予約 (${count}件)`, show_alert: false }); } catch {}
+        } else {
+          try { await ctx.answerCallbackQuery(); } catch {}
+        }
         break;
+      }
       case "delmemo": {
         // Delete both: this button message + the original memo it replies to
         const replyTo = ctx.callbackQuery?.message?.reply_to_message?.message_id;
