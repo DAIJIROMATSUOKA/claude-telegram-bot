@@ -41,6 +41,7 @@ import { savePendingTask, clearPendingTask } from "../utils/pending-task";
 import { handleInboxReply } from "./inbox";
 
 import { dispatchToWorker } from "./croppy-bridge";
+import { handleChatReply } from "./claude-chat";
 
 /**
  * Handle incoming text messages.
@@ -72,6 +73,9 @@ export async function handleText(ctx: Context): Promise<void> {
     await ctx.reply("Unauthorized. Contact the bot owner for access.");
     return;
   }
+
+  // ── Chat Reply Routing: TelegramリプライをClaude.aiチャットにルーティング
+  if (await handleChatReply(ctx)) return;
 
   // ── Memo mode: 。で始まるメッセージはJarvisスルー、🗑ボタンのみ ──
   if (ctx.message?.text?.startsWith('。')) {

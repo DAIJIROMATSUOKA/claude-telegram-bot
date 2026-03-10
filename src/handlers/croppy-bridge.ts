@@ -105,6 +105,16 @@ export async function handleBridgeCommand(ctx: Context): Promise<void> {
     return;
   }
 
+  // /bridge setup N or /workers setup N - setup N worker tabs
+  if (args.startsWith("setup")) {
+    const n = Math.min(10, Math.max(1, parseInt(args.split(/\s+/)[1] || "10") || 10));
+    await ctx.reply(`Setting up ${n} workers...`);
+    const result = await runLocal(`bash ${TAB_MANAGER} setup-workers ${n}`, 120000);
+    await ctx.reply(`Workers ready:
+<code>${escapeHtml(result)}</code>`, { parse_mode: "HTML" });
+    return;
+  }
+
   // /bridge <task> - dispatch to worker
   await dispatchToWorker(ctx, args);
 }

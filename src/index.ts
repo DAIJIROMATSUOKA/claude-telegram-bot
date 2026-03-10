@@ -49,6 +49,7 @@ import {
 } from "./handlers/council";
 import { handleAISession } from "./handlers/ai-session";
 import { handleBridgeCommand } from "./handlers/croppy-bridge";
+import { handleChatCommand, handlePostCommand, handleChatsCommand } from "./handlers/claude-chat";
 import { handleCode } from "./handlers/code-command";
 import { handleScout } from "./handlers/scout-command";
 import { handleManual } from "./handlers/manual-command";
@@ -274,6 +275,9 @@ bot.command("git", handleCroppyDispatch);
 bot.command("scout", handleScout);
 bot.command("bridge", handleBridgeCommand);
 bot.command("workers", handleBridgeCommand);
+bot.command("chat", handleChatCommand);
+bot.command("post", handlePostCommand);
+bot.command("chats", handleChatsCommand);
 bot.command("manual", handleManual);
 bot.command("search", handleSearch);
 bot.command("help", handleCroppyDispatch);
