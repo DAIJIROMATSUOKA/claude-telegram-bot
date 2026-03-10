@@ -625,7 +625,7 @@ end tell"
   # Write message to tmp file and inject
   MSG_TMP="/tmp/croppy-newchat-msg-$$.txt"
   printf '%s' "$MESSAGE" > "$MSG_TMP"
-  INJECT_RESULT=$(bash "$0" inject "$NEW_WT" "$(cat "$MSG_TMP")")
+  INJECT_RESULT=$(bash "$0" inject-raw "$NEW_WT" "$(cat "$MSG_TMP")")
   rm -f "$MSG_TMP"
 
   if ! echo "$INJECT_RESULT" | grep -q "INSERTED:SENT"; then
@@ -642,6 +642,64 @@ end tell"
   ;;
 
 # ============================================================
+# ============================================================
+# INJECT-RAW: Inject without J-WORKER check (any claude.ai tab)
+# Usage: inject-raw <W:T> "message"
+# ============================================================
+inject-raw)
+  WT="$2"
+  MSG="$3"
+  if [ -z "$WT" ] || [ -z "$MSG" ]; then
+    echo "Usage: $0 inject-raw <W:T> \"message\""
+    exit 1
+  fi
+  WIDX=$(echo "$WT" | cut -d: -f1)
+  TIDX=$(echo "$WT" | cut -d: -f2)
+
+  # Wait for editor ready using AS file (avoids shell quoting issues)
+  EDITOR_READY=0
+  for i in 1 2 3 4 5 6 7 8; do
+    CHKFILE="/tmp/croppy-rawcheck-$$.as"
+    cat > "$CHKFILE" << CHKEOF
+tell application "Google Chrome"
+  set t to tab $TIDX of window $WIDX
+  set js to "(() => { const e = document.querySelector('.ProseMirror'); if (!e) return 'NO_EDITOR'; const s = document.querySelector('button[aria-label=\"Stop Response\"]') || document.querySelector('button[aria-label=\"応答を停止\"]'); if (s && s.getBoundingClientRect().width > 0) return 'BUSY'; return 'READY'; })()"
+  return execute t javascript js
+end tell
+CHKEOF
+    STATUS=$(osascript "$CHKFILE" 2>&1)
+    rm -f "$CHKFILE"
+    if [ "$STATUS" = "READY" ]; then
+      EDITOR_READY=1
+      break
+    fi
+    sleep 2
+  done
+
+  if [ "$EDITOR_READY" != "1" ]; then
+    echo "BLOCKED:NO_EDITOR_TIMEOUT:last=$STATUS"
+    exit 1
+  fi
+
+  B64MSG=$(printf '%s' "$MSG" | base64 | tr -d '\n')
+  ASFILE="/tmp/croppy-inject-raw-$$.as"
+  cat > "$ASFILE" << INJECTEOF
+tell application "Google Chrome"
+  set t to tab $TIDX of window $WIDX
+  set insertJs to "(() => { const b = Uint8Array.from(atob('$B64MSG'), c => c.charCodeAt(0)); const msg = new TextDecoder().decode(b); const e = document.querySelector('.ProseMirror'); e.focus(); document.execCommand('selectAll'); document.execCommand('delete'); document.execCommand('insertText', false, msg); return 'INSERTED'; })()"
+  set r1 to execute t javascript insertJs
+  delay 0.5
+  set sendJs to "(() => { const e = document.querySelector('.ProseMirror'); const ev = new KeyboardEvent('keydown', {key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true}); e.dispatchEvent(ev); return 'SENT'; })()"
+  set r2 to execute t javascript sendJs
+  return r1 & ":" & r2
+end tell
+INJECTEOF
+  RESULT=$(osascript "$ASFILE" 2>&1)
+  rm -f "$ASFILE"
+  log "INJECT-RAW $WT: $RESULT"
+  echo "$RESULT"
+  ;;
+
 # INJECT-BY-TITLE: Find claude.ai tab by partial title and inject
 # Usage: inject-by-title "partial_title" "message"
 # Output: INSERTED:SENT or NOT_FOUND:<query>
@@ -676,7 +734,7 @@ inject-by-title)
   # Write message to tmp and inject
   MSG_TMP2="/tmp/croppy-ibt-msg-$$.txt"
   printf '%s' "$MESSAGE" > "$MSG_TMP2"
-  RESULT=$(bash "$0" inject "$WT" "$(cat "$MSG_TMP2")")
+  RESULT=$(bash "$0" inject-raw "$WT" "$(cat "$MSG_TMP2")")
   rm -f "$MSG_TMP2"
   echo "$RESULT"
   ;;
