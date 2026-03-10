@@ -10,37 +10,112 @@ import { isAuthorized } from "../security";
 import { archiveToObsidian } from "../services/obsidian-writer";
 
 // ============================================================
-// Batch Delete Queue - 3s debounce for consecutive deletes
+// Batch Action Queue - 3s debounce for all destructive actions
 // ============================================================
-interface BatchDeleteEntry {
-  msgIds: Set<number>;
+interface BatchEntry {
+  action: string;
+  msgId: number;
+  sourceId: string;
+  msgText: string;
+  msgDate?: number;
+  replyToMsgId?: number;
+  replyMarkup?: string;
+  hours?: number;
+}
+interface BatchQueue {
+  entries: BatchEntry[];
   timer: ReturnType<typeof setTimeout>;
   botApi: any;
 }
-const batchDeleteQueue = new Map<number, BatchDeleteEntry>();
-const BATCH_DELETE_DELAY = 3000;
+const batchQueue = new Map<number, BatchQueue>();
+const BATCH_DELAY = 3000;
 
-function queueBatchDelete(chatId: number, msgId: number, botApi: any): number {
-  let entry = batchDeleteQueue.get(chatId);
-  if (entry) {
-    clearTimeout(entry.timer);
-    entry.msgIds.add(msgId);
+function queueBatchAction(chatId: number, entry: BatchEntry, botApi: any): number {
+  let q = batchQueue.get(chatId);
+  if (q) {
+    clearTimeout(q.timer);
+    q.entries.push(entry);
   } else {
-    entry = { msgIds: new Set([msgId]), timer: null as any, botApi };
-    batchDeleteQueue.set(chatId, entry);
+    q = { entries: [entry], timer: null as any, botApi };
+    batchQueue.set(chatId, q);
   }
-  entry.timer = setTimeout(() => executeBatchDelete(chatId), BATCH_DELETE_DELAY);
-  return entry.msgIds.size;
+  q.timer = setTimeout(() => executeBatch(chatId), BATCH_DELAY);
+  return q.entries.length;
 }
 
-async function executeBatchDelete(chatId: number): Promise<void> {
-  const entry = batchDeleteQueue.get(chatId);
-  if (!entry) return;
-  batchDeleteQueue.delete(chatId);
-  const count = entry.msgIds.size;
-  console.log("[Batch Del] Executing: " + count + " messages in chat " + chatId);
-  for (const mid of entry.msgIds) {
-    try { await entry.botApi.deleteMessage(chatId, mid); } catch {}
+async function executeBatch(chatId: number): Promise<void> {
+  const q = batchQueue.get(chatId);
+  if (!q) return;
+  batchQueue.delete(chatId);
+  const count = q.entries.length;
+  console.log("[Batch] Executing: " + count + " actions in chat " + chatId);
+
+  for (const e of q.entries) {
+    try {
+      switch (e.action) {
+        case "del":
+          await q.botApi.deleteMessage(chatId, e.msgId);
+          break;
+
+        case "delmemo":
+          await q.botApi.deleteMessage(chatId, e.msgId).catch(() => {});
+          if (e.replyToMsgId) await q.botApi.deleteMessage(chatId, e.replyToMsgId).catch(() => {});
+          break;
+
+        case "archive":
+        case "trash": {
+          const url = `${GAS_GMAIL_URL}?action=${e.action}&gmail_id=${e.sourceId}&key=${GAS_GMAIL_KEY}`;
+          const res = await fetch(url, { redirect: "follow" });
+          const result: any = await res.json();
+          if (result.ok) {
+            logInboxAction(e.action, e.sourceId, "gmail", e.msgDate);
+            await archiveToObsidian(e.msgId, chatId, "in", "gmail", e.msgText, e.action);
+            await q.botApi.deleteMessage(chatId, e.msgId).catch(() => {});
+          } else {
+            console.error("[Batch] " + e.action + " failed: " + e.sourceId);
+          }
+          break;
+        }
+
+        case "snz1h":
+        case "snz3h":
+        case "snzam": {
+          const hours = e.action === "snz1h" ? 1 : e.action === "snz3h" ? 3 : 0;
+          const until = hours > 0
+            ? new Date(Date.now() + hours * 60 * 60 * 1000).toISOString()
+            : (() => { const t = new Date(); t.setHours(t.getHours() + 9); t.setDate(t.getDate() + 1); t.setHours(7, 0, 0, 0); return new Date(t.getTime() - 9 * 60 * 60 * 1000).toISOString(); })();
+
+          logInboxAction("snooze", e.sourceId, "gmail", e.msgDate);
+          try {
+            let mappingId: number | null = null;
+            const existing = await gatewayQuery(
+              "SELECT id FROM message_mappings WHERE telegram_msg_id = ? AND telegram_chat_id = ?",
+              [e.msgId, chatId]
+            );
+            if (existing?.results?.[0]) {
+              mappingId = existing.results[0].id as number;
+              await gatewayQuery("UPDATE message_mappings SET snoozed_until = ? WHERE id = ?", [until, mappingId]);
+            } else {
+              const ins = await gatewayQuery(
+                "INSERT INTO message_mappings (telegram_msg_id, telegram_chat_id, source, source_id, snoozed_until) VALUES (?, ?, 'gmail', ?, ?) RETURNING id",
+                [e.msgId, chatId, e.sourceId, until]
+              );
+              mappingId = ins?.results?.[0]?.id as number;
+            }
+            await gatewayQuery(
+              "INSERT INTO snooze_queue (mapping_id, original_content, snooze_until) VALUES (?, ?, ?)",
+              [mappingId || 0, JSON.stringify({ text: e.msgText, reply_markup: e.replyMarkup }), until]
+            );
+          } catch (err) {
+            console.error("[Batch] Snooze store error:", err);
+          }
+          await q.botApi.deleteMessage(chatId, e.msgId).catch(() => {});
+          break;
+        }
+      }
+    } catch (err) {
+      console.error("[Batch] Action error:", e.action, err);
+    }
   }
 }
 import { gatewayQuery } from "../services/gateway-db";
@@ -107,12 +182,20 @@ export async function handleInboxCallback(ctx: Context): Promise<boolean> {
 
   try {
     switch (action) {
-      case "archive":
-        await handleGmailAction(ctx, "archive", sourceId, msgId, chatId);
+      case "archive": {
+        if (chatId && msgId) {
+          const count = queueBatchAction(chatId, { action: "archive", msgId, sourceId, msgText: ctx.callbackQuery?.message?.text || "", msgDate: ctx.callbackQuery?.message?.date }, ctx.api);
+          try { await ctx.answerCallbackQuery({ text: "✉ アーカイブ予約 (" + count + "件)", show_alert: false }); } catch {}
+        }
         break;
-      case "trash":
-        await handleGmailAction(ctx, "trash", sourceId, msgId, chatId);
+      }
+      case "trash": {
+        if (chatId && msgId) {
+          const count = queueBatchAction(chatId, { action: "trash", msgId, sourceId, msgText: ctx.callbackQuery?.message?.text || "", msgDate: ctx.callbackQuery?.message?.date }, ctx.api);
+          try { await ctx.answerCallbackQuery({ text: "🗑 ゴミ箱予約 (" + count + "件)", show_alert: false }); } catch {}
+        }
         break;
+      }
       case "full":
         await handleFullText(ctx, sourceId);
         break;
@@ -133,30 +216,46 @@ export async function handleInboxCallback(ctx: Context): Promise<boolean> {
         break;
       case "del": {
         if (chatId && msgId) {
-          const count = queueBatchDelete(chatId, msgId, ctx.api);
-          try { await ctx.answerCallbackQuery({ text: `削除予約 (${count}件)`, show_alert: false }); } catch {}
-        } else {
-          try { await ctx.answerCallbackQuery(); } catch {}
+          const count = queueBatchAction(chatId, { action: "del", msgId, sourceId, msgText: "" }, ctx.api);
+          try { await ctx.answerCallbackQuery({ text: "🗑 削除予約 (" + count + "件)", show_alert: false }); } catch {}
         }
         break;
       }
       case "delmemo": {
-        // Delete both: this button message + the original memo it replies to
-        const replyTo = ctx.callbackQuery?.message?.reply_to_message?.message_id;
-        try { if (chatId && msgId) await ctx.api.deleteMessage(chatId, msgId); } catch {}
-        try { if (chatId && replyTo) await ctx.api.deleteMessage(chatId, replyTo); } catch {}
-        try { await ctx.answerCallbackQuery(); } catch {}
+        if (chatId && msgId) {
+          const replyTo = ctx.callbackQuery?.message?.reply_to_message?.message_id;
+          const count = queueBatchAction(chatId, { action: "delmemo", msgId, sourceId, msgText: "", replyToMsgId: replyTo }, ctx.api);
+          try { await ctx.answerCallbackQuery({ text: "🗑 削除予約 (" + count + "件)", show_alert: false }); } catch {}
+        }
         break;
       }
-      case "snz1h":
-        await handleSnooze(ctx, sourceId, msgId, chatId, 1);
+      case "snz1h": {
+        if (chatId && msgId) {
+          const origMsg = ctx.callbackQuery?.message;
+          const rm = origMsg && "reply_markup" in origMsg ? JSON.stringify((origMsg as any).reply_markup) : null;
+          const count = queueBatchAction(chatId, { action: "snz1h", msgId, sourceId, msgText: origMsg?.text || "", msgDate: origMsg?.date, replyMarkup: rm || undefined, hours: 1 }, ctx.api);
+          try { await ctx.answerCallbackQuery({ text: "⏰ 1hスヌーズ予約 (" + count + "件)", show_alert: false }); } catch {}
+        }
         break;
-      case "snz3h":
-        await handleSnooze(ctx, sourceId, msgId, chatId, 3);
+      }
+      case "snz3h": {
+        if (chatId && msgId) {
+          const origMsg = ctx.callbackQuery?.message;
+          const rm = origMsg && "reply_markup" in origMsg ? JSON.stringify((origMsg as any).reply_markup) : null;
+          const count = queueBatchAction(chatId, { action: "snz3h", msgId, sourceId, msgText: origMsg?.text || "", msgDate: origMsg?.date, replyMarkup: rm || undefined, hours: 3 }, ctx.api);
+          try { await ctx.answerCallbackQuery({ text: "⏰ 3hスヌーズ予約 (" + count + "件)", show_alert: false }); } catch {}
+        }
         break;
-      case "snzam":
-        await handleSnoozeNextMorning(ctx, sourceId, msgId, chatId);
+      }
+      case "snzam": {
+        if (chatId && msgId) {
+          const origMsg = ctx.callbackQuery?.message;
+          const rm = origMsg && "reply_markup" in origMsg ? JSON.stringify((origMsg as any).reply_markup) : null;
+          const count = queueBatchAction(chatId, { action: "snzam", msgId, sourceId, msgText: origMsg?.text || "", msgDate: origMsg?.date, replyMarkup: rm || undefined }, ctx.api);
+          try { await ctx.answerCallbackQuery({ text: "⏰ 明朝スヌーズ予約 (" + count + "件)", show_alert: false }); } catch {}
+        }
         break;
+      }
       default:
         await ctx.answerCallbackQuery({ text: `Unknown action: ${action}` });
     }
