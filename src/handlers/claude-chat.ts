@@ -283,7 +283,28 @@ export async function handlePostCommand(ctx: Context): Promise<void> {
       { parse_mode: "HTML" }
     );
   } else if (result.includes("INSERTED:SENT")) {
-    await ctx.reply(`✅ → <b>${escapeHtml(chatName)}</b>`, { parse_mode: "HTML" });
+    const wtMatch = result.match(/WT:\s*(\S+)/);
+    const wt = wtMatch?.[1] || "";
+    if (wt) {
+      await tryDeleteMsg(ctx, ctx.message!.message_id);
+      const waitMsg = await ctx.reply("⏳ 送信中...");
+      (async () => {
+        const responseText = await waitForChatResponse(wt, 180000);
+        await tryDeleteMsg(ctx, waitMsg.message_id);
+        if (!responseText) {
+          await ctx.reply("⏱ 応答タイムアウト (3分)");
+          return;
+        }
+        let entry = [...chatReplyMap.values()].find(e => e.wt === wt);
+        if (!entry) entry = { wt, createdAt: "", title: chatName, notifMsgId: 0 };
+        const responseMsgId = await sendResponseMsg(ctx, entry, message, responseText);
+        entry.notifMsgId = responseMsgId;
+        chatReplyMap.set(responseMsgId, entry);
+        saveChatMap();
+      })().catch(e => console.error("[ClaudeChat] post relay error:", e));
+    } else {
+      await ctx.reply(`✅ → <b>${escapeHtml(chatName)}</b>`, { parse_mode: "HTML" });
+    }
   } else {
     await ctx.reply(
       `❌ エラー: <code>${escapeHtml(result.substring(0, 200))}</code>`,

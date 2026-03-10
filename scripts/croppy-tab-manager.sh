@@ -795,7 +795,12 @@ inject-by-title)
   printf '%s' "$MESSAGE" > "$MSG_TMP2"
   RESULT=$(bash "$0" inject-raw "$WT" "$(cat "$MSG_TMP2")")
   rm -f "$MSG_TMP2"
-  echo "$RESULT"
+  if echo "$RESULT" | grep -q "INSERTED:SENT"; then
+    echo "INSERTED:SENT"
+    echo "WT: $WT"
+  else
+    echo "$RESULT"
+  fi
   ;;
 
 # ============================================================
