@@ -86,7 +86,7 @@ export async function handleManual(ctx: Context): Promise<void> {
 
   // Parse: first token = device number, rest = description
   const tokens = args.split(/\s+/);
-  const deviceNumber = tokens[0].toUpperCase();
+  const deviceNumber = tokens[0]!.toUpperCase();
   const description = tokens.slice(1).join(" ");
 
   // Validate device number format (M + digits)

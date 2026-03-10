@@ -14,6 +14,7 @@ import { StreamingState, createStatusCallback } from "./streaming";
 import { createMediaGroupBuffer, handleProcessingError } from "./media-group";
 import { controlTowerDB } from "../utils/control-tower-db";
 import { redactSensitiveData } from "../utils/redaction-filter";
+import { setPendingAttach } from "../utils/attach-pending";
 
 // Image extensions that need conversion (HEIC/HEIF → JPEG)
 const HEIC_EXTENSIONS = [".heic", ".heif"];
@@ -534,6 +535,14 @@ export async function handleDocument(ctx: Context): Promise<void> {
     await ctx.reply("❌ File too large. Maximum size is 10MB.");
     return;
   }
+
+  // Store as pending attachment for /mail, /imsg, /line
+  setPendingAttach(userId, {
+    fileId: doc.file_id,
+    filename: doc.file_name || "file_" + Date.now(),
+    mimeType: doc.mime_type || "application/octet-stream",
+    size: doc.file_size || 0,
+  });
 
   // 3. Check file type
   const fileName = doc.file_name || "";

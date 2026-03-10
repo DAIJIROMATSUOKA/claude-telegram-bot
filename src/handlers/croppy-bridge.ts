@@ -19,6 +19,41 @@ const TAB_MANAGER = `${SCRIPTS_DIR}/croppy-tab-manager.sh`;
 const NIGHTSHIFT = `${SCRIPTS_DIR}/nightshift.sh`;
 const SUPERVISOR = `${SCRIPTS_DIR}/croppy-supervisor.sh`;
 
+const DATE_PREFIX_RE = /^\d{4}-\d{2}-\d{2}_\d{4}/;
+
+/**
+ * Format conversation title with JST date prefix (fire-and-forget after response)
+ */
+async function formatConversationTitle(wt: string): Promise<void> {
+  try {
+    const raw = await runLocal(`bash ${TAB_MANAGER} get-title "${wt}"`, 8000);
+    if (!raw || raw.startsWith("ERROR")) return;
+
+    // Skip if already date-prefixed or still default
+    const DEFAULT_RE = /^(Jarvis|New conversation|新しい会話|Claude|Untitled|Loading|claude\.ai|\[J-WORKER|\s*)$/i;
+    const cleaned = raw.trim()
+      .replace(/^\[J-WORKER-\d+\]\s*/i, "")
+      .replace(/\s*-\s*Claude\s*$/i, "")
+      .trim();
+    if (DEFAULT_RE.test(cleaned) || DATE_PREFIX_RE.test(cleaned) || !cleaned) return;
+
+    const now = new Date();
+    const jst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+    const y = jst.getUTCFullYear();
+    const mo = String(jst.getUTCMonth() + 1).padStart(2, "0");
+    const d = String(jst.getUTCDate()).padStart(2, "0");
+    const h = String(jst.getUTCHours()).padStart(2, "0");
+    const mi = String(jst.getUTCMinutes()).padStart(2, "0");
+    const formatted = `${y}-${mo}-${d}_${h}${mi}_${cleaned}`;
+
+    const escaped = formatted.replace(/'/g, "'\\''" );
+    await runLocal(`bash ${TAB_MANAGER} rename-conversation "${wt}" '${escaped}'`, 15000);
+    console.log(`[Bridge] Renamed conversation: ${formatted}`);
+  } catch (e) {
+    console.error("[Bridge] formatConversationTitle error:", e);
+  }
+}
+
 // --- Worker inject counter (auto-handoff at threshold) ---
 const INJECT_WARN_THRESHOLD = 25;
 const INJECT_HANDOFF_THRESHOLD = 30;
@@ -321,6 +356,9 @@ export async function waitAndRelayResponse(ctx: Context, wt: string, maxWaitMs =
           }
         }
       }
+
+      // Fire-and-forget: rename conversation with date prefix
+      formatConversationTitle(wt).catch(e => console.error('[Bridge] Title format error:', e));
 
       // Re-mark tab title (claude.ai overwrites it with conversation title)
       const workerList = await runLocal(`bash ${TAB_MANAGER} list`);

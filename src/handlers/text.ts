@@ -68,6 +68,11 @@ export async function handleText(ctx: Context): Promise<void> {
     }
   }
 
+  // ── Auto-delete bot message on reply ──
+  if (replyMsg?.from?.is_bot) {
+    try { await ctx.api.deleteMessage(chatId, replyMsg.message_id); } catch {}
+  }
+
   // ── Stage 1: Auth & Rate Limit ──
   if (!isAuthorized(userId, ALLOWED_USERS)) {
     await ctx.reply("Unauthorized. Contact the bot owner for access.");

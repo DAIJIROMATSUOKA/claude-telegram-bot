@@ -64,6 +64,16 @@ else
   exit 1
 fi
 
+# === Nightly Forge (auto-improvement) ===
+FORGE_SCRIPT="$HOME/scripts/nightly-forge/nightly-forge.sh"
+if [ -f "$FORGE_SCRIPT" ] && [ ! -f /tmp/jarvis-forge-stop ]; then
+  log "Running Nightly Forge..."
+  bash "$FORGE_SCRIPT" 2>&1 | tee -a "$LOGFILE" || log "Forge completed (or skipped)"
+  log "Forge phase done. Continuing to Ralph Loop..."
+else
+  log "Forge skipped (script missing or stop file present)"
+fi
+
 # === Read task-state.md ===
 TASK_STATE="$MEMORY_DIR/task-state.md"
 if [ ! -f "$TASK_STATE" ]; then

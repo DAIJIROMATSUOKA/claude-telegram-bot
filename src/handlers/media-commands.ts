@@ -13,7 +13,7 @@
  */
 
 import { Context } from "grammy";
-import { spawn } from "child_process";
+import { spawn, execSync } from "child_process";
 import { existsSync, mkdirSync, unlinkSync, writeFileSync, statSync } from "fs";
 import { join, basename } from "path";
 import { InputFile } from "grammy";
@@ -159,6 +159,8 @@ interface MediaResult {
   path?: string;
   error?: string;
   elapsed?: number;
+  input_path?: string;   // GIF animation: original input image path
+  mask_path?: string;     // GIF animation: SegFormer mask image path
 }
 
 interface RunOptions {
@@ -997,25 +999,50 @@ export async function handleUndress(ctx: Context): Promise<void> {
       return;
     }
 
-    // PRIVACY MODE: Text notification only + open in Preview (no image sent to Telegram)
-    // ROLLBACK: Remove isPrivacyMode branch, keep only else block
-    if (isPrivacyMode) {
-      await sendResultPrivate(ctx, statusMsg.message_id, result.path, result.elapsed, "/undress");
-      // Do NOT cleanup result — user needs the file
-      // Do NOT cleanup input if it's a local file
-    } else {
-      // ORIGINAL: Send photo preview + original document to Telegram
-      const filename = `undress_${Date.now()}.png`;
+    // GIF ANIMATION MODE: Send process visualization as animated GIF
+    // Shows: input → mask → result as looping animation
+    // ROLLBACK: Replace this entire block with the original code below:
+    //   if (isPrivacyMode) {
+    //     await sendResultPrivate(ctx, statusMsg.message_id, result.path, result.elapsed, "/undress");
+    //   } else {
+    //     const filename = `undress_${Date.now()}.png`;
+    //     const strengthInfo = strengthMatch?.[1] ? ` [${strengthMatch[1]}]` : "";
+    //     const caption = `🔥 Undress${strengthInfo}\n⏱ ${result.elapsed}秒`;
+    //     await ctx.replyWithPhoto(new InputFile(result.path), { caption });
+    //     await ctx.replyWithDocument(new InputFile(result.path, filename), {
+    //       caption: `📎 原寸: ${filename}`,
+    //       disable_content_type_detection: true,
+    //     });
+    //     await ctx.api.deleteMessage(chatId, statusMsg.message_id).catch(() => {});
+    //     cleanupFile(imagePath);
+    //     cleanupFile(result.path);
+    //   }
+    {
       const strengthInfo = strengthMatch?.[1] ? ` [${strengthMatch[1]}]` : "";
-      const caption = `🔥 Undress${strengthInfo}\n⏱ ${result.elapsed}秒`;
-      await ctx.replyWithPhoto(new InputFile(result.path), { caption });
-      await ctx.replyWithDocument(new InputFile(result.path, filename), {
-        caption: `📎 原寸: ${filename}`,
-        disable_content_type_detection: true,
-      });
-      await ctx.api.deleteMessage(chatId, statusMsg.message_id).catch(() => {});
-      cleanupFile(imagePath);
-      cleanupFile(result.path);
+      const inputForGif = result.input_path || imagePath;
+
+      // Try to create process GIF animation
+      const gifPath = await createProcessGif(inputForGif, result.mask_path, result.path);
+
+      if (gifPath) {
+        // Send GIF animation (shows process: input → mask → result)
+        const caption = `🔥 Undress${strengthInfo}\n⏱ ${result.elapsed}秒\n📁 ${result.path}`;
+        await ctx.replyWithAnimation(new InputFile(gifPath), { caption });
+        await ctx.api.deleteMessage(chatId, statusMsg.message_id).catch(() => {});
+        cleanupFile(gifPath);
+      } else {
+        // Fallback: text notification only if GIF generation fails
+        await sendResultPrivate(ctx, statusMsg.message_id, result.path, result.elapsed, "/undress");
+      }
+
+      // Cleanup mask file if it exists
+      if (result.mask_path) cleanupFile(result.mask_path);
+
+      // In privacy mode: keep result file. In normal mode: cleanup.
+      if (!isPrivacyMode) {
+        cleanupFile(imagePath);
+        cleanupFile(result.path);
+      }
     }
   } catch (e: any) {
     await ctx.api.editMessageText(
@@ -1034,6 +1061,67 @@ function cleanupFile(path: string): void {
     if (existsSync(path)) unlinkSync(path);
   } catch {
     // ignore
+  }
+}
+
+/**
+ * Create a GIF animation from undress process images: input → mask → result
+ * Uses ffmpeg to combine images into an animated GIF.
+ * ROLLBACK: Remove this function and revert /undress handler to use sendResultPrivate/replyWithPhoto
+ *
+ * Frame timing:
+ *   Frame 1 (input):  1.5s
+ *   Frame 2 (mask):   1.5s
+ *   Frame 3 (result): 3.0s
+ */
+async function createProcessGif(
+  inputPath: string,
+  maskPath: string | undefined,
+  resultPath: string
+): Promise<string | null> {
+  const gifPath = join(WORKING_DIR, `undress_process_${Date.now()}.gif`);
+
+  try {
+    // Build frame list: use mask if available, otherwise just input→result
+    const frames = maskPath && existsSync(maskPath)
+      ? [inputPath, maskPath, resultPath]
+      : [inputPath, resultPath];
+
+    // Frame durations in seconds (ffmpeg concat demuxer format)
+    const durations = frames.length === 3
+      ? [1.5, 1.5, 3.0]
+      : [1.5, 3.0];
+
+    // Create concat file for ffmpeg
+    const concatPath = join(WORKING_DIR, `concat_${Date.now()}.txt`);
+    let concatContent = "";
+    for (let i = 0; i < frames.length; i++) {
+      concatContent += `file '${frames[i]}'\n`;
+      concatContent += `duration ${durations[i]}\n`;
+    }
+    // ffmpeg concat requires last file repeated without duration
+    concatContent += `file '${frames[frames.length - 1]}'\n`;
+    writeFileSync(concatPath, concatContent);
+
+    // Generate GIF with ffmpeg: resize to max 480px wide, good quality palette
+    const cmd = [
+      "ffmpeg", "-y",
+      "-f", "concat", "-safe", "0", "-i", concatPath,
+      "-vf", "scale=480:-1:flags=lanczos,split[s0][s1];[s0]palettegen=max_colors=128[p];[s1][p]paletteuse=dither=bayer",
+      "-loop", "0",
+      gifPath
+    ].join(" ");
+
+    execSync(cmd, { timeout: 30000, stdio: "pipe" });
+    cleanupFile(concatPath);
+
+    if (existsSync(gifPath)) {
+      return gifPath;
+    }
+    return null;
+  } catch (e: any) {
+    console.error(`[media] GIF generation failed: ${e.message}`);
+    return null;
   }
 }
 

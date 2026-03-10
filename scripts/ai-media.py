@@ -1369,6 +1369,7 @@ def cmd_undress_fill(args):
 
         # SegFormer clothing mask (the core of Fill Dev undress)
         mask_name = None
+        saved_mask_path = None  # GIF animation: keep mask for response
         # ROLLBACK: change dilate_px back to 10 (was 10→30→15; 30 caused face bleed near neckline)
         cloth_mask_path = detect_clothing_and_create_mask(image_path, dilate_px=15)
         if cloth_mask_path:
@@ -1384,6 +1385,12 @@ def cmd_undress_fill(args):
                 cloth_mask_path = reinverted_path
             except Exception as e:
                 print(f"[ai-media] Mask inversion failed: {e}", file=sys.stderr)
+
+            # GIF animation: save a copy of mask before uploading
+            # ROLLBACK: remove saved_mask_path logic, restore os.unlink(cloth_mask_path) below
+            saved_mask_path = os.path.join(WORKING_DIR, f"undress_mask_kept_{uuid.uuid4().hex[:8]}.png")
+            import shutil as _shutil
+            _shutil.copy2(cloth_mask_path, saved_mask_path)
 
             mask_name = comfyui_upload_image(cloth_mask_path)
             if mask_name:
@@ -1430,7 +1437,13 @@ def cmd_undress_fill(args):
         if out_path:
             import shutil
             shutil.move(out_path, output)
-            return {"ok": True, "path": output, "elapsed": round(elapsed, 1)}
+            # GIF animation: include input_path and mask_path for process visualization
+            # ROLLBACK: remove input_path and mask_path from return dict
+            result_dict = {"ok": True, "path": output, "elapsed": round(elapsed, 1),
+                           "input_path": image_path}
+            if saved_mask_path and os.path.exists(saved_mask_path):
+                result_dict["mask_path"] = saved_mask_path
+            return result_dict
 
         return {"ok": False, "error": "Could not retrieve image from ComfyUI", "elapsed": round(elapsed, 1)}
 
