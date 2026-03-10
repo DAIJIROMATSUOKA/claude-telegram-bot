@@ -1,4 +1,5 @@
 import { exec } from "child_process";
+import { waitAndRelayResponse } from "./croppy-bridge";
 import { promisify } from "util";
 import { readFileSync, writeFileSync, existsSync } from "fs";
 import type { Context } from "grammy";
@@ -149,7 +150,7 @@ export async function handleChatCommand(ctx: Context): Promise<void> {
       return;
     }
 
-    const wt = wtMatch[1].trim();
+    const wt = wtMatch[1]!.trim();
     const createdAt = (createdAtMatch?.[1] || "").trim();
     const pendingTitle = createdAt ? `${createdAt}_???` : "???" ;
 
@@ -281,6 +282,10 @@ export async function handleChatReply(ctx: Context): Promise<boolean> {
     // Chain: replies to confirmation also route to same chat
     chatReplyMap.set(sentMsg.message_id, { ...entry, notifMsgId: sentMsg.message_id });
     saveChatMap();
+    // Relay claude.ai response back to Telegram
+    waitAndRelayResponse(ctx, entry.wt, 180000).catch(e =>
+      console.error("[ClaudeChat] waitAndRelayResponse error:", e)
+    );
   } else if (result.includes("NOT_FOUND")) {
     await ctx.reply(
       `❌ タブが閉じられています: <b>${escapeHtml(displayTitle || injectTitle)}</b>\n<code>/chats</code> で確認`,

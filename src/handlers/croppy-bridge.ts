@@ -280,7 +280,7 @@ async function injectAndNotify(ctx: Context, wt: string, task: string, raw = fal
 /**
  * Wait for worker to finish (BUSY → READY), then read response and relay to Telegram
  */
-async function waitAndRelayResponse(ctx: Context, wt: string, maxWaitMs = 180000, dispatchMsgId?: number, dispatchHeader?: string): Promise<void> {
+export async function waitAndRelayResponse(ctx: Context, wt: string, maxWaitMs = 180000, dispatchMsgId?: number, dispatchHeader?: string): Promise<void> {
   const pollInterval = 3000;
   const startTime = Date.now();
 
