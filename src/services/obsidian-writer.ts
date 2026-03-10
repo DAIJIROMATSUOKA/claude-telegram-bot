@@ -137,3 +137,20 @@ export function appendMemo(text: string): void {
     console.error('[Obsidian] Memo error:', error);
   }
 }
+
+/**
+ * Append task to daily note (from Telegram 、command)
+ */
+export function appendTask(text: string): void {
+  try {
+    const path = getDailyNotePath();
+    const now = new Date();
+    const jst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+    const time = jst.toISOString().substring(11, 16);
+    const entry = `- [ ] ${time} ${text}`;
+    appendToSection(path, '📋 Tasks', entry);
+    console.log(`[Obsidian] Task: ${text.substring(0, 50)}`);
+  } catch (error) {
+    console.error('[Obsidian] Task error:', error);
+  }
+}

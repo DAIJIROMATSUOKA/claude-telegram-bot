@@ -100,6 +100,26 @@ export async function handleText(ctx: Context): Promise<void> {
     return;
   }
 
+  // ── Task mode: 、で始まるメッセージはObsidianタスクに追加 ──
+  if (ctx.message?.text?.startsWith('、')) {
+    const taskText = ctx.message.text.substring(1).trim();
+    try { await ctx.api.deleteMessage(chatId, ctx.message.message_id); } catch {}
+    if (taskText) {
+      try {
+        const { appendTask } = await import('../services/obsidian-writer');
+        appendTask(taskText);
+      } catch (e) { console.error('[Task] Obsidian write failed:', e); }
+    }
+    await ctx.api.sendMessage(chatId, '☑️ ' + (taskText || '、'), {
+      reply_markup: {
+        inline_keyboard: [[
+          { text: '🗑', callback_data: 'ib:del:memo' },
+        ]],
+      },
+    });
+    return;
+  }
+
   // ── Stage 2: Routing ──
   if (message.trim().toLowerCase() === 'croppy: debug') {
     const { formatCroppyDebugOutput } = await import("../utils/croppy-context");
