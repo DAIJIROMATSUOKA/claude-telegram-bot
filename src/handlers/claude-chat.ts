@@ -139,6 +139,7 @@ async function tryConfirmTitle(entry: ChatEntry): Promise<string | null> {
   const formatted = formatTitle(entry.createdAt, raw);
   const escapedFormatted = formatted.replace(/'/g, "'\\''");
   await runLocal(`bash "${TAB_MANAGER}" set-title "${entry.wt}" '${escapedFormatted}'`, 8000);
+  await runLocal(`bash "${TAB_MANAGER}" rename-conversation "${entry.wt}" '${escapedFormatted}'`, 10000);
 
   return formatted;
 }

@@ -700,6 +700,65 @@ INJECTEOF
   echo "$RESULT"
   ;;
 
+# ============================================================
+# RENAME-CONVERSATION: Rename claude.ai conversation via internal API
+# Usage: rename-conversation <W:T> <new_title>
+# ============================================================
+rename-conversation)
+  WT="$2"
+  NEW_NAME="$3"
+  if [ -z "$WT" ] || [ -z "$NEW_NAME" ]; then
+    echo "ERROR: usage: rename-conversation <W:T> <new_title>"
+    exit 1
+  fi
+  WIDX=$(echo "$WT" | cut -d: -f1)
+  TIDX=$(echo "$WT" | cut -d: -f2)
+  B64NAME=$(printf '%s' "$NEW_NAME" | base64 | tr -d '\n')
+
+  PYHELPER="/tmp/croppy-rename-helper-$$.py"
+  ASFILE="/tmp/croppy-rename-conv-$$.as"
+
+  cat > "$PYHELPER" << 'PYEOF'
+import json, sys
+b64, tidx, widx = sys.argv[1], sys.argv[2], sys.argv[3]
+js = (
+    "(() => {"
+    "const b=Uint8Array.from(atob('" + b64 + "'),c=>c.charCodeAt(0));"
+    "const name=new TextDecoder().decode(b);"
+    "const ox=new XMLHttpRequest();"
+    "ox.open('GET','/api/organizations',false);"
+    "ox.withCredentials=true;ox.send();"
+    "const orgs=JSON.parse(ox.responseText);"
+    "const orgId=Array.isArray(orgs)?orgs[0].uuid:orgs.uuid;"
+    "if(!orgId)return 'NO_ORG_ID';"
+    r"const m=location.pathname.match(/\/chat\/([-\w]+)/);"
+    "if(!m)return 'NO_CONV_ID';"
+    "const convId=m[1];"
+    "const x=new XMLHttpRequest();"
+    "x.open('PUT','/api/organizations/'+orgId+'/chat_conversations/'+convId,false);"
+    "x.withCredentials=true;"
+    "x.setRequestHeader('Content-Type','application/json');"
+    "x.send(JSON.stringify({name:name}));"
+    "return x.status+':'+x.responseText.substring(0,50);"
+    "})()"
+)
+lines = [
+    'tell application "Google Chrome"',
+    f'  set t to tab {tidx} of window {widx}',
+    f'  return execute t javascript {json.dumps(js)}',
+    'end tell'
+]
+print('\n'.join(lines))
+PYEOF
+
+  python3 "$PYHELPER" "$B64NAME" "$TIDX" "$WIDX" > "$ASFILE"
+  rm -f "$PYHELPER"
+  RESULT=$(osascript "$ASFILE" 2>&1)
+  rm -f "$ASFILE"
+  log "RENAME-CONV $WT -> $NEW_NAME: $RESULT"
+  echo "$RESULT"
+  ;;
+
 # INJECT-BY-TITLE: Find claude.ai tab by partial title and inject
 # Usage: inject-by-title "partial_title" "message"
 # Output: INSERTED:SENT or NOT_FOUND:<query>
