@@ -63,6 +63,82 @@ def main():
         fcntl.flock(lock_fd, fcntl.LOCK_UN)
         lock_fd.close()
 
+
+def update_m1_state():
+    """Auto-update M1.md with session summary on Stop hook"""
+    now = datetime.now()
+    date_str = now.strftime("%Y-%m-%d")
+    time_str = now.strftime("%H:%M")
+    iso_str = now.strftime("%Y-%m-%dT%H:%M+09:00")
+
+    m1_path = os.path.join(PROJECT_DIR, "autonomous/state/M1.md")
+
+    # Gather session info from git
+    recent_commits = run_cmd("git log --oneline --since='12 hours ago'", cwd=PROJECT_DIR)
+    git_diff_names = run_cmd("git diff --name-only HEAD~5 HEAD 2>/dev/null || echo ''", cwd=PROJECT_DIR)
+
+    # Read task-state for context
+    tasks_md = read_file(os.path.join(MEMORY_DIR, "task-state.md"))
+
+    # Build commit summary (deduplicate, max 10 lines)
+    commit_lines = []
+    if recent_commits:
+        for line in recent_commits.splitlines()[:10]:
+            # Strip hash, keep message
+            parts = line.split(" ", 1)
+            if len(parts) == 2:
+                commit_lines.append(f"- {parts[1]}")
+
+    # Build changed files summary
+    file_summary = ""
+    if git_diff_names:
+        files = [f for f in git_diff_names.splitlines() if f.strip()]
+        if files:
+            file_summary = f"- Changed files: {', '.join(files[:8])}"
+            if len(files) > 8:
+                file_summary += f" (+{len(files)-8} more)"
+
+    # Read previous M1.md to preserve older session history
+    prev_m1 = read_file(m1_path)
+    prev_sections = ""
+    # Extract previous session summaries (keep last 2)
+    prev_matches = re.findall(r"(### Previous:.*?)(?=### Previous:|## NEXT_ACTION|$)", prev_m1, re.DOTALL)
+    if prev_matches:
+        prev_sections = "\n".join(prev_matches[:2]).strip()
+
+    # Build new M1.md
+    session_body = "### Session work\n"
+    if commit_lines:
+        session_body += "\n".join(commit_lines) + "\n"
+    else:
+        session_body += "- (no git commits this session)\n"
+    if file_summary:
+        session_body += file_summary + "\n"
+
+    # Task state snippet (first 5 lines)
+    task_snippet = ""
+    if tasks_md:
+        task_lines = [l for l in tasks_md.splitlines() if l.strip()][:5]
+        if task_lines:
+            task_snippet = "\n### Task State\n" + "\n".join(task_lines) + "\n"
+
+    m1_content = f"""# M1 State
+STATUS: IDLE
+UPDATED: {iso_str}
+OPERATOR: croppy (claude.ai)
+
+## SESSION SUMMARY ({date_str})
+
+{session_body}{task_snippet}
+## NEXT_ACTION
+Ask DJ
+"""
+
+    os.makedirs(os.path.dirname(m1_path), exist_ok=True)
+    with open(m1_path, "w") as f:
+        f.write(m1_content)
+    log(f"M1.md updated: STATUS=IDLE, UPDATED={iso_str}")
+
 def _run():
     log("Stop hook fired")
     now = datetime.now()
@@ -152,6 +228,12 @@ def _run():
     if os.path.exists(sync_script):
         run_cmd(f"bash {sync_script}")
         log("memory-sync executed")
+
+    # Auto-update M1.md
+    try:
+        update_m1_state()
+    except Exception as e:
+        log(f"M1.md update failed: {e}")
 
     log("Done")
 
