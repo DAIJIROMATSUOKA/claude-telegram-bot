@@ -49,6 +49,12 @@ async function formatConversationTitle(wt: string): Promise<void> {
     const escaped = formatted.replace(/'/g, "'\\''" );
     await runLocal(`bash ${TAB_MANAGER} rename-conversation "${wt}" '${escaped}'`, 15000);
     console.log(`[Bridge] Renamed conversation: ${formatted}`);
+
+    // Re-mark worker tab (rename-conversation triggers title update that overwrites [J-WORKER-N])
+    const workerMatch = raw.match(/\[J-WORKER-(\d+)\]/);
+    if (workerMatch) {
+      await runLocal(`bash ${TAB_MANAGER} mark ${wt} ${workerMatch[1]}`, 8000);
+    }
   } catch (e) {
     console.error("[Bridge] formatConversationTitle error:", e);
   }
