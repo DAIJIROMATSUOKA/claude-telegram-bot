@@ -351,12 +351,14 @@ export async function waitAndRelayResponse(ctx: Context, wt: string, maxWaitMs =
       const response = await runLocal(`bash ${TAB_MANAGER} read-response ${wt}`, 10000);
       
       if (response && !response.includes('NO_RESPONSE') && !response.includes('ERROR')) {
-        // Remove UI-generated duplicate first line
-        const lines = response.split('\n');
-        const nonEmpty = lines.map((l, i) => ({ l, i })).filter(x => x.l.trim() !== '');
-        const cleanResponse = (nonEmpty.length >= 2 && nonEmpty[0].l.trim() === nonEmpty[1].l.trim())
-          ? lines.slice(nonEmpty[1].i).join('\n').trimStart()
-          : response;
+        // Remove consecutive duplicate lines (claude.ai thinking indicators + UI duplication)
+        const dedupLines: string[] = [];
+        for (const line of response.split('\n')) {
+          if (dedupLines.length === 0 || line.trim() !== dedupLines[dedupLines.length - 1]!.trim() || line.trim() === '') {
+            dedupLines.push(line);
+          }
+        }
+        const cleanResponse = dedupLines.join('\n').trim();
         // Split for Telegram 4096 char limit
         const headerLen = dispatchHeader ? dispatchHeader.length + 2 : 0;
         const maxLen = 4000;
