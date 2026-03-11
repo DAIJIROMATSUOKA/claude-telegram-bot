@@ -42,6 +42,7 @@ import { handleInboxReply } from "./inbox";
 
 import { dispatchToWorker } from "./croppy-bridge";
 import { handleChatReply } from "./claude-chat";
+import { routeToProjectNotes } from "../services/obsidian-writer";
 
 /**
  * Handle incoming text messages.
@@ -78,6 +79,13 @@ export async function handleText(ctx: Context): Promise<void> {
     await ctx.reply("Unauthorized. Contact the bot owner for access.");
     return;
   }
+
+    // === Project routing: detect M-numbers in DJ messages ===
+    try {
+      await routeToProjectNotes(message, "telegram");
+    } catch (e) {
+      // Non-fatal: never break message flow
+    }
 
   // ── Chat Reply Routing: TelegramリプライをClaude.aiチャットにルーティング
   if (await handleChatReply(ctx)) return;
