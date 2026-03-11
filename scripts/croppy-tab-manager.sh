@@ -269,14 +269,20 @@ end tell
 
 # ============================================================
 # RECOVER: Check for missing workers and restore them
-# Reads config from /tmp/croppy-workers.json
+# Reads config from ~/.croppy-workers.json (persistent, auto-created if missing)
 # ============================================================
 recover)
-  CONFIG="/tmp/croppy-workers.json"
+  CONFIG="${HOME}/claude-telegram-bot/.croppy-workers.json"
   if [ ! -f "$CONFIG" ]; then
-    echo "No worker config at $CONFIG"
-    echo "Create with: echo '{\"workers\":[{\"num\":1,\"url\":\"https://claude.ai/project/xxx\"}]}' > $CONFIG"
-    exit 1
+    echo "No worker config found. Auto-creating default (2 workers)..."
+    DEFAULT_URL="https://claude.ai/project/019c15f4-3d2d-7263-a308-e7f6ccd6b3f8"
+    python3 -c "
+import json
+workers = [{'num': i, 'url': '${DEFAULT_URL}'} for i in range(1, 3)]
+with open('${CONFIG}', 'w') as f:
+    json.dump({'workers': workers}, f, indent=2)
+print('Created default config: 2 workers')
+"
   fi
   
   CURRENT=$("$0" list)
@@ -589,7 +595,7 @@ new-chat)
   fi
 
   # Get project URL from config
-  CONFIG="/tmp/croppy-workers.json"
+  CONFIG="${HOME}/claude-telegram-bot/.croppy-workers.json"
   PROJECT_URL="https://claude.ai/project/019c15f4-3d2d-7263-a308-e7f6ccd6b3f8"
   if [ -f "$CONFIG" ]; then
     PROJECT_URL=$(python3 -c "import json; d=json.load(open('$CONFIG')); print(d['workers'][0]['url'])" 2>/dev/null || echo "$PROJECT_URL")
@@ -857,7 +863,7 @@ inject-by-title)
 setup-workers)
   N="${2:-10}"
 
-  CONFIG="/tmp/croppy-workers.json"
+  CONFIG="${HOME}/claude-telegram-bot/.croppy-workers.json"
   PROJECT_URL="https://claude.ai/project/019c15f4-3d2d-7263-a308-e7f6ccd6b3f8"
   if [ -f "$CONFIG" ]; then
     PROJECT_URL=$(python3 -c "import json; d=json.load(open('$CONFIG')); print(d['workers'][0]['url'])" 2>/dev/null || echo "$PROJECT_URL")
