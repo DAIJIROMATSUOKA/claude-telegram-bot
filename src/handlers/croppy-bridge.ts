@@ -21,6 +21,20 @@ const SUPERVISOR = `${SCRIPTS_DIR}/croppy-supervisor.sh`;
 
 const DATE_PREFIX_RE = /^\d{4}-\d{2}-\d{2}_\d{4}/;
 
+// Bridge reply routing: Telegram msgId -> Worker tab (wt)
+// Enables reply-chain: DJ replies to bridge response -> same worker tab
+const bridgeReplyMap = new Map<number, string>();
+const BRIDGE_REPLY_MAP_MAX = 100;
+
+function registerBridgeReply(msgId: number, wt: string): void {
+  bridgeReplyMap.set(msgId, wt);
+  // Evict oldest if over limit
+  if (bridgeReplyMap.size > BRIDGE_REPLY_MAP_MAX) {
+    const oldest = bridgeReplyMap.keys().next().value;
+    if (oldest !== undefined) bridgeReplyMap.delete(oldest);
+  }
+}
+
 /**
  * Format conversation title with JST date prefix (fire-and-forget after response)
  */
@@ -356,7 +370,8 @@ export async function waitAndRelayResponse(ctx: Context, wt: string, maxWaitMs =
         for (let i = 0; i < chunks.length; i++) {
           try {
             const text = (i === 0 && dispatchHeader) ? `${dispatchHeader}\n\n${chunks[i]}` : chunks[i];
-            await ctx.reply(text, { parse_mode: i === 0 && dispatchHeader ? 'HTML' : undefined });
+            const sent = await ctx.reply(text, { parse_mode: i === 0 && dispatchHeader ? 'HTML' : undefined });
+            registerBridgeReply(sent.message_id, wt);
           } catch (e) {
             console.error('[Bridge] Reply error:', e);
           }
@@ -383,6 +398,36 @@ export async function waitAndRelayResponse(ctx: Context, wt: string, maxWaitMs =
   try {
     await ctx.reply('⏱ Worker still running after 3min. Check /workers for status.');
   } catch {}
+}
+
+/**
+ * Handle replies to bridge response messages -> route to same worker tab
+ */
+export async function handleBridgeReply(ctx: Context): Promise<boolean> {
+  const replyToId = ctx.message?.reply_to_message?.message_id;
+  if (!replyToId) return false;
+
+  const wt = bridgeReplyMap.get(replyToId);
+  if (!wt) return false;
+
+  const rawMessage = ctx.message?.text || "";
+  if (!rawMessage || rawMessage.startsWith("/")) return false;
+
+  const chatId = ctx.chat?.id;
+  const djMsgId = ctx.message?.message_id;
+  if (!chatId) return false;
+
+  // Clean up old mapping (new response will create new entry via waitAndRelayResponse)
+  bridgeReplyMap.delete(replyToId);
+
+  // Delete old response message and DJ's reply (same UX as /chat)
+  try { await ctx.api.deleteMessage(chatId, replyToId); } catch {}
+  if (djMsgId) { try { await ctx.api.deleteMessage(chatId, djMsgId); } catch {} }
+
+  // Inject to the same worker tab (raw mode, same conversation)
+  await injectAndNotify(ctx, wt!, rawMessage, true);
+
+  return true;
 }
 
 function escapeHtml(text: string): string {

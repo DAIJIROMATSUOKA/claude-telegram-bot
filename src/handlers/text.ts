@@ -40,7 +40,7 @@ import type { TowerIdentifier } from "../types/control-tower";
 import { savePendingTask, clearPendingTask } from "../utils/pending-task";
 import { handleInboxReply } from "./inbox";
 
-import { dispatchToWorker } from "./croppy-bridge";
+import { dispatchToWorker, handleBridgeReply } from "./croppy-bridge";
 import { handleChatReply } from "./claude-chat";
 import { routeToProjectNotes } from "../services/obsidian-writer";
 
@@ -89,6 +89,7 @@ export async function handleText(ctx: Context): Promise<void> {
 
   // ── Chat Reply Routing: TelegramリプライをClaude.aiチャットにルーティング
   if (await handleChatReply(ctx)) return;
+  if (await handleBridgeReply(ctx)) return;
 
   // ── Memo mode: 。で始まるメッセージはJarvisスルー、🗑ボタンのみ ──
   if (ctx.message?.text?.startsWith('。')) {
