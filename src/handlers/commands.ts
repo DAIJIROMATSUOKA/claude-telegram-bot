@@ -848,6 +848,87 @@ export async function handleAlarm(ctx: Context): Promise<void> {
  * /reminder - 緊急リマインダー（至急フラグ付き）を作成
  * Usage: /reminder 9時 テスト or /reminder 9:00 テスト or /reminder 5 買い物（5分後）
  */
+/**
+ * Parse date+time for /reminder
+ * Supports: 明日の5時, 明後日の9時半, 4月20日の5時, 4/20 5:00, 3月14日 9:00, etc.
+ * Returns { dateTime: "YYYY-MM-DD HH:MM" or "HH:MM", label: string } or null
+ */
+function parseReminderDateTime(input: string): { dateTime: string; label: string } | null {
+  let content = input
+    .replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xFEE0))
+    .replace(/：/g, ":")
+    .replace(/\u3000/g, " ")
+    .trim();
+
+  // --- Relative minutes: just a number (no 時 or :) ---
+  const relMatch = content.match(/^(\d+)\s*分?\s*(.*)$/);
+  if (relMatch && relMatch[1] && !content.includes("時") && !content.includes(":") && !content.includes("月") && !content.includes("明日") && !content.includes("明後日") && !content.includes("/")) {
+    const minutes = parseInt(relMatch[1], 10);
+    if (minutes <= 0 || minutes > 1440) return null;
+    const now = new Date();
+    now.setMinutes(now.getMinutes() + minutes);
+    const y = now.getFullYear();
+    const mo = (now.getMonth() + 1).toString().padStart(2, "0");
+    const d = now.getDate().toString().padStart(2, "0");
+    const h = now.getHours().toString().padStart(2, "0");
+    const mi = now.getMinutes().toString().padStart(2, "0");
+    return { dateTime: `${y}-${mo}-${d} ${h}:${mi}`, label: relMatch[2]?.trim() || `${minutes}分リマインダー` };
+  }
+
+  // --- Extract date part ---
+  let datePart = "";
+  let rest = content;
+
+  // 明日の / 明後日の
+  const ashitaMatch = rest.match(/^(明日|明後日)\s*の?\s*/);
+  if (ashitaMatch) {
+    const now = new Date();
+    const offset = ashitaMatch[1] === "明日" ? 1 : 2;
+    now.setDate(now.getDate() + offset);
+    datePart = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, "0")}-${now.getDate().toString().padStart(2, "0")}`;
+    rest = rest.slice(ashitaMatch[0].length);
+  }
+
+  // M月D日の / M/D
+  if (!datePart) {
+    const mdMatch = rest.match(/^(\d{1,2})\s*月\s*(\d{1,2})\s*日?\s*の?\s*/);
+    if (mdMatch && mdMatch[1] && mdMatch[2]) {
+      const now = new Date();
+      let year = now.getFullYear();
+      const month = parseInt(mdMatch[1], 10);
+      const day = parseInt(mdMatch[2], 10);
+      // If the date is in the past, assume next year
+      const candidate = new Date(year, month - 1, day);
+      if (candidate < now) year++;
+      datePart = `${year}-${month.toString().padStart(2, "0")}-${day.toString().padStart(2, "0")}`;
+      rest = rest.slice(mdMatch[0].length);
+    }
+  }
+  if (!datePart) {
+    const slashMatch = rest.match(/^(\d{1,2})\/(\d{1,2})\s*/);
+    if (slashMatch && slashMatch[1] && slashMatch[2]) {
+      const now = new Date();
+      let year = now.getFullYear();
+      const month = parseInt(slashMatch[1], 10);
+      const day = parseInt(slashMatch[2], 10);
+      const candidate = new Date(year, month - 1, day);
+      if (candidate < now) year++;
+      datePart = `${year}-${month.toString().padStart(2, "0")}-${day.toString().padStart(2, "0")}`;
+      rest = rest.slice(slashMatch[0].length);
+    }
+  }
+
+  // --- Extract time part (reuse parseAlarmMessage logic) ---
+  const timeParsed = parseAlarmMessage(rest);
+  if (!timeParsed) return null;
+
+  if (datePart) {
+    return { dateTime: `${datePart} ${timeParsed.time}`, label: timeParsed.label };
+  } else {
+    return { dateTime: timeParsed.time, label: timeParsed.label };
+  }
+}
+
 export async function handleReminder(ctx: Context): Promise<void> {
   const userId = ctx.from?.id;
 
@@ -858,44 +939,20 @@ export async function handleReminder(ctx: Context): Promise<void> {
 
   const args = (ctx.message?.text || "").replace(/^\/reminder\s*/, "").trim();
   if (!args) {
-    await ctx.reply("使い方: /reminder 9時 テスト\n例: /reminder 9:00 買い物, /reminder 9時半 会議, /reminder 5 電話（5分後）");
+    await ctx.reply("使い方: /reminder 9時 テスト\n例: /reminder 9:00 買い物, /reminder 明日の5時 納品書, /reminder 4月20日の9時 会議, /reminder 5 電話（5分後）");
     return;
   }
 
-  // Normalize fullwidth digits to halfwidth
-  const normalizedArgs = args.replace(/[０-９]/g, (c) =>
-    String.fromCharCode(c.charCodeAt(0) - 0xFEE0)
-  );
-
-  // 相対時間パターン: 数字のみ or 数字+分 → N分後
-  const relativeMatch = normalizedArgs.match(/^(\d+)\s*分?\s*(.*)$/);
-  let time: string;
-  let label: string;
-
-  if (relativeMatch && relativeMatch[1] && !normalizedArgs.includes("時") && !normalizedArgs.includes(":")) {
-    const minutes = parseInt(relativeMatch[1], 10);
-    if (minutes <= 0 || minutes > 1440) {
-      await ctx.reply("❌ 1〜1440分の範囲で指定してね");
-      return;
-    }
-    const now = new Date();
-    now.setMinutes(now.getMinutes() + minutes);
-    const hour = now.getHours().toString().padStart(2, "0");
-    const minute = now.getMinutes().toString().padStart(2, "0");
-    time = `${hour}:${minute}`;
-    label = relativeMatch[2]?.trim() || `${minutes}分リマインダー`;
-  } else {
-    const parsed = parseAlarmMessage(args);
-    if (!parsed) {
-      await ctx.reply("❌ 形式が不正。例: /reminder 9時 テスト, /reminder 9:00 買い物, /reminder 5（5分後）");
-      return;
-    }
-    time = parsed.time;
-    label = parsed.label;
+  const parsed = parseReminderDateTime(args);
+  if (!parsed) {
+    await ctx.reply("❌ 形式が不正。例: /reminder 9時 テスト, /reminder 明日の5時 納品書, /reminder 4/20 9:00 会議, /reminder 5（5分後）");
+    return;
   }
 
+  const { dateTime, label } = parsed;
+
   try {
-    const input = `${time}\n${label}`;
+    const input = `${dateTime}\n${label}`;
     const { stdout, stderr } = await execAsync(
       `printf '${input}' | shortcuts run '緊急リマインダー'`,
       { timeout: 15000 }
@@ -904,7 +961,7 @@ export async function handleReminder(ctx: Context): Promise<void> {
       await ctx.reply(`❌ リマインダー設定エラー: ${stderr}`);
       return;
     }
-    const confirmMsg = await ctx.reply(`🔔 ${time} 緊急リマインダー: ${label}`);
+    const confirmMsg = await ctx.reply(`🔔 ${dateTime} 緊急リマインダー: ${label}`);
     // Auto-delete after 3s
     const autoDelete = async () => {
       await new Promise(r => setTimeout(r, 3000));
