@@ -40,6 +40,7 @@ import {
   handleFocus,
   handleTodoist,
   handleAlarm,
+  handleReminder,
   handleRecall,
   handleCroppyDispatch } from "./handlers";
 import {
@@ -224,6 +225,7 @@ bot.command("line", handleLinePost);
 bot.command("jarvisnotif", handleJarvisNotif);
 bot.command("timetimer", handleTimeTimer);
 bot.command("alarm", handleAlarm);
+bot.command("reminder", handleReminder);
 bot.command("recall", handleRecall);
 bot.command("memory", handleMemory);
 bot.command("forget", handleForget);

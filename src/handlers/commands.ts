@@ -843,6 +843,80 @@ export async function handleAlarm(ctx: Context): Promise<void> {
  * /recall - 過去の会話・決定・学習内容を横断検索
  * Usage: /recall キーワード
  */
+
+/**
+ * /reminder - 緊急リマインダー（至急フラグ付き）を作成
+ * Usage: /reminder 9時 テスト or /reminder 9:00 テスト or /reminder 5 買い物（5分後）
+ */
+export async function handleReminder(ctx: Context): Promise<void> {
+  const userId = ctx.from?.id;
+
+  if (!isAuthorized(userId, ALLOWED_USERS)) {
+    await ctx.reply("Unauthorized.");
+    return;
+  }
+
+  const args = (ctx.message?.text || "").replace(/^\/reminder\s*/, "").trim();
+  if (!args) {
+    await ctx.reply("使い方: /reminder 9時 テスト\n例: /reminder 9:00 買い物, /reminder 9時半 会議, /reminder 5 電話（5分後）");
+    return;
+  }
+
+  // Normalize fullwidth digits to halfwidth
+  const normalizedArgs = args.replace(/[０-９]/g, (c) =>
+    String.fromCharCode(c.charCodeAt(0) - 0xFEE0)
+  );
+
+  // 相対時間パターン: 数字のみ or 数字+分 → N分後
+  const relativeMatch = normalizedArgs.match(/^(\d+)\s*分?\s*(.*)$/);
+  let time: string;
+  let label: string;
+
+  if (relativeMatch && relativeMatch[1] && !normalizedArgs.includes("時") && !normalizedArgs.includes(":")) {
+    const minutes = parseInt(relativeMatch[1], 10);
+    if (minutes <= 0 || minutes > 1440) {
+      await ctx.reply("❌ 1〜1440分の範囲で指定してね");
+      return;
+    }
+    const now = new Date();
+    now.setMinutes(now.getMinutes() + minutes);
+    const hour = now.getHours().toString().padStart(2, "0");
+    const minute = now.getMinutes().toString().padStart(2, "0");
+    time = `${hour}:${minute}`;
+    label = relativeMatch[2]?.trim() || `${minutes}分リマインダー`;
+  } else {
+    const parsed = parseAlarmMessage(args);
+    if (!parsed) {
+      await ctx.reply("❌ 形式が不正。例: /reminder 9時 テスト, /reminder 9:00 買い物, /reminder 5（5分後）");
+      return;
+    }
+    time = parsed.time;
+    label = parsed.label;
+  }
+
+  try {
+    const input = `${time}\n${label}`;
+    const { stdout, stderr } = await execAsync(
+      `printf '${input}' | shortcuts run '緊急リマインダー'`,
+      { timeout: 15000 }
+    );
+    if (stderr && stderr.includes("Error")) {
+      await ctx.reply(`❌ リマインダー設定エラー: ${stderr}`);
+      return;
+    }
+    const confirmMsg = await ctx.reply(`🔔 ${time} 緊急リマインダー: ${label}`);
+    // Auto-delete after 3s
+    const autoDelete = async () => {
+      await new Promise(r => setTimeout(r, 3000));
+      try { await ctx.api.deleteMessage(ctx.chat!.id, ctx.message!.message_id); } catch {}
+      try { await ctx.api.deleteMessage(ctx.chat!.id, confirmMsg.message_id); } catch {}
+    };
+    autoDelete();
+  } catch (error) {
+    await ctx.reply(`❌ リマインダー設定エラー: ${error}`);
+  }
+}
+
 export async function handleRecall(ctx: Context): Promise<void> {
   const userId = ctx.from?.id;
 

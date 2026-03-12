@@ -16,6 +16,7 @@ export {
   handleFocus,
   handleTodoist,
   handleAlarm,
+  handleReminder,
   handleRecall,
   handleCroppyDispatch,
 } from "./commands";
