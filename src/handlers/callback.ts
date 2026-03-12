@@ -12,6 +12,7 @@ import { isAuthorized } from "../security";
 import { auditLog, startTypingIndicator } from "../utils";
 import { StreamingState, createStatusCallback } from "./streaming";
 import { handleInboxCallback } from "./inbox";
+import { handleTriageCallback } from "../services/inbox-triage";
 import { gatewayQuery } from "../services/gateway-db";
 
 /**
@@ -41,6 +42,15 @@ export async function handleCallback(ctx: Context): Promise<void> {
   }
 
   // 3. Parse callback data: askuser:{request_id}:{option_index}
+  // 2.4 Inbox Triage callback routing
+  if (callbackData.startsWith("triage:")) {
+    const handled = await handleTriageCallback(ctx.callbackQuery);
+    if (handled) {
+      await ctx.answerCallbackQuery();
+      return;
+    }
+  }
+
   // 2.5 Inbox Zero callback routing
   if (callbackData.startsWith("ib:")) {
     const handled = await handleInboxCallback(ctx);

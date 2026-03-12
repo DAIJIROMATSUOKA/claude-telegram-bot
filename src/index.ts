@@ -74,6 +74,7 @@ import { getWorkState, formatWorkStateForContext, updateWorkStateSessionId, isWo
 import { session } from './session';
 import { convertMarkdownToHtml } from './formatting';
 import { startSnoozeChecker } from "./services/snooze";
+import { startInboxTriage } from "./services/inbox-triage";
 
 // ============== Global Context ==============
 // Bot起動時にCLAUDE.mdを読み込んでグローバルに保持
@@ -381,6 +382,7 @@ const runner = run(bot);
     console.log('✅ Memory tables initialized');
     // Inbox Zero: snooze re-notification checker
     try { startSnoozeChecker(bot); } catch(e) { console.error("[Snooze] Init failed:", e); }
+    try { startInboxTriage(bot, ALLOWED_USERS[0] || 0); } catch(e) { console.error("[Triage] Init failed:", e); }
     try { initNotifTable(); } catch(e) { console.error("[Notif] Table init failed:", e); }
     try { initTimerTable(); } catch(e) { console.error("[Timer] Table init failed:", e); }
     // テーブル初期化後にMemory GCスケジューラーを起動
