@@ -11,6 +11,7 @@ import { readFileSync, writeFileSync, existsSync, readdirSync, statSync } from "
 import { homedir } from "os";
 import { join } from "path";
 import { ClaudeAIClient, type Model, type CompletionResult } from "./claude-ai-client";
+import { buildProjectContext, formatContextPrompt } from "./project-context-builder";
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -211,32 +212,19 @@ export class ProjectChatManager {
     return entry;
   }
 
-  /** Inject initial context into a newly created project chat */
+  /** Inject initial context into a newly created project chat (F3) */
   private async injectInitialContext(
     chatUuid: string,
     projectId: string,
     folderName: string,
     model: Model,
   ): Promise<void> {
-    const folderSummary = ProjectChatManager.getFolderSummary(folderName);
-
-    const contextPrompt = [
-      `これは案件 ${projectId} の専用チャットです。`,
-      ``,
-      `## Dropboxフォルダ: ${folderName}`,
-      folderSummary,
-      ``,
-      `## 役割`,
-      `- この案件に関する全情報を蓄積する`,
-      `- Gmail/LINE/iMessage等からの自動転送メッセージを受け取る`,
-      `- DJからの質問に案件の全文脈を踏まえて回答する`,
-      ``,
-      `以上の情報を記憶してください。今後このチャットに案件の情報が随時追加されます。「了解」とだけ返答してください。`,
-    ].join("\n");
+    const ctx = buildProjectContext(projectId);
+    const prompt = formatContextPrompt(ctx);
 
     await this.client.postFirstMessage({
       conversationUuid: chatUuid,
-      prompt: contextPrompt,
+      prompt,
       model,
     });
   }
