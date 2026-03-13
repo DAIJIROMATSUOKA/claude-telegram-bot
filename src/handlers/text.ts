@@ -43,6 +43,7 @@ import { handleInboxReply } from "./inbox";
 import { dispatchToWorker, handleBridgeReply } from "./croppy-bridge";
 import { handleChatReply } from "./claude-chat";
 import { routeToProjectNotes } from "../services/obsidian-writer";
+import { getOrchestrator } from "../utils/orchestrator-init";
 
 /**
  * Handle incoming text messages.
@@ -85,6 +86,25 @@ export async function handleText(ctx: Context): Promise<void> {
       await routeToProjectNotes(message, "telegram");
     } catch (e) {
       // Non-fatal: never break message flow
+    }
+
+    // === F5: Orchestrator routing → claude.ai project chats ===
+    try {
+      const orch = getOrchestrator();
+      if (orch) {
+        const routeResult = orch.quickRoute(message, "telegram");
+        if (routeResult.projectId && routeResult.confidence >= 0.8) {
+          // Fire-and-forget: route to claude.ai project chat in background
+          orch.route({
+            text: message,
+            source: "telegram",
+            autoPost: true,
+            codeOnly: true, // Only code-layer for DJ direct messages (no Claude Inbox cost)
+          }).catch((e: any) => console.error("[F5] Route error:", e));
+        }
+      }
+    } catch (e) {
+      // Non-fatal: orchestrator failure never breaks Telegram flow
     }
 
   // ── Chat Reply Routing: TelegramリプライをClaude.aiチャットにルーティング

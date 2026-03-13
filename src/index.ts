@@ -71,6 +71,7 @@ import { handleImsgSend } from './handlers/imsg-send';
 import { handleLinePost } from './handlers/line-post';
 import { handleLineSchedule } from './handlers/line-schedule';
 import { handleJarvisNotif, initNotifTable } from './handlers/jarvisnotif-command';
+import { initOrchestrator } from './utils/orchestrator-init';
 import { handleTimeTimer, initTimerTable } from './handlers/timetimer-command';
 import { handleFileMessage } from './handlers/file-message';
 import { getWorkState, formatWorkStateForContext, updateWorkStateSessionId, isWorkComplete } from './utils/work-state';
@@ -392,6 +393,15 @@ const runner = run(bot);
     try { startSnoozeChecker(bot); } catch(e) { console.error("[Snooze] Init failed:", e); }
     try { startInboxTriage(bot, ALLOWED_USERS[0] || 0); } catch(e) { console.error("[Triage] Init failed:", e); }
     try { initNotifTable(); } catch(e) { console.error("[Notif] Table init failed:", e); }
+    // F5: Initialize orchestrator (claude.ai routing) - non-blocking
+    initOrchestrator(() => {
+      // sessionKey expired callback
+      bot.api.sendMessage(ALLOWED_USERS[0] || 0, '⚠️ claude.ai sessionKey失効！手動更新が必要です').catch(() => {});
+    }).then(() => {
+      console.log('✅ Orchestrator initialized');
+    }).catch((e: any) => {
+      console.error('[Orchestrator] Init failed (non-fatal):', e?.message || e);
+    });
     try { initTimerTable(); } catch(e) { console.error("[Timer] Table init failed:", e); }
     // テーブル初期化後にMemory GCスケジューラーを起動
     startMemoryGCScheduler();
