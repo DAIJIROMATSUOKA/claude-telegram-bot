@@ -72,6 +72,7 @@ import { handleLinePost } from './handlers/line-post';
 import { handleLineSchedule } from './handlers/line-schedule';
 import { handleJarvisNotif, initNotifTable } from './handlers/jarvisnotif-command';
 import { initOrchestrator } from './utils/orchestrator-init';
+import { handleSpec, handleDecide, handleDecisions } from './handlers/dj-spec-command';
 import { handleTimeTimer, initTimerTable } from './handlers/timetimer-command';
 import { handleFileMessage } from './handlers/file-message';
 import { getWorkState, formatWorkStateForContext, updateWorkStateSessionId, isWorkComplete } from './utils/work-state';
@@ -242,6 +243,9 @@ bot.command("task", handleTaskCommand);
 bot.command("taskstop", handleOrchestratorStop);
 bot.command("taskstatus", handleTaskStatusCommand);
 bot.command("tasklog", handleTaskLogCommand);
+bot.command("spec", handleSpec);
+bot.command("decide", handleDecide);
+bot.command("decisions", handleDecisions);
 
 // Croppy auto-approval commands
 bot.command("croppy", async (ctx) => {
