@@ -19,6 +19,7 @@ import { homedir } from "os";
 import { join } from "path";
 import { ProjectChatManager, type ProjectChatEntry } from "./project-chat-manager";
 import { ClaudeAIClient, type Model, type CompletionResult } from "./claude-ai-client";
+import { prePostHandoffCheck } from "./auto-handoff";
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -318,12 +319,25 @@ export class Orchestrator {
         entry = await this.projectMgr.getOrCreateChat(decision.projectId);
         decision.chatUuid = entry.chat_uuid;
 
+        // F7: Check if chat needs handoff before posting
+        const handoff = await prePostHandoffCheck({
+          client: this.client,
+          projectMgr: this.projectMgr,
+          projectId: decision.projectId!,
+          chatUuid: entry.chat_uuid,
+          model: entry.model,
+        });
+        const targetUuid = handoff.chatUuid;
+        if (handoff.handoffTriggered) {
+          console.log(`[Orchestrator] Auto-handoff triggered for ${decision.projectId}`);
+        }
+
         const icon = { gmail: "📧", line: "💬", slack: "🔔", apple: "📱", telegram: "💬" }[opts.source] || "📨";
-        const sender = opts.senderHint ? ` (${opts.senderHint})` : "";
-        const prompt = `${icon} ${opts.source}${sender}:\n${opts.text}`;
+        const sender = opts.senderHint ? ` (\${opts.senderHint})` : "";
+        const prompt = `\${icon} \${opts.source}\${sender}:\n\${opts.text}`;
 
         response = await this.client.postMessage({
-          conversationUuid: entry.chat_uuid,
+          conversationUuid: targetUuid,
           prompt,
           model: entry.model,
         });
