@@ -716,7 +716,7 @@ export class ChromeOrchestrator {
                     // Re-inject the original message into the new chat
                     const retryFile = `/tmp/retry-msg-${Date.now()}.txt`;
                     writeFileSync(retryFile, opts.text, "utf-8");
-                    await runShell(\`bash "\${TAB_MANAGER}" inject-file "\${tabWT}" "\${retryFile}"; rm -f "\${retryFile}"\`, 20000);
+                    await runShell(`bash "${TAB_MANAGER}" inject-file "${tabWT}" "${retryFile}"; rm -f "${retryFile}"`, 20000);
                     await new Promise(r => setTimeout(r, 5000));
                     await waitAndRelayResponse(opts.ctx, tabWT!, 180000, undefined, header);
                   }

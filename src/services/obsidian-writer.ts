@@ -22,7 +22,7 @@ function getDailyNotePath(): string {
   const d = String(jst.getUTCDate()).padStart(2, "0");
   const dir = join(VAULT_PATH, String(y), m);
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-  return join(dir, `${d}.md`);
+  return join(dir, `${y}-${m}-${d}.md`);
 }
 
 /**
@@ -31,29 +31,7 @@ function getDailyNotePath(): string {
 function ensureDailyNote(path: string): void {
   if (!existsSync(path)) {
     const date = path.split("/").pop()?.replace(".md", "") || "";
-    // Carry over uncompleted tasks from yesterday
-    let carryover = "";
-    try {
-      const pathMod = require("path");
-      const dir = pathMod.dirname(path);
-      const parentDir = pathMod.dirname(dir);
-      const today = new Date(new Date().getTime() + 9 * 60 * 60 * 1000);
-      const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
-      const yDir = join(parentDir, String(yesterday.getUTCMonth() + 1).padStart(2, "0"));
-      const yFile = join(yDir, String(yesterday.getUTCDate()).padStart(2, "0") + ".md");
-      if (existsSync(yFile)) {
-        const yContent = readFileSync(yFile, "utf-8");
-        const lines = yContent.split("\n");
-        const unchecked = lines.filter((l: string) => l.startsWith("- [ ] "));
-        if (unchecked.length > 0) {
-          carryover = unchecked.join("\n") + "\n";
-          console.log("[Obsidian] Carried over " + unchecked.length + " tasks from yesterday");
-        }
-      }
-    } catch (e) {
-      console.error("[Obsidian] Task carryover error:", e);
-    }
-    const template = `# ${date}\n\n## 📋 Tasks\n${carryover}\n## 📰 News\n\n## 💬 Telegram Log\n`;
+    const template = `# ${date}\n\n## 🎙 Voice Inbox\n\n## 📋 Tasks\n\n## 📰 News\n`;
     writeFileSync(path, template, "utf-8");
     console.log(`[Obsidian] Created daily note: ${path}`);
   }
@@ -113,11 +91,7 @@ export async function archiveToObsidian(
       }[source] || "📨";
 
     const dirIcon = direction === "in" ? "←" : "→";
-    const entry = `- ${time} ${icon}${dirIcon} [${actionTaken}] ${content.substring(0, 200).replace(/\n/g, " ")}`;
-
-    appendToSection(path, "💬 Telegram Log", entry);
-    console.log(`[Obsidian] Archived: ${source}/${actionTaken} (msg:${telegramMsgId})`);
-    
+    // Skip daily note Telegram Log (replaced by Daily Briefing)
     // Route to project notes if M-numbers detected
     const routed = await routeToProjectNotes(content, source, actionTaken);
     if (routed.length > 0) {
@@ -156,7 +130,7 @@ export function appendMemo(text: string): void {
     const y = jst.getUTCFullYear();
     const m = String(jst.getUTCMonth() + 1).padStart(2, "0");
     const d = String(jst.getUTCDate()).padStart(2, "0");
-    const path = join(VAULT_PATH, String(y), m, d + ".md");
+    const path = join(VAULT_PATH, String(y), m, `${y}-${m}-${d}.md`);
     // Ensure directory exists
     const dir = join(VAULT_PATH, String(y), m);
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
