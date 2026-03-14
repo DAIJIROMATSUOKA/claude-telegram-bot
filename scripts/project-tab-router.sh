@@ -15,6 +15,23 @@ GATEWAY="https://jarvis-memory-gateway.jarvis-matsuoka.workers.dev"
 LOCAL_CACHE="$HOME/.croppy-project-tabs.json"
 LOG="/tmp/project-tab-router.log"
 
+# Validate W:T format (digits:digits)
+validate_wt() {
+  local wt="$1"
+  if echo "$wt" | grep -qE '^[0-9]+:[0-9]+$'; then
+    echo "$wt"
+  else
+    # Extract W:T pattern from garbled output
+    local extracted
+    extracted=$(echo "$wt" | grep -oE '[0-9]+:[0-9]+' | tail -1)
+    if [ -n "$extracted" ]; then
+      echo "$extracted"
+    else
+      echo "ERROR: invalid WT format: $wt"
+    fi
+  fi
+}
+
 log() { echo "[$(date '+%H:%M:%S')] $*" >> "$LOG"; }
 
 # ============================================================
@@ -128,7 +145,7 @@ resolve)
       STATUS=$(bash "$TAB_MANAGER" check-status "$CACHED_WT" 2>/dev/null)
       if [ "$STATUS" = "READY" ] || [ "$STATUS" = "BUSY" ]; then
         log "resolve: $PROJECT_ID -> $CACHED_WT (cached, alive)"
-        echo "$CACHED_WT"
+        validate_wt "$CACHED_WT"
         exit 0
       fi
     fi
@@ -140,7 +157,7 @@ resolve)
         # Update cached WT
         d1_set "$PROJECT_ID" "${CONV_URL}|${FOUND_WT}"
         log "resolve: $PROJECT_ID -> $FOUND_WT (found by URL)"
-        echo "$FOUND_WT"
+        validate_wt "$FOUND_WT"
         exit 0
       fi
 
@@ -153,7 +170,7 @@ resolve)
       if [ -n "$NEW_WT" ]; then
         d1_set "$PROJECT_ID" "${CONV_URL}|${NEW_WT}"
         log "resolve: $PROJECT_ID -> $NEW_WT (reopened)"
-        echo "$NEW_WT"
+        validate_wt "$NEW_WT"
         exit 0
       fi
     fi
@@ -197,10 +214,17 @@ resolve)
     exit 1
   fi
 
-  # Get conversation URL
+  # Wait for Claude to create conversation (URL changes from /project/ to /chat/UUID)
+  sleep 5
   CONV_URL=$(osascript -e "tell application \"Google Chrome\" to return URL of tab $NEW_TIDX of window $WIDX" 2>/dev/null)
+  # Verify we got a chat URL, not project URL
+  if echo "$CONV_URL" | grep -q "/project/"; then
+    log "resolve: $PROJECT_ID WARNING: still project URL, retrying..."
+    sleep 5
+    CONV_URL=$(osascript -e "tell application \"Google Chrome\" to return URL of tab $NEW_TIDX of window $WIDX" 2>/dev/null)
+  fi
 
-  # Rename conversation to project name (wait for Claude to process first message)
+  # Rename conversation to project name
   if [ "$CHAT_NAME" != "$PROJECT_ID" ]; then
     sleep 3
     ESCAPED_NAME=$(printf '%s' "$CHAT_NAME" | sed "s/'/'\\\\''/g")
@@ -208,9 +232,9 @@ resolve)
     log "resolve: $PROJECT_ID renamed to $CHAT_NAME"
   fi
 
-  d1_set "$PROJECT_ID" "${CONV_URL}|${NEW_WT}"
+  d1_set "$PROJECT_ID" "${CONV_URL}|${NEW_WT}" 2>/dev/null
   log "resolve: $PROJECT_ID -> $NEW_WT (new chat created: $CHAT_NAME)"
-  echo "$NEW_WT"
+  validate_wt "$NEW_WT"
   ;;
 
 list)
