@@ -88,29 +88,39 @@ export async function handleText(ctx: Context): Promise<void> {
       // Non-fatal: never break message flow
     }
 
-    // === F5: Orchestrator routing → claude.ai project chats ===
+    // === F5: Orchestrator routing → chrome project tabs (G2: blocking, skip bridge if routed) ===
+    let orchestratorHandled = false;
     try {
       const orch = getChromeOrchestrator();
       if (orch) {
         const routeResult = orch.quickRoute(message, "telegram");
         if (routeResult.projectId && routeResult.confidence >= 0.8) {
-          // Code-layer match: auto-post to project tab
-          orch.route({
+          // Code-layer match: route to project tab (blocking — G1 応答リレー)
+          const result = await orch.route({
             text: message,
             source: "telegram",
             autoPost: true,
-          }).catch((e: any) => console.error("[Orch] Route error:", e));
+            ctx, // G1: pass ctx for Telegram reply
+          });
+          if (result.forwarded) {
+            orchestratorHandled = true;
+          }
         } else if (routeResult.method === "no-route") {
-          // No code-layer match: try Claude Inbox fallback (fire-and-forget)
-          orch.route({
+          // No code-layer match: try Claude Inbox fallback
+          const result = await orch.route({
             text: message,
             source: "telegram",
             autoPost: true,
-          }).catch((e: any) => console.error("[Orch] Inbox fallback error:", e));
+            ctx,
+          });
+          if (result.forwarded) {
+            orchestratorHandled = true;
+          }
         }
       }
     } catch (e) {
-      // Non-fatal: orchestrator failure never breaks Telegram flow
+      // Non-fatal: orchestrator failure falls through to Bridge
+      console.error("[Orch] Route error (falling through to Bridge):", e);
     }
 
   // ── Chat Reply Routing: TelegramリプライをClaude.aiチャットにルーティング
@@ -232,6 +242,11 @@ export async function handleText(ctx: Context): Promise<void> {
 
 
   // ── 🦞 Croppy Bridge: Route default messages to Worker tabs ──
+  // G2: Skip bridge if orchestrator already handled this message
+  if (orchestratorHandled) {
+    stopProcessing();
+    return;
+  }
   const BRIDGE_MODE = true; // false → revert to Claude CLI (Jarvis direct)
   if (BRIDGE_MODE) {
     stopProcessing();

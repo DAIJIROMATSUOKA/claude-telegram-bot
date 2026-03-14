@@ -8,11 +8,13 @@
  */
 
 import { exec } from "child_process";
+import { enqueueMessage, dequeueForProject } from "../utils/message-queue";
 import { promisify } from "util";
 import { appendFileSync, existsSync, mkdirSync, writeFileSync, unlinkSync, readFileSync } from "fs";
 import { homedir } from "os";
 
 const execAsync = promisify(exec);
+import { waitAndRelayResponse, registerBridgeReply } from "./croppy-bridge";
 
 // ─── Constants ────────────────────────────────────────────────
 
@@ -349,13 +351,18 @@ export class ChromeOrchestrator {
   }
 
   /**
-   * Full route: detect project → resolve Chrome tab → forward message
+   * Full route: detect project → resolve Chrome tab → forward message → relay response
+   * G1: 応答リレー (inject → wait → read → Telegram reply)
+   * G3: auto-handoff配線
+   * G5: キューバッファ (inject失敗→enqueue)
+   * G6+G14: Inboxフォールバック (resolve失敗→Inbox)
    */
   async route(opts: {
     text: string;
     source: string;
     senderHint?: string;
     autoPost?: boolean;
+    ctx?: any; // Grammy Context for G1 応答リレー
   }): Promise<RouteResult> {
     const now = new Date().toISOString();
     const decision = codeLayerRoute(opts.text, opts.source, opts.senderHint);
@@ -404,19 +411,63 @@ export class ChromeOrchestrator {
       return { decision, tabWT: null, forwarded: false, error: null };
     }
 
-    // Resolve project → Chrome tab
+    // G6+G14: Resolve project → Chrome tab (with Inbox fallback)
     let tabWT: string | null = null;
     try {
       const result = await runShell(
         `bash "${TAB_ROUTER}" resolve "${decision.projectId}"`,
         60000
       );
-      if (result.startsWith("ERROR:")) {
-        return { decision, tabWT: null, forwarded: false, error: result };
+      if (result.startsWith("ERROR:") || !result.trim()) {
+        // G6+G14: Resolve failed → try Inbox tab as fallback
+        console.log(`[ChromeOrch] resolve failed for ${decision.projectId}, trying Inbox fallback`);
+        const inboxConfig = loadInboxConfig();
+        if (inboxConfig.inbox_tab_wt) {
+          const inboxStatus = await runShell(
+            `bash "${TAB_MANAGER}" check-status "${inboxConfig.inbox_tab_wt}"`, 10000
+          );
+          if (inboxStatus === "READY") {
+            tabWT = inboxConfig.inbox_tab_wt;
+            console.log(`[ChromeOrch] Inbox fallback: ${tabWT}`);
+          }
+        }
+        if (!tabWT) {
+          // G5: Enqueue for retry
+          enqueueMessage({
+            text: opts.text,
+            source: opts.source,
+            senderHint: opts.senderHint,
+            projectId: decision.projectId,
+            error: result || "resolve returned empty",
+          });
+          return { decision, tabWT: null, forwarded: false, error: `resolve失敗+キュー保存: ${result}` };
+        }
+      } else {
+        tabWT = result;
       }
-      tabWT = result;
     } catch (e: any) {
+      // G5: Enqueue on exception
+      enqueueMessage({
+        text: opts.text,
+        source: opts.source,
+        senderHint: opts.senderHint,
+        projectId: decision.projectId!,
+        error: e.message,
+      });
       return { decision, tabWT: null, forwarded: false, error: e.message };
+    }
+
+    // G5: Retry any queued messages for this project (piggyback on successful resolve)
+    if (tabWT && decision.projectId) {
+      const queued = dequeueForProject(decision.projectId);
+      for (const qm of queued) {
+        try {
+          const qTmp = `/tmp/orch-queue-${Date.now()}.txt`;
+          writeFileSync(qTmp, `[キュー再送] ${qm.text}`, "utf-8");
+          await runShell(`bash "${TAB_MANAGER}" inject-file "${tabWT}" "${qTmp}"; rm -f "${qTmp}"`, 20000);
+          console.log(`[ChromeOrch] Queue retry: ${qm.id} → ${tabWT}`);
+        } catch {}
+      }
     }
 
     // Auto-post to project tab
@@ -432,8 +483,64 @@ export class ChromeOrchestrator {
           30000
         );
         const forwarded = injectResult.includes("INSERTED:SENT");
-        return { decision, tabWT, forwarded, error: forwarded ? null : injectResult };
+
+        if (!forwarded) {
+          // G5: Inject failed → enqueue
+          enqueueMessage({
+            text: opts.text,
+            source: opts.source,
+            senderHint: opts.senderHint,
+            projectId: decision.projectId!,
+            error: injectResult,
+          });
+          return { decision, tabWT, forwarded: false, error: injectResult };
+        }
+
+        // G1: 応答リレー — wait for Chrome response, relay to Telegram
+        if (opts.ctx && forwarded) {
+          try {
+            const escHtml = (t: string) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+            const projLabel = decision.projectId || "unknown";
+            const header = `🏭 <b>${projLabel}</b> [${decision.method}]
+📝 ${escHtml(opts.text.substring(0, 80))}${opts.text.length > 80 ? "..." : ""}`;
+
+            // Delete DJ's original message (same UX as bridge)
+            const origMsgId = opts.ctx.message?.message_id;
+            if (origMsgId) {
+              opts.ctx.api.deleteMessage(opts.ctx.chat!.id, origMsgId).catch(() => {});
+            }
+
+            // G1: Wait for response and relay to Telegram
+            // waitAndRelayResponse also registers bridgeReplyMap (G4: リプライ→同タブ)
+            await waitAndRelayResponse(opts.ctx, tabWT!, 180000, undefined, header);
+          } catch (e: any) {
+            console.error("[ChromeOrch] G1 relay error:", e.message);
+          }
+        }
+
+        // G3: auto-handoff配線
+        if (decision.projectId && tabWT) {
+          try {
+            const handoff = await checkAndHandoff(decision.projectId, tabWT);
+            if (handoff.triggered && handoff.newWT) {
+              tabWT = handoff.newWT;
+              console.log(`[ChromeOrch] G3 handoff: ${decision.projectId} → ${tabWT}`);
+            }
+          } catch (e: any) {
+            console.error("[ChromeOrch] G3 handoff error:", e.message);
+          }
+        }
+
+        return { decision, tabWT, forwarded, error: null };
       } catch (e: any) {
+        // G5: Enqueue on inject exception
+        enqueueMessage({
+          text: opts.text,
+          source: opts.source,
+          senderHint: opts.senderHint,
+          projectId: decision.projectId!,
+          error: e.message,
+        });
         return { decision, tabWT, forwarded: false, error: e.message };
       }
     }

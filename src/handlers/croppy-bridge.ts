@@ -27,7 +27,7 @@ const DATE_PREFIX_RE = /^\d{4}-\d{2}-\d{2}_\d{4}/;
 const bridgeReplyMap = new Map<number, string>();
 const BRIDGE_REPLY_MAP_MAX = 100;
 
-function registerBridgeReply(msgId: number, wt: string): void {
+export function registerBridgeReply(msgId: number, wt: string): void {
   bridgeReplyMap.set(msgId, wt);
   // Evict oldest if over limit
   if (bridgeReplyMap.size > BRIDGE_REPLY_MAP_MAX) {
