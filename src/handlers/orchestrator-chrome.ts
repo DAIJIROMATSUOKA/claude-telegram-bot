@@ -395,7 +395,7 @@ export class ChromeOrchestrator {
           });
         }
       } catch (e: any) {
-        console.error("[ChromeOrch] Inbox route error:", e.message);
+        console.error("[ChromeOrch] Inbox route error:", e.message, e.stack?.substring(0, 300));
       }
     }
 
