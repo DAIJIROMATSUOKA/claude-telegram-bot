@@ -155,7 +155,7 @@ resolve)
       FOUND_WT=$(find_tab_by_url "$CONV_URL")
       if [ -n "$FOUND_WT" ]; then
         # Update cached WT
-        d1_set "$PROJECT_ID" "${CONV_URL}|${FOUND_WT}"
+        d1_set "$PROJECT_ID" "${CONV_URL}|${FOUND_WT}" > /dev/null 2>&1
         log "resolve: $PROJECT_ID -> $FOUND_WT (found by URL)"
         validate_wt "$FOUND_WT"
         exit 0
@@ -168,7 +168,7 @@ resolve)
       # Get the new tab WT
       NEW_WT=$(find_tab_by_url "$CONV_URL")
       if [ -n "$NEW_WT" ]; then
-        d1_set "$PROJECT_ID" "${CONV_URL}|${NEW_WT}"
+        d1_set "$PROJECT_ID" "${CONV_URL}|${NEW_WT}" > /dev/null 2>&1
         log "resolve: $PROJECT_ID -> $NEW_WT (reopened)"
         validate_wt "$NEW_WT"
         exit 0
@@ -250,7 +250,7 @@ register)
   fi
   # Find current WT for this URL
   WT=$(find_tab_by_url "$CONV_URL")
-  d1_set "$PROJECT_ID" "${CONV_URL}|${WT}"
+  d1_set "$PROJECT_ID" "${CONV_URL}|${WT}" > /dev/null 2>&1
   echo "OK: $PROJECT_ID -> ${CONV_URL}|${WT}"
   ;;
 
@@ -269,7 +269,7 @@ cleanup)
         # Try to find by URL
         NEW_WT=$(find_tab_by_url "$conv_url")
         if [ -n "$NEW_WT" ]; then
-          d1_set "$project_id" "${conv_url}|${NEW_WT}"
+          d1_set "$project_id" "${conv_url}|${NEW_WT}" > /dev/null 2>&1
           echo "  $project_id: $cached_wt DEAD -> $NEW_WT (re-resolved)"
         else
           echo "  $project_id: $cached_wt DEAD, tab not found (needs reopen)"
