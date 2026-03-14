@@ -57,3 +57,4 @@ models/
 .env.save
 .env.backup
 *.env.bak
+cache/
