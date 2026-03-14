@@ -475,6 +475,18 @@ export class ChromeOrchestrator {
     // Auto-post to project tab
     if (opts.autoPost && tabWT) {
       try {
+        // Wait for tab to be READY before inject (may be BUSY from queue retry or prior message)
+        let tabReady = false;
+        for (let attempt = 0; attempt < 20; attempt++) {
+          const st = await runShell(`bash "${TAB_MANAGER}" check-status "${tabWT}"`, 10000);
+          if (st.trim() === "READY") { tabReady = true; break; }
+          console.log(`[ChromeOrch] Tab ${tabWT} is ${st.trim()}, waiting... (${attempt + 1}/20)`);
+          await new Promise(r => setTimeout(r, 3000));
+        }
+        if (!tabReady) {
+          console.warn(`[ChromeOrch] Tab ${tabWT} still not READY after 60s`);
+        }
+
         const prefix = `[${opts.source}] ${opts.senderHint || ""}`.trim();
         const message = prefix ? `${prefix}\n\n${opts.text}` : opts.text;
         // Use inject-file to avoid shell quoting issues (lesson: 2026-03-14)
