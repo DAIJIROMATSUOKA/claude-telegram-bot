@@ -365,7 +365,9 @@ export class ChromeOrchestrator {
     ctx?: any; // Grammy Context for G1 応答リレー
   }): Promise<RouteResult> {
     const now = new Date().toISOString();
+    console.log(`[ChromeOrch] route() called: source=${opts.source} autoPost=${opts.autoPost} hasCtx=${!!opts.ctx}`);
     const decision = codeLayerRoute(opts.text, opts.source, opts.senderHint);
+    console.log(`[ChromeOrch] codeLayer: method=${decision.method} project=${decision.projectId} conf=${decision.confidence}`);
 
     // Audit
     logAudit({
@@ -508,6 +510,19 @@ export class ChromeOrchestrator {
             const origMsgId = opts.ctx.message?.message_id;
             if (origMsgId) {
               opts.ctx.api.deleteMessage(opts.ctx.chat!.id, origMsgId).catch(() => {});
+            }
+
+            // G1: Wait for Claude to start processing (BUSY) before relay
+            // Without this, check-status returns READY before Claude starts → NO_RESPONSE
+            let seenBusy = false;
+            for (let i = 0; i < 15 && !seenBusy; i++) {
+              await new Promise(r => setTimeout(r, 1000));
+              const st = await runShell(`bash "${TAB_MANAGER}" check-status "${tabWT}"`, 10000);
+              console.log(`[ChromeOrch] G1 pre-relay status[${i}]: ${st.trim()}`);
+              if (st.trim() === "BUSY") seenBusy = true;
+            }
+            if (!seenBusy) {
+              console.warn("[ChromeOrch] G1: never saw BUSY — Claude may not have started");
             }
 
             // G1: Wait for response and relay to Telegram
