@@ -245,3 +245,8 @@ IDLE → RUNNING → DONE/FAILED/WAITING
 - Pollerリスタート時に実行中タスクがorphaned(永久running) → cleanup APIが未実装の既知問題
 - withMediaQueueパッチで/edit SIGTERMは解決済み（DJ実使用確認）
 
+
+### Nightly Forge v2
+- claude.ai APIチャットは「考える」だけ。M1上のコマンド実行にはexec bridge連携ループが必要
+- 現状はdry-run（計画発見のみ）として運用。実行はDJ確認後に手動
+- パスの推測禁止: プロジェクトdocsに入ってないSonnetは実パスを知らない
