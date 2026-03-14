@@ -202,6 +202,54 @@ if '$proj' in d:
   log "close_excess: closed $closed tabs"
 }
 
+
+# ============================================================
+# Close excess project tabs (keep MAX_PROJECT_TABS open)
+# Closes the tab whose mapping was least recently updated
+# ============================================================
+trim_project_tabs() {
+  if [ ! -f "$LOCAL_CACHE" ]; then return; fi
+
+  # Count open project tabs
+  OPEN_WTS=$(python3 -c "
+import json, os
+d = json.load(open(os.path.expanduser('$LOCAL_CACHE')))
+for k, v in d.items():
+    wt = v.split('|')[-1] if '|' in v else ''
+    if wt and wt != '':
+        print(k + '|' + wt)
+" 2>/dev/null)
+
+  OPEN_COUNT=$(echo "$OPEN_WTS" | grep -c '|' 2>/dev/null || echo 0)
+  if [ "$OPEN_COUNT" -le "$MAX_PROJECT_TABS" ]; then return; fi
+
+  EXCESS=$((OPEN_COUNT - MAX_PROJECT_TABS))
+  log "trim: $OPEN_COUNT open project tabs, closing $EXCESS"
+
+  # Close oldest tabs (first in list = oldest mapping)
+  echo "$OPEN_WTS" | head -n "$EXCESS" | while IFS='|' read -r proj_id wt; do
+    [ -z "$wt" ] && continue
+    # Verify tab is actually open
+    STATUS=$(bash "$TAB_MANAGER" check-status "$wt" 2>/dev/null)
+    if [ "$STATUS" = "READY" ] || [ "$STATUS" = "BUSY" ]; then
+      WIDX=$(echo "$wt" | cut -d: -f1)
+      TIDX=$(echo "$wt" | cut -d: -f2)
+      osascript -e "tell application \"Google Chrome\" to close tab $TIDX of window $WIDX" 2>/dev/null
+      log "trim: closed $proj_id ($wt)"
+    fi
+    # Clear WT from mapping (keep URL for re-resolve)
+    python3 -c "
+import json, os
+path = os.path.expanduser('$LOCAL_CACHE')
+d = json.load(open(path))
+if '$proj_id' in d:
+    url = d['$proj_id'].split('|')[0]
+    d['$proj_id'] = url + '|'
+    json.dump(d, open(path, 'w'), indent=2)
+" 2>/dev/null
+  done
+}
+
 # ============================================================
 # COMMANDS
 # ============================================================
@@ -318,6 +366,9 @@ resolve)
 
   # Close excess project tabs (keep MAX_PROJECT_TABS)
   close_excess_project_tabs "$NEW_WT"
+  # Trim excess project tabs
+  trim_project_tabs
+
   validate_wt "$NEW_WT"
   ;;
 
