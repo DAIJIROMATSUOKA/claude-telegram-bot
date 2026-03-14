@@ -204,6 +204,12 @@ Stop: Deliverablesが揃ったら終了
 ### mdb-tools (Access DB)
 - bash直接だと日本語テーブル名で失敗 → Python subprocess経由なら動く
 - `mdb-export` + csv.DictReader で構造化データ取得
+### Chrome DOM (2026-03-14 session 2)
+- `project-tab-router` の `d1_set` にプロジェクトURLではなくチャットURL(`/chat/UUID`)を保存すること。プロジェクトURL(`/project/UUID`)を開くと新規チャットが作成される
+- claude.aiのDOM: `.font-claude-response` の中身が `div` でラップされる構造に変更。セレクタは入れ子(`el.querySelector('div')`)を考慮すること
+- 最後の `.font-claude-response` がUI要素（短いテキスト）の場合がある → 逆順スキャンで実質的な応答を探す
+- inject直後のcheck-status BUSY判定は信頼できない（Claude処理開始まで3-5秒ラグ）→ 5秒固定待ち+waitAndRelayResponseのダブルREADY確認で代替
+
 
 ---
 
