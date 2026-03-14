@@ -159,6 +159,33 @@ async function runShell(cmd: string, timeoutMs = 30000): Promise<string> {
   }
 }
 
+
+// ─── Per-project Lock (serialize route() calls per project) ────────
+const projectLocks = new Map<string, Promise<void>>();
+
+async function withProjectLock<T>(projectId: string, fn: () => Promise<T>): Promise<T> {
+  // Wait for any existing operation on this project to complete
+  const existing = projectLocks.get(projectId);
+  let resolve: () => void;
+  const myLock = new Promise<void>((r) => { resolve = r; });
+  projectLocks.set(projectId, myLock);
+
+  if (existing) {
+    console.log(`[ChromeOrch] ${projectId}: waiting for previous route() to complete...`);
+    await existing;
+  }
+
+  try {
+    return await fn();
+  } finally {
+    resolve!();
+    // Clean up if this is still our lock
+    if (projectLocks.get(projectId) === myLock) {
+      projectLocks.delete(projectId);
+    }
+  }
+}
+
 // ─── Inbox Tab (Claude fallback routing) ─────────────────────
 
 const INBOX_CONFIG_PATH = `${homedir()}/.claude-orchestrator-config.json`;
@@ -413,6 +440,9 @@ export class ChromeOrchestrator {
       return { decision, tabWT: null, forwarded: false, error: null };
     }
 
+    // Serialize per-project (prevent concurrent inject to same tab)
+    return withProjectLock(decision.projectId, async () => {
+
     // G6+G14: Resolve project → Chrome tab (with Inbox fallback)
     let tabWT: string | null = null;
     try {
@@ -567,6 +597,7 @@ export class ChromeOrchestrator {
     }
 
     return { decision, tabWT, forwarded: false, error: null };
+    }); // end withProjectLock
   }
 
   /**
