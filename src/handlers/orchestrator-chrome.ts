@@ -9,7 +9,7 @@
 
 import { exec } from "child_process";
 import { promisify } from "util";
-import { appendFileSync, existsSync, mkdirSync, writeFileSync, unlinkSync } from "fs";
+import { appendFileSync, existsSync, mkdirSync, writeFileSync, unlinkSync, readFileSync } from "fs";
 import { homedir } from "os";
 
 const execAsync = promisify(exec);
@@ -45,10 +45,12 @@ interface RouteResult {
 // ─── Sender → Project Mapping ────────────────────────────────
 
 const SENDER_PROJECT_MAP: Array<{ pattern: RegExp; projectId: string; label: string }> = [
-  // Populate with real client mappings:
-  // { pattern: /miyama|美山|成田工場/i, projectId: "M1317", label: "美山成田" },
-  // { pattern: /nakanishi|中西製作所/i, projectId: "M1319", label: "中西製作所" },
-  // { pattern: /yagai|ヤガイ/i, projectId: "M1311", label: "ヤガイ" },
+  { pattern: /miyama|美山|成田工場|成田/i, projectId: "M1317", label: "美山成田" },
+  { pattern: /nakanishi|中西製作所|中西/i, projectId: "M1319", label: "中西製作所" },
+  { pattern: /yagai|ヤガイ|おやつカルパス/i, projectId: "M1311", label: "ヤガイ" },
+  { pattern: /itoham|伊藤ハム|米久|プラント/i, projectId: "M1317", label: "伊藤ハム米久" },
+  { pattern: /tokai|東海漬物|東海/i, projectId: "M1320", label: "東海漬物" },
+  { pattern: /prima|プリマハム|プリマ/i, projectId: "M1318", label: "プリマハム" },
 ];
 
 const REVIEW_KEYWORDS = [
@@ -155,6 +157,176 @@ async function runShell(cmd: string, timeoutMs = 30000): Promise<string> {
   }
 }
 
+// ─── Inbox Tab (Claude fallback routing) ─────────────────────
+
+const INBOX_CONFIG_PATH = `${homedir()}/.claude-orchestrator-config.json`;
+
+interface InboxConfig {
+  inbox_tab_wt: string | null;
+  inbox_tab_url: string | null;
+}
+
+function loadInboxConfig(): InboxConfig {
+  try {
+    if (existsSync(INBOX_CONFIG_PATH)) {
+      return JSON.parse(readFileSync(INBOX_CONFIG_PATH, "utf-8"));
+    }
+  } catch {}
+  return { inbox_tab_wt: null, inbox_tab_url: null };
+}
+
+function saveInboxConfig(config: InboxConfig): void {
+  writeFileSync(INBOX_CONFIG_PATH, JSON.stringify(config, null, 2), "utf-8");
+}
+
+/**
+ * Claude Inbox routing: when code-layer can't route, ask Claude via Inbox tab
+ */
+async function claudeInboxRoute(
+  text: string,
+  source: string,
+  senderHint?: string,
+): Promise<{ projectId: string | null; confidence: number; reason: string }> {
+  const config = loadInboxConfig();
+  if (!config.inbox_tab_wt) {
+    return { projectId: null, confidence: 0, reason: "Inboxタブ未設定" };
+  }
+
+  // Check if Inbox tab is alive
+  const status = await runShell(
+    `bash "${TAB_MANAGER}" check-status "${config.inbox_tab_wt}"`, 10000
+  );
+  if (status !== "READY") {
+    return { projectId: null, confidence: 0, reason: `Inboxタブ不可: ${status}` };
+  }
+
+  // Build routing prompt
+  const prompt = [
+    `[ルーティング判断リクエスト]`,
+    `ソース: ${source}${senderHint ? ` (${senderHint})` : ""}`,
+    `メッセージ:`,
+    text.substring(0, 1000),
+    ``,
+    `出力形式（JSON1行のみ、他のテキスト不要）:`,
+    `{"project_id": "M1317", "confidence": 0.8, "reason": "白菜検査に関する内容"}`,
+    ``,
+    `ルール:`,
+    `- project_idはM+4桁の案件番号、または年+3桁のPrNo`,
+    `- 該当案件が不明な場合: {"project_id": null, "confidence": 0, "reason": "案件特定不能"}`,
+    `- confidenceは0.0〜1.0`,
+  ].join("\n");
+
+  // Write prompt to file and inject
+  const tmpFile = `/tmp/inbox-route-${Date.now()}.txt`;
+  writeFileSync(tmpFile, prompt, "utf-8");
+  const injectResult = await runShell(
+    `bash "${TAB_MANAGER}" inject-file "${config.inbox_tab_wt}" "${tmpFile}"; rm -f "${tmpFile}"`,
+    15000
+  );
+  if (!injectResult.includes("INSERTED:SENT")) {
+    return { projectId: null, confidence: 0, reason: `Inbox inject失敗: ${injectResult}` };
+  }
+
+  // Wait for response
+  const response = await runShell(
+    `bash "${TAB_MANAGER}" wait-response "${config.inbox_tab_wt}" 60`,
+    70000
+  );
+  if (response === "TIMEOUT" || response.startsWith("ERROR:")) {
+    return { projectId: null, confidence: 0, reason: `Inbox応答失敗: ${response}` };
+  }
+
+  // Parse JSON from response
+  try {
+    const jsonMatch = response.match(/\{[^}]+\}/);
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[0]);
+      return {
+        projectId: parsed.project_id || null,
+        confidence: parsed.confidence || 0,
+        reason: parsed.reason || "Claude判断",
+      };
+    }
+  } catch {}
+
+  return { projectId: null, confidence: 0, reason: `JSONパース失敗: ${response.substring(0, 100)}` };
+}
+
+// ─── Auto-Handoff (long chat → summarize → new chat) ────────
+
+const HANDOFF_INJECT_THRESHOLD = 25; // inject count before warning
+const HANDOFF_TRIGGER_THRESHOLD = 30; // inject count to trigger handoff
+
+/**
+ * Check if a project tab needs handoff and execute if needed
+ */
+async function checkAndHandoff(
+  projectId: string,
+  tabWT: string,
+): Promise<{ triggered: boolean; newWT: string | null; error: string | null }> {
+  // Estimate: read DOM message count
+  const countStr = await runShell(
+    `bash "${TAB_MANAGER}" token-estimate "${tabWT}" 2>/dev/null | grep -o '[0-9]*' | head -1`,
+    10000
+  );
+  const count = parseInt(countStr) || 0;
+
+  if (count < HANDOFF_TRIGGER_THRESHOLD) {
+    return { triggered: false, newWT: null, error: null };
+  }
+
+  console.log(`[AutoHandoff] ${projectId}: ${count} messages → handoff triggered`);
+
+  // 1. Ask for summary
+  const summaryPrompt = "この会話の要約を作成してください。重要な決定事項、未解決の課題、次のアクションを含めて。";
+  const tmpSummary = `/tmp/handoff-summary-${Date.now()}.txt`;
+  writeFileSync(tmpSummary, summaryPrompt, "utf-8");
+  await runShell(`bash "${TAB_MANAGER}" inject-file "${tabWT}" "${tmpSummary}"; rm -f "${tmpSummary}"`, 15000);
+  const summary = await runShell(`bash "${TAB_MANAGER}" wait-response "${tabWT}" 120`, 130000);
+
+  if (summary === "TIMEOUT" || summary.startsWith("ERROR:")) {
+    return { triggered: false, newWT: null, error: `要約取得失敗: ${summary}` };
+  }
+
+  // 2. Create new chat with context + summary
+  const CONTEXT_BUILDER = `${SCRIPTS_DIR}/project-context-builder.sh`;
+  const contextFile = `/tmp/handoff-context-${Date.now()}.txt`;
+  await runShell(`bash "${CONTEXT_BUILDER}" context "${projectId}" > "${contextFile}"`, 30000);
+
+  // Append summary
+  const contextContent = existsSync(contextFile) ? readFileSync(contextFile, "utf-8") : "";
+  const handoffContent = [
+    contextContent,
+    "",
+    "## 前チャットの要約（自動引き継ぎ）",
+    summary.substring(0, 3000),
+    "",
+    "以上の文脈を踏まえて、今後のメッセージに対応してください。「了解」とだけ返答してください。",
+  ].join("\n");
+  writeFileSync(contextFile, handoffContent, "utf-8");
+
+  // 3. Resolve new tab (this creates a fresh chat via project-tab-router)
+  // First, clear old mapping so resolve creates a new one
+  await runShell(`python3 -c "
+import json, os
+path = os.path.expanduser('~/.croppy-project-tabs.json')
+if os.path.exists(path):
+    d = json.load(open(path))
+    d.pop('${projectId}', None)
+    json.dump(d, open(path, 'w'), indent=2)
+"`, 5000);
+
+  const newWT = await runShell(`bash "${TAB_ROUTER}" resolve "${projectId}"`, 120000);
+  unlinkSync(contextFile);
+
+  if (newWT.startsWith("ERROR:")) {
+    return { triggered: true, newWT: null, error: newWT };
+  }
+
+  console.log(`[AutoHandoff] ${projectId}: ${tabWT} → ${newWT}`);
+  return { triggered: true, newWT, error: null };
+}
+
 // ─── Audit Log ──────────────────────────────────────────────
 
 function logAudit(entry: Record<string, unknown>): void {
@@ -200,7 +372,34 @@ export class ChromeOrchestrator {
       needsReview: decision.needsReview,
     });
 
-    // No project identified → return early
+    // No project from code-layer → try Claude Inbox routing
+    if (!decision.projectId && decision.method === "no-route") {
+      try {
+        const inboxResult = await claudeInboxRoute(opts.text, opts.source, opts.senderHint);
+        if (inboxResult.projectId && inboxResult.confidence >= 0.6) {
+          decision.method = "keyword"; // reuse type for audit
+          decision.projectId = inboxResult.projectId;
+          decision.confidence = inboxResult.confidence;
+          decision.reason = `Claude Inbox: ${inboxResult.reason}`;
+          decision.needsReview = inboxResult.confidence < 0.8;
+
+          logAudit({
+            timestamp: new Date().toISOString(),
+            source: opts.source,
+            method: "claude-inbox",
+            projectId: inboxResult.projectId,
+            confidence: inboxResult.confidence,
+            reason: inboxResult.reason,
+            messagePreview: opts.text.substring(0, 100),
+            needsReview: decision.needsReview,
+          });
+        }
+      } catch (e: any) {
+        console.error("[ChromeOrch] Inbox route error:", e.message);
+      }
+    }
+
+    // Still no project → return early
     if (!decision.projectId) {
       return { decision, tabWT: null, forwarded: false, error: null };
     }
@@ -268,6 +467,28 @@ export class ChromeOrchestrator {
       `bash "${TAB_RELAY}" debate "${wtA}" "${wtB}" ${JSON.stringify(topic)} ${rounds}`,
       rounds * 600 * 1000 // generous timeout: 10min per round
     );
+  }
+
+  /**
+   * Set the Inbox tab for Claude fallback routing
+   */
+  setInboxTab(wt: string, url?: string): void {
+    const config = loadInboxConfig();
+    config.inbox_tab_wt = wt;
+    if (url) config.inbox_tab_url = url;
+    saveInboxConfig(config);
+    console.log(`[ChromeOrchestrator] Inbox tab set: ${wt}`);
+  }
+
+  /**
+   * Check and trigger auto-handoff if needed
+   */
+  async checkHandoff(projectId: string, tabWT: string): Promise<{ triggered: boolean; newWT: string | null }> {
+    const result = await checkAndHandoff(projectId, tabWT);
+    if (result.triggered) {
+      console.log(`[ChromeOrchestrator] Handoff: ${projectId} ${tabWT} -> ${result.newWT}`);
+    }
+    return result;
   }
 }
 

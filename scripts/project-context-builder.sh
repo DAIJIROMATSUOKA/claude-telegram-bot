@@ -119,6 +119,128 @@ if log_match and len(log_match.group(1)) < 1000:
 " 2>/dev/null
 }
 
+
+# ============================================================
+# Query Access DB via Parallels PowerShell
+# ============================================================
+read_access_db() {
+  local PID="$1"
+  local DB_SOURCE="$HOME/Machinelab Dropbox/Matsuoka Daijiro/MLDatabase.accdb"
+  local DB_DESKTOP="$HOME/Desktop/MLDatabase.accdb"
+
+  # Check Parallels
+  if ! prlctl list --all 2>/dev/null | grep -q "running"; then
+    return
+  fi
+
+  # Copy DB to Desktop if source exists
+  if [ -f "$DB_SOURCE" ]; then
+    cp "$DB_SOURCE" "$DB_DESKTOP" 2>/dev/null
+  fi
+  if [ ! -f "$DB_DESKTOP" ]; then
+    return
+  fi
+
+  # Build WHERE clause
+  local WHERE
+  if echo "$PID" | grep -q '^M'; then
+    local MNUM="${PID#M}"
+    WHERE="[プロジェクト名] LIKE '*M${MNUM}*' OR [プロジェクト名] LIKE '*${PID}*'"
+  else
+    WHERE="[プロジェクトNo] = '${PID}'"
+  fi
+
+  # PowerShell script
+  local PS1_PATH="$HOME/Desktop/access-context-query.ps1"
+  printf '\xef\xbb\xbf' > "$PS1_PATH"
+  cat >> "$PS1_PATH" << 'PSEOF'
+$ErrorActionPreference = "Stop"
+$dbPath = "\\Mac\Home\Desktop\MLDatabase.accdb"
+try {
+    $access = New-Object -ComObject Access.Application
+    $access.OpenCurrentDatabase($dbPath)
+PSEOF
+
+  cat >> "$PS1_PATH" << PSEOF2
+    \$sql = "SELECT TOP 1 [プロジェクトNo], [プロジェクト名], [開始日], [販売先ID], [納品先ID] FROM [プロジェクトデータ] WHERE ${WHERE}"
+PSEOF2
+
+  cat >> "$PS1_PATH" << 'PSEOF3'
+    $rs = $access.CurrentDb().OpenRecordset($sql)
+    if (-not $rs.EOF) {
+        $prNo = $rs.Fields("プロジェクトNo").Value
+        $prName = $rs.Fields("プロジェクト名").Value
+        $startDate = $rs.Fields("開始日").Value
+        $custId = $rs.Fields("販売先ID").Value
+        $destId = $rs.Fields("納品先ID").Value
+        $custName = ""
+        if ($custId) {
+            $rs2 = $access.CurrentDb().OpenRecordset("SELECT [販売先] FROM [販売先] WHERE [販売先ID] = $custId")
+            if (-not $rs2.EOF) { $custName = $rs2.Fields("販売先").Value }
+            $rs2.Close()
+        }
+        $destName = ""
+        if ($destId) {
+            $rs3 = $access.CurrentDb().OpenRecordset("SELECT [納品先] FROM [納品先] WHERE [納品先ID] = $destId")
+            if (-not $rs3.EOF) { $destName = $rs3.Fields("納品先").Value }
+            $rs3.Close()
+        }
+        $quoteInfo = ""
+        try {
+            $qSql = "SELECT TOP 1 [見積書No], [件名], [見積日] FROM [見積書] WHERE [プロジェクトID] = " + $rs.Fields("プロジェクトID").Value + " ORDER BY [見積日] DESC"
+            $rs4 = $access.CurrentDb().OpenRecordset($qSql)
+            if (-not $rs4.EOF) {
+                $quoteInfo = "No." + $rs4.Fields("見積書No").Value + " " + $rs4.Fields("件名").Value + " (" + $rs4.Fields("見積日").Value + ")"
+            }
+            $rs4.Close()
+        } catch {}
+        Write-Host "NAME=$prName"
+        Write-Host "CUSTOMER=$custName"
+        Write-Host "DEST=$destName"
+        Write-Host "START=$startDate"
+        Write-Host "QUOTE=$quoteInfo"
+    } else {
+        Write-Host "NOTFOUND"
+    }
+    $rs.Close()
+    $access.CloseCurrentDatabase()
+    $access.Quit()
+    [System.Runtime.Interopservices.Marshal]::ReleaseComObject($access) | Out-Null
+} catch {
+    Write-Host "ERROR=$($_.Exception.Message)"
+}
+PSEOF3
+
+  # Execute
+  local OUTPUT
+  OUTPUT=$(prlctl exec "DJ's Windows 11" powershell.exe -ExecutionPolicy Bypass -File '\\Mac\Home\Desktop\access-context-query.ps1' 2>/dev/null)
+
+  if echo "$OUTPUT" | grep -q "NOTFOUND\|ERROR="; then
+    return
+  fi
+
+  # Parse output
+  local NAME="" CUSTOMER="" DEST="" START="" QUOTE=""
+  while IFS='=' read -r key val; do
+    case "$key" in
+      NAME) NAME="$val" ;;
+      CUSTOMER) CUSTOMER="$val" ;;
+      DEST) DEST="$val" ;;
+      START) START="$val" ;;
+      QUOTE) QUOTE="$val" ;;
+    esac
+  done <<< "$OUTPUT"
+
+  if [ -n "$NAME" ] || [ -n "$CUSTOMER" ]; then
+    echo "## ACCESS DB情報"
+    [ -n "$NAME" ] && echo "案件名: $NAME"
+    [ -n "$CUSTOMER" ] && echo "販売先: $CUSTOMER"
+    [ -n "$DEST" ] && echo "納品先: $DEST"
+    [ -n "$START" ] && echo "開始日: $START"
+    [ -n "$QUOTE" ] && echo "最新見積: $QUOTE"
+  fi
+}
+
 # ============================================================
 # Build full context prompt
 # ============================================================
@@ -142,6 +264,13 @@ build_context() {
   if [ -n "$OBS" ]; then
     echo "## Obsidianノート"
     echo "$OBS"
+    echo ""
+  fi
+
+  # Access DB section (optional, requires Parallels)
+  local ACCESS=$(read_access_db "$PID")
+  if [ -n "$ACCESS" ]; then
+    echo "$ACCESS"
     echo ""
   fi
 
