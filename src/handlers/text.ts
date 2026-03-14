@@ -43,7 +43,7 @@ import { handleInboxReply } from "./inbox";
 import { dispatchToWorker, handleBridgeReply } from "./croppy-bridge";
 import { handleChatReply } from "./claude-chat";
 import { routeToProjectNotes } from "../services/obsidian-writer";
-import { getOrchestrator } from "../utils/orchestrator-init";
+import { getChromeOrchestrator } from "./orchestrator-chrome";
 
 /**
  * Handle incoming text messages.
@@ -90,7 +90,7 @@ export async function handleText(ctx: Context): Promise<void> {
 
     // === F5: Orchestrator routing → claude.ai project chats ===
     try {
-      const orch = getOrchestrator();
+      const orch = getChromeOrchestrator();
       if (orch) {
         const routeResult = orch.quickRoute(message, "telegram");
         if (routeResult.projectId && routeResult.confidence >= 0.8) {
@@ -99,7 +99,7 @@ export async function handleText(ctx: Context): Promise<void> {
             text: message,
             source: "telegram",
             autoPost: true,
-            codeOnly: true, // Only code-layer for DJ direct messages (no Claude Inbox cost)
+             // Only code-layer for DJ direct messages (no Claude Inbox cost)
           }).catch((e: any) => console.error("[F5] Route error:", e));
         }
       }
