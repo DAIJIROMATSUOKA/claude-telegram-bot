@@ -27,6 +27,17 @@ const DATE_PREFIX_RE = /^\d{4}-\d{2}-\d{2}_\d{4}/;
 const bridgeReplyMap = new Map<number, string>();
 const BRIDGE_REPLY_MAP_MAX = 100;
 
+// Check if a WT belongs to a project tab (skip J-WORKER marking for these)
+function isProjectTab(wt: string): boolean {
+  try {
+    const mapPath = `${process.env.HOME}/.croppy-project-tabs.json`;
+    const { existsSync, readFileSync } = require('fs');
+    if (!existsSync(mapPath)) return false;
+    const map = JSON.parse(readFileSync(mapPath, 'utf-8'));
+    return Object.values(map).some((v: any) => typeof v === 'string' && v.includes(`|${wt}`));
+  } catch { return false; }
+}
+
 export function registerBridgeReply(msgId: number, wt: string): void {
   bridgeReplyMap.set(msgId, wt);
   // Evict oldest if over limit
@@ -388,15 +399,17 @@ export async function waitAndRelayResponse(ctx: Context, wt: string, maxWaitMs =
         }
       }
 
-      // Fire-and-forget: rename conversation with date prefix
-      formatConversationTitle(wt).catch(e => console.error('[Bridge] Title format error:', e));
+      // Skip rename/re-mark for project tabs (they have their own naming)
+      if (!isProjectTab(wt)) {
+        // Fire-and-forget: rename conversation with date prefix
+        formatConversationTitle(wt).catch(e => console.error('[Bridge] Title format error:', e));
 
-      // Re-mark tab title (claude.ai overwrites it with conversation title)
-      const workerList = await runLocal(`bash ${TAB_MANAGER} list`);
-      if (!workerList.includes(wt)) {
-        // Title was overwritten, re-mark
-        const num = wt.endsWith(':5') ? '1' : wt.endsWith(':6') ? '2' : '1';
-        await runLocal(`bash ${TAB_MANAGER} mark ${wt} ${num}`);
+        // Re-mark tab title (claude.ai overwrites it with conversation title)
+        const workerList = await runLocal(`bash ${TAB_MANAGER} list`);
+        if (!workerList.includes(wt)) {
+          const num = wt.endsWith(':5') ? '1' : wt.endsWith(':6') ? '2' : '1';
+          await runLocal(`bash ${TAB_MANAGER} mark ${wt} ${num}`);
+        }
       }
       return;
     }

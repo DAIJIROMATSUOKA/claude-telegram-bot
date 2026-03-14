@@ -107,7 +107,25 @@ AS
 # ============================================================
 ready)
   HEALTH=$("$0" health)
-  echo "$HEALTH" | grep "READY" | head -1 | cut -d'|' -f1 | tr -d ' '
+  # Get project tab WTs to exclude (project tabs should not be used as generic workers)
+  PROJECT_WTS=""
+  if [ -f "$HOME/.croppy-project-tabs.json" ]; then
+    PROJECT_WTS=$(python3 -c "
+import json, os
+d = json.load(open(os.path.expanduser('~/.croppy-project-tabs.json')))
+for v in d.values():
+    wt = v.split('|')[-1] if '|' in v else ''
+    if wt: print(wt)
+" 2>/dev/null)
+  fi
+  # Find first READY tab that is NOT a project tab
+  echo "$HEALTH" | grep "READY" | while IFS='|' read -r wt rest; do
+    wt_clean=$(echo "$wt" | tr -d ' ')
+    if ! echo "$PROJECT_WTS" | grep -qx "$wt_clean"; then
+      echo "$wt_clean"
+      break
+    fi
+  done
   ;;
 
 # ============================================================
