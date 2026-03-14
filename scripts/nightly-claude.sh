@@ -25,8 +25,7 @@ log() {
 }
 
 notify() {
-  bash ~/scripts/notify-line.sh "通知"
-    -d "chat_id=${TELEGRAM_ALLOWED_USERS}" -d "text=$1" > /dev/null 2>&1 || true
+  bash ~/scripts/notify-line.sh "$1" 2>/dev/null || true
 }
 
 cleanup() {

@@ -169,10 +169,7 @@ $SUMMARY
 
 <code>Run ID: $RUN_ID</code>"
 
-  bash ~/scripts/notify-line.sh "通知"
-    -H "Content-Type: application/json" \
-    -d "{\"chat_id\": \"$TELEGRAM_USER_ID\", \"text\": $(echo "$MESSAGE" | jq -Rs .), \"parse_mode\": \"HTML\"}" \
-    > /dev/null
+  bash ~/scripts/notify-line.sh "$MESSAGE" 2>/dev/null || true
 
   log "✅ Telegram notification sent"
 else

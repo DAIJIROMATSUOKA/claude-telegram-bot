@@ -31,7 +31,29 @@ function getDailyNotePath(): string {
 function ensureDailyNote(path: string): void {
   if (!existsSync(path)) {
     const date = path.split("/").pop()?.replace(".md", "") || "";
-    const template = `# ${date}\n\n## 📋 Tasks\n\n## 📰 News\n\n## 💬 Telegram Log\n`;
+    // Carry over uncompleted tasks from yesterday
+    let carryover = "";
+    try {
+      const pathMod = require("path");
+      const dir = pathMod.dirname(path);
+      const parentDir = pathMod.dirname(dir);
+      const today = new Date(new Date().getTime() + 9 * 60 * 60 * 1000);
+      const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
+      const yDir = join(parentDir, String(yesterday.getUTCMonth() + 1).padStart(2, "0"));
+      const yFile = join(yDir, String(yesterday.getUTCDate()).padStart(2, "0") + ".md");
+      if (existsSync(yFile)) {
+        const yContent = readFileSync(yFile, "utf-8");
+        const lines = yContent.split("\n");
+        const unchecked = lines.filter((l: string) => l.startsWith("- [ ] "));
+        if (unchecked.length > 0) {
+          carryover = unchecked.join("\n") + "\n";
+          console.log("[Obsidian] Carried over " + unchecked.length + " tasks from yesterday");
+        }
+      }
+    } catch (e) {
+      console.error("[Obsidian] Task carryover error:", e);
+    }
+    const template = `# ${date}\n\n## 📋 Tasks\n${carryover}\n## 📰 News\n\n## 💬 Telegram Log\n`;
     writeFileSync(path, template, "utf-8");
     console.log(`[Obsidian] Created daily note: ${path}`);
   }

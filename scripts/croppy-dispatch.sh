@@ -14,9 +14,7 @@ ARGS=$(echo "$INPUT" | sed "s|^$CMD *||")
 
 # === Helpers ===
 send_telegram() {
-  source "$BOT_DIR/.env" 2>/dev/null
-  bash ~/scripts/notify-line.sh "通知"
-    -d "chat_id=$TELEGRAM_ALLOWED_USERS" -d "text=$1" > /dev/null 2>&1
+  bash ~/scripts/notify-line.sh "$1" 2>/dev/null || true
 }
 
 todoist_token() {

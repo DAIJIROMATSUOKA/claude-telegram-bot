@@ -33,13 +33,9 @@ notify() {
     return
   fi
   source "$ENV_FILE" 2>/dev/null || true
-  if [ -n "${TELEGRAM_BOT_TOKEN:-}" ] && [ -n "${TELEGRAM_ALLOWED_USERS:-}" ]; then
-    # Telegram max 4096 chars
-    MSG=$(echo "$1" | head -c 4000)
-    bash ~/scripts/notify-line.sh "通知"
-      -d "chat_id=${TELEGRAM_ALLOWED_USERS}" \
-      --data-urlencode "text=${MSG}" > /dev/null 2>&1 || true
-  fi
+  # LINE max 5000 chars (truncated by notify-line.sh)
+  local MSG=$(echo "$1" | head -c 4000)
+  bash ~/scripts/notify-line.sh "$MSG" 2>/dev/null || true
 }
 
 # === Pre-flight ===

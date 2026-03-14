@@ -30,8 +30,5 @@ else
 📁 ${CHANGED%,}"
 fi
 
-if [ -n "${TELEGRAM_BOT_TOKEN:-}" ] && [ -n "${TELEGRAM_ALLOWED_USERS:-}" ]; then
-  bash ~/scripts/notify-line.sh "通知"
-    -d "chat_id=$TELEGRAM_ALLOWED_USERS" -d "text=$MSG" > /dev/null 2>&1
-fi
+bash ~/scripts/notify-line.sh "$MSG" 2>/dev/null || true
 rm -f /tmp/autokick-armed

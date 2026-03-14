@@ -47,9 +47,8 @@ if [ "$needs_restart" -eq 1 ]; then
     MSG="Poller auto-restart FAILED"
   fi
   
-  # Telegram notification
-  source ~/claude-telegram-bot/.env 2>/dev/null
-  bash ~/scripts/notify-line.sh $MSG > /dev/null 2>&1
+  # LINE notification
+  bash ~/scripts/notify-line.sh "$MSG" 2>/dev/null || true
 fi
 
 # Keep log small (last 100 lines)

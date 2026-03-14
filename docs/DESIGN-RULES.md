@@ -201,6 +201,18 @@ Stop: Deliverablesが揃ったら終了
 - 新規作成タブ（new-chat）は初回応答が返るまでBUSY → debate開始前に必ずwait-responseでドレイン
 - Pollerが60-90秒でSIGTERMされる問題 → `--fire`で長いタスクを投げた場合、Pollerリスタートでorphanedタスクになる。debate等の長時間タスクは必ず`--fire`+後から`--check`
 - osascriptのAppleScript内でシングルクォートのエスケープは `\\"` → 多層エスケープ地獄。Python patchでsed代替が安全
+
+### Handoff信頼性 (2026-03-15)
+- checkAndHandoff: D1マッピングを「削除→resolve」ではなく「新規作成→D1上書き」の順序にすること。削除→失敗=孤児状態
+- token-estimateはDOM文字数のみでProject Instructions/Artifactsを含まない→常に過小評価。pct>=70で早期発火が正解
+- 要約取得はinjectが通らないと不可能→Defence Line 1(15回毎にai-context.mdを外部保存)で保険
+- ai-context.mdはproject-context-builder.shが新チャット作成時に自動読み込み→handoff失敗時も文脈保全
+- handoff成功後に/tmp/autokick-target-urlを新URLで更新しないとauto-kickが旧チャットを見続ける
+
+### check-status拡張 (2026-03-15)
+- 「続ける」/「Continue」ボタン = TOOL_LIMIT。check-statusにREADY/BUSY以外の第3状態として追加
+- 「会話が長すぎます」= CONV_LIMIT。bodyTextマッチで検出→route()が緊急handoff+再inject
+- 「レート制限」= RATE_LIMIT。新チャットでも同じ制限なのでhandoff無意味→G5キューでバッファ
 ### mdb-tools (Access DB)
 - bash直接だと日本語テーブル名で失敗 → Python subprocess経由なら動く
 - `mdb-export` + csv.DictReader で構造化データ取得

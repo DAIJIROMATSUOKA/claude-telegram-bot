@@ -37,16 +37,8 @@ AGE=$(( NOW - LAST_HEARTBEAT ))
 if [ "$AGE" -ge "$MAX_AGE" ]; then
     log "ALERT: heartbeatが${AGE}秒前で停止。Botをkillする（LaunchAgentが再起動する）"
 
-    # Telegram通知（Botが死ぬ前に送る）
-    ENV_FILE="$HOME/claude-telegram-bot/.env"
-    TOKEN=$(grep '^TELEGRAM_BOT_TOKEN=' "$ENV_FILE" 2>/dev/null | cut -d'=' -f2)
-    CHAT_ID=$(grep '^TELEGRAM_ALLOWED_USERS=' "$ENV_FILE" 2>/dev/null | cut -d'=' -f2 | cut -d',' -f1)
-    if [ -n "$TOKEN" ] && [ -n "$CHAT_ID" ]; then
-        bash ~/scripts/notify-line.sh "通知"
-            -d chat_id="$CHAT_ID" \
-            -d text="⚠️ ハング検知: heartbeatが${AGE}秒停止。自動再起動します..." \
-            --max-time 5 > /dev/null 2>&1 || true
-    fi
+    # LINE通知（Botが死ぬ前に送る）
+    bash ~/scripts/notify-line.sh "⚠️ ハング検知: heartbeatが${AGE}秒停止。自動再起動します..." 2>/dev/null || true
 
     # Graceful shutdown first (SIGTERM), then SIGKILL if needed
     pkill -15 -f "bun.*index.ts" 2>/dev/null

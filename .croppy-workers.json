@@ -1,0 +1,12 @@
+{
+  "workers": [
+    {
+      "num": 1,
+      "url": "https://claude.ai/project/019c15f4-3d2d-7263-a308-e7f6ccd6b3f8"
+    },
+    {
+      "num": 2,
+      "url": "https://claude.ai/project/019c15f4-3d2d-7263-a308-e7f6ccd6b3f8"
+    }
+  ]
+}

@@ -94,6 +94,7 @@ export async function handleText(ctx: Context): Promise<void> {
       const orch = getChromeOrchestrator();
       if (orch) {
         const routeResult = orch.quickRoute(message, "telegram");
+        console.log(`[Text] Orchestrator quickRoute: method=${routeResult.method} project=${routeResult.projectId} conf=${routeResult.confidence}`);
         if (routeResult.projectId && routeResult.confidence >= 0.8) {
           // Code-layer match: route to project tab (blocking — G1 応答リレー)
           const result = await orch.route({
@@ -102,6 +103,7 @@ export async function handleText(ctx: Context): Promise<void> {
             autoPost: true,
             ctx, // G1: pass ctx for Telegram reply
           });
+          console.log(`[Text] Orchestrator route result: forwarded=${result.forwarded} tabWT=${result.tabWT} error=${result.error}`);
           if (result.forwarded) {
             orchestratorHandled = true;
           }
@@ -118,9 +120,9 @@ export async function handleText(ctx: Context): Promise<void> {
           }
         }
       }
-    } catch (e) {
+    } catch (e: any) {
       // Non-fatal: orchestrator failure falls through to Bridge
-      console.error("[Orch] Route error (falling through to Bridge):", e);
+      console.error("[Orch] Route EXCEPTION (falling through to Bridge):", e?.message || e, e?.stack?.substring(0, 300));
     }
 
   // ── Chat Reply Routing: TelegramリプライをClaude.aiチャットにルーティング
@@ -244,9 +246,11 @@ export async function handleText(ctx: Context): Promise<void> {
   // ── 🦞 Croppy Bridge: Route default messages to Worker tabs ──
   // G2: Skip bridge if orchestrator already handled this message
   if (orchestratorHandled) {
+    console.log("[Text] G2: Orchestrator handled, skipping Bridge");
     stopProcessing();
     return;
   }
+  console.log("[Text] Orchestrator did NOT handle, falling through to Bridge");
   const BRIDGE_MODE = true; // false → revert to Claude CLI (Jarvis direct)
   if (BRIDGE_MODE) {
     stopProcessing();
