@@ -9,6 +9,7 @@
  */
 
 import { exec } from 'child_process';
+import { writeFileSync as bwSync } from 'fs';
 import { promisify } from 'util';
 import type { Context } from 'grammy';
 
@@ -285,13 +286,12 @@ export async function dispatchToWorker(ctx: Context, task: string, options?: { r
 async function injectAndNotify(ctx: Context, wt: string, task: string, raw = false): Promise<void> {
   const prompt = raw ? task : buildWorkerPrompt(task);
 
-  // Escape for shell - write to temp file to avoid escaping issues
   const tmpFile = `/tmp/croppy-bridge-task-${Date.now()}.txt`;
-  await runLocal(`cat > ${tmpFile} << 'TASKEOF'\n${prompt}\nTASKEOF`);
+  // Write to temp file and use inject-file (avoids all shell escaping)
+  bwSync(tmpFile, prompt, 'utf-8');
 
-  // Read from file and inject (avoids shell escaping)
   const result = await runLocal(
-    `MSG=$(cat ${tmpFile}) && bash ${TAB_MANAGER} inject ${wt} "$MSG" && rm -f ${tmpFile}`,
+    `bash ${TAB_MANAGER} inject-file ${wt} ${tmpFile}; rm -f ${tmpFile}`,
     20000
   );
 
