@@ -250,3 +250,6 @@ IDLE → RUNNING → DONE/FAILED/WAITING
 - claude.ai APIチャットは「考える」だけ。M1上のコマンド実行にはexec bridge連携ループが必要
 - 現状はdry-run（計画発見のみ）として運用。実行はDJ確認後に手動
 - パスの推測禁止: プロジェクトdocsに入ってないSonnetは実パスを知らない
+- API completionはtool_useイベントを返さない(completionタイプのみ)。ブラウザのツール実行ループはクライアント側の実装
+- bash_tool/computer useはAnthropicコンテナ上で動く。M1のコマンド実行にはexec bridge連携が唯一の手段
+- 実行ループ設計: chat応答パース→exec bridge→M1実行→結果をchatに再投稿→次ステップ
