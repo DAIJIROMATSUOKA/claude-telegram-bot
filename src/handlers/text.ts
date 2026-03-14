@@ -94,13 +94,19 @@ export async function handleText(ctx: Context): Promise<void> {
       if (orch) {
         const routeResult = orch.quickRoute(message, "telegram");
         if (routeResult.projectId && routeResult.confidence >= 0.8) {
-          // Fire-and-forget: route to claude.ai project chat in background
+          // Code-layer match: auto-post to project tab
           orch.route({
             text: message,
             source: "telegram",
             autoPost: true,
-             // Only code-layer for DJ direct messages (no Claude Inbox cost)
-          }).catch((e: any) => console.error("[F5] Route error:", e));
+          }).catch((e: any) => console.error("[Orch] Route error:", e));
+        } else if (routeResult.method === "no-route") {
+          // No code-layer match: try Claude Inbox fallback (fire-and-forget)
+          orch.route({
+            text: message,
+            source: "telegram",
+            autoPost: true,
+          }).catch((e: any) => console.error("[Orch] Inbox fallback error:", e));
         }
       }
     } catch (e) {
