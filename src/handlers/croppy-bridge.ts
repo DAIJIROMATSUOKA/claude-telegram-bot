@@ -347,8 +347,19 @@ export async function waitAndRelayResponse(ctx: Context, wt: string, maxWaitMs =
     const status = await runLocal(`bash ${TAB_MANAGER} check-status ${wt}`, 10000);
 
     if (status.trim() === 'READY') {
-      await new Promise(r => setTimeout(r, 1500)); // Settle delay
-      const response = await runLocal(`bash ${TAB_MANAGER} read-response ${wt}`, 10000);
+      // Double-check: read response, wait, re-check status + response stability
+      // Prevents false READY during tool-use gaps (web search, code exec)
+      await new Promise(r => setTimeout(r, 2000));
+      const firstRead = await runLocal(`bash ${TAB_MANAGER} read-response ${wt}`, 10000);
+      await new Promise(r => setTimeout(r, 3000));
+      const recheck = await runLocal(`bash ${TAB_MANAGER} check-status ${wt}`, 10000);
+      if (recheck.trim() === 'BUSY') {
+        // Claude went back to BUSY (tool-use cycle), keep polling
+        continue;
+      }
+      const secondRead = await runLocal(`bash ${TAB_MANAGER} read-response ${wt}`, 10000);
+      // Use the latest read (secondRead may have more content)
+      const response = secondRead || firstRead;
       
       if (response && !response.includes('NO_RESPONSE') && !response.includes('ERROR')) {
         // Remove consecutive duplicate lines (claude.ai thinking indicators + UI duplication)
