@@ -193,6 +193,14 @@ Stop: Deliverablesが揃ったら終了
 - withMediaQueue() で重いAI処理を直列化（同時実行=メモリ圧迫SIGTERM）
 - patch-queue.py は冪等ではない（2回実行で重複宣言エラー）
 
+
+### Chrome inject / debate (2026-03-14)
+- `inject-raw` はshell引数渡し → 応答テキスト（改行・引用符・特殊文字）で100%壊れる。**inject-file（ファイルパス渡し+base64エンコード）が唯一の安全な方法**
+- `inject-raw` のBUSY判定にRetryボタンチェックが抜けていた → 応答完了後もBLOCKED:BUSY を返す。check-statusとinject-rawのBUSY判定ロジックは必ず同一にする
+- debateの各ターン開始前に `wait-response` で前の応答をドレインしないと、前のBUSY状態が残ってinject失敗する
+- 新規作成タブ（new-chat）は初回応答が返るまでBUSY → debate開始前に必ずwait-responseでドレイン
+- Pollerが60-90秒でSIGTERMされる問題 → `--fire`で長いタスクを投げた場合、Pollerリスタートでorphanedタスクになる。debate等の長時間タスクは必ず`--fire`+後から`--check`
+- osascriptのAppleScript内でシングルクォートのエスケープは `\\"` → 多層エスケープ地獄。Python patchでsed代替が安全
 ### mdb-tools (Access DB)
 - bash直接だと日本語テーブル名で失敗 → Python subprocess経由なら動く
 - `mdb-export` + csv.DictReader で構造化データ取得
