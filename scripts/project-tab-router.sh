@@ -10,6 +10,7 @@
 
 SCRIPTS_DIR="$(cd "$(dirname "$0")" && pwd)"
 TAB_MANAGER="$SCRIPTS_DIR/croppy-tab-manager.sh"
+CONTEXT_BUILDER="$SCRIPTS_DIR/project-context-builder.sh"
 GATEWAY="https://jarvis-memory-gateway.jarvis-matsuoka.workers.dev"
 LOCAL_CACHE="$HOME/.croppy-project-tabs.json"
 LOG="/tmp/project-tab-router.log"
@@ -158,19 +159,57 @@ resolve)
     fi
   fi
 
-  # Step 4: No mapping exists -> create new chat
-  log "resolve: $PROJECT_ID creating new chat"
-  RESULT=$(bash "$TAB_MANAGER" new-chat "This is the project chat for $PROJECT_ID. All information about this project will be posted here." 2>/dev/null)
-  NEW_WT=$(echo "$RESULT" | grep '^WT:' | awk '{print $2}')
-  CONV_URL=$(echo "$RESULT" | grep '^CONV_URL:' | awk '{print $2}')
+  # Step 4: No mapping exists -> create new chat with Dropbox/Obsidian context
+  log "resolve: $PROJECT_ID creating new chat with context"
 
-  if [ -z "$NEW_WT" ]; then
-    echo "ERROR: failed to create chat for $PROJECT_ID"
+  # Get chat name from Dropbox folder
+  CHAT_NAME=$(bash "$CONTEXT_BUILDER" chat-name "$PROJECT_ID" 2>/dev/null)
+  [ -z "$CHAT_NAME" ] && CHAT_NAME="$PROJECT_ID"
+  log "resolve: $PROJECT_ID chat-name=$CHAT_NAME"
+
+  # Build context and write to file (avoids shell quoting issues)
+  CONTEXT_FILE="/tmp/project-context-$PROJECT_ID-$$.txt"
+  bash "$CONTEXT_BUILDER" context "$PROJECT_ID" > "$CONTEXT_FILE" 2>/dev/null
+
+  # Open new project tab
+  CONFIG="${HOME}/claude-telegram-bot/.croppy-workers.json"
+  PROJECT_URL="https://claude.ai/project/019c15f4-3d2d-7263-a308-e7f6ccd6b3f8"
+  if [ -f "$CONFIG" ]; then
+    PROJECT_URL=$(python3 -c "import json; d=json.load(open('$CONFIG')); print(d['workers'][0]['url'])" 2>/dev/null || echo "$PROJECT_URL")
+  fi
+
+  BEFORE_COUNT=$(osascript -e 'tell application "Google Chrome" to return (count of tabs of front window)' 2>/dev/null)
+  WIDX=$(osascript -e 'tell application "Google Chrome" to return index of front window' 2>/dev/null)
+  osascript -e "tell application \"Google Chrome\" to tell window $WIDX to set URL of (make new tab) to \"$PROJECT_URL\"" 2>/dev/null
+  NEW_TIDX=$((BEFORE_COUNT + 1))
+  NEW_WT="${WIDX}:${NEW_TIDX}"
+
+  log "resolve: $PROJECT_ID opened tab $NEW_WT, waiting for page load..."
+  sleep 8
+
+  # Inject full context via file (single step, no seed message)
+  INJECT_RESULT=$(bash "$TAB_MANAGER" inject-file "$NEW_WT" "$CONTEXT_FILE" 2>/dev/null)
+  rm -f "$CONTEXT_FILE"
+
+  if ! echo "$INJECT_RESULT" | grep -q "INSERTED:SENT"; then
+    log "resolve: $PROJECT_ID inject failed: $INJECT_RESULT"
+    echo "ERROR: context inject failed for $PROJECT_ID: $INJECT_RESULT"
     exit 1
   fi
 
+  # Get conversation URL
+  CONV_URL=$(osascript -e "tell application \"Google Chrome\" to return URL of tab $NEW_TIDX of window $WIDX" 2>/dev/null)
+
+  # Rename conversation to project name (wait for Claude to process first message)
+  if [ "$CHAT_NAME" != "$PROJECT_ID" ]; then
+    sleep 3
+    ESCAPED_NAME=$(printf '%s' "$CHAT_NAME" | sed "s/'/'\\\\''/g")
+    bash "$TAB_MANAGER" rename-conversation "$NEW_WT" "$ESCAPED_NAME" 2>/dev/null
+    log "resolve: $PROJECT_ID renamed to $CHAT_NAME"
+  fi
+
   d1_set "$PROJECT_ID" "${CONV_URL}|${NEW_WT}"
-  log "resolve: $PROJECT_ID -> $NEW_WT (new chat created)"
+  log "resolve: $PROJECT_ID -> $NEW_WT (new chat created: $CHAT_NAME)"
   echo "$NEW_WT"
   ;;
 
