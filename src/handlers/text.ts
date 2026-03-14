@@ -1,6 +1,7 @@
 import { handleImsgSend } from "./imsg-send";
 import { handleMailSend } from "./mail-send";
 import { handleLinePost } from "./line-post";
+import { handleDeadlineInput } from "./deadline-input";
 /**
  * Text message handler for Claude Telegram Bot.
  *
@@ -80,6 +81,10 @@ export async function handleText(ctx: Context): Promise<void> {
     await ctx.reply("Unauthorized. Contact the bot owner for access.");
     return;
   }
+
+
+    // === Deadline input: M1300の納期3/31 ===
+    if (await handleDeadlineInput(ctx)) return;
 
     // === Project routing: detect M-numbers in DJ messages ===
     try {

@@ -11,6 +11,7 @@ import { exec } from "child_process";
 import { enqueueMessage, dequeueForProject } from "../utils/message-queue";
 import { promisify } from "util";
 import { appendFileSync, existsSync, mkdirSync, writeFileSync, unlinkSync, readFileSync } from "fs";
+import { extractMachineNo, getProjectContext } from "../project-context-injector";
 import { homedir } from "os";
 
 const execAsync = promisify(exec);
@@ -659,9 +660,21 @@ export class ChromeOrchestrator {
 
         const prefix = `[${opts.source}] ${opts.senderHint || ""}`.trim();
         const message = prefix ? `${prefix}\n\n${opts.text}` : opts.text;
+        // Access DB context injection (diff-based, from nightly cache)
+        let fullMessage = message;
+        if (decision.projectId) {
+          const machineKey = extractMachineNo(decision.projectId);
+          if (machineKey) {
+            const accessCtx = getProjectContext(machineKey);
+            if (accessCtx) {
+              fullMessage = accessCtx + "\n---\n" + message;
+              console.log(`[ChromeOrch] Injected Access context for M${machineKey}`);
+            }
+          }
+        }
         // Use inject-file to avoid shell quoting issues (lesson: 2026-03-14)
         const tmpFile = `/tmp/orch-inject-${Date.now()}.txt`;
-        writeFileSync(tmpFile, message, "utf-8");
+        writeFileSync(tmpFile, fullMessage, "utf-8");
         const injectResult = await runShell(
           `bash "${TAB_MANAGER}" inject-file "${tabWT}" "${tmpFile}"; rm -f "${tmpFile}"`,
           30000
