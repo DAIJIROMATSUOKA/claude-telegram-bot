@@ -9,7 +9,7 @@
 
 import { exec } from "child_process";
 import { promisify } from "util";
-import { appendFileSync, existsSync, mkdirSync } from "fs";
+import { appendFileSync, existsSync, mkdirSync, writeFileSync, unlinkSync } from "fs";
 import { homedir } from "os";
 
 const execAsync = promisify(exec);
@@ -225,9 +225,12 @@ export class ChromeOrchestrator {
       try {
         const prefix = `[${opts.source}] ${opts.senderHint || ""}`.trim();
         const message = prefix ? `${prefix}\n\n${opts.text}` : opts.text;
+        // Use inject-file to avoid shell quoting issues (lesson: 2026-03-14)
+        const tmpFile = `/tmp/orch-inject-${Date.now()}.txt`;
+        writeFileSync(tmpFile, message, "utf-8");
         const injectResult = await runShell(
-          `bash "${TAB_MANAGER}" inject-raw "${tabWT}" ${JSON.stringify(message)}`,
-          15000
+          `bash "${TAB_MANAGER}" inject-file "${tabWT}" "${tmpFile}"; rm -f "${tmpFile}"`,
+          30000
         );
         const forwarded = injectResult.includes("INSERTED:SENT");
         return { decision, tabWT, forwarded, error: forwarded ? null : injectResult };
