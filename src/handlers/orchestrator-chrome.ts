@@ -512,21 +512,15 @@ export class ChromeOrchestrator {
               opts.ctx.api.deleteMessage(opts.ctx.chat!.id, origMsgId).catch(() => {});
             }
 
-            // G1: Wait for Claude to start processing (BUSY) before relay
-            // Without this, check-status returns READY before Claude starts → NO_RESPONSE
-            let seenBusy = false;
-            for (let i = 0; i < 15 && !seenBusy; i++) {
-              await new Promise(r => setTimeout(r, 1000));
-              const st = await runShell(`bash "${TAB_MANAGER}" check-status "${tabWT}"`, 10000);
-              console.log(`[ChromeOrch] G1 pre-relay status[${i}]: ${st.trim()}`);
-              if (st.trim() === "BUSY") seenBusy = true;
-            }
-            if (!seenBusy) {
-              console.warn("[ChromeOrch] G1: never saw BUSY — Claude may not have started");
-            }
+            // G1: Initial delay for Claude to start processing after inject
+            // check-status BUSY detection is unreliable right after inject
+            // (Claude needs ~3-5s to start showing Stop button)
+            console.log(`[ChromeOrch] G1: waiting 5s for Claude to start processing...`);
+            await new Promise(r => setTimeout(r, 5000));
 
             // G1: Wait for response and relay to Telegram
-            // waitAndRelayResponse also registers bridgeReplyMap (G4: リプライ→同タブ)
+            // waitAndRelayResponse handles BUSY->READY polling with double-READY check
+            // Also registers bridgeReplyMap (G4: reply->same tab)
             await waitAndRelayResponse(opts.ctx, tabWT!, 180000, undefined, header);
           } catch (e: any) {
             console.error("[ChromeOrch] G1 relay error:", e.message);
