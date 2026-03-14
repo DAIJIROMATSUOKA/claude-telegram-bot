@@ -14,6 +14,7 @@ CONTEXT_BUILDER="$SCRIPTS_DIR/project-context-builder.sh"
 GATEWAY="https://jarvis-memory-gateway.jarvis-matsuoka.workers.dev"
 LOCAL_CACHE="$HOME/.croppy-project-tabs.json"
 LOG="/tmp/project-tab-router.log"
+MAX_PROJECT_TABS=6
 
 # Validate W:T format (digits:digits)
 validate_wt() {
@@ -119,6 +120,86 @@ find_tab_by_url() {
       return 0
     fi
   done
+}
+
+
+# ============================================================
+# Close excess project tabs (keep MAX_PROJECT_TABS open)
+# Closes oldest tabs by WT position (lowest index = opened earliest)
+# ============================================================
+close_excess_project_tabs() {
+  local exclude_wt="$1"  # newly created tab, don't close it
+  if [ ! -f "$LOCAL_CACHE" ]; then return; fi
+
+  # Get all project tabs with valid WTs
+  local open_tabs=""
+  local count=0
+  while IFS='|' read -r proj_id url wt; do
+    if [ -n "$wt" ] && [ "$wt" != "$exclude_wt" ]; then
+      # Check if tab is actually open
+      local status
+      status=$(bash "$TAB_MANAGER" check-status "$wt" 2>/dev/null)
+      if [ "$status" = "READY" ] || [ "$status" = "BUSY" ]; then
+        open_tabs="$open_tabs $proj_id|$wt"
+        count=$((count + 1))
+      fi
+    fi
+  done < <(python3 -c "
+import json, os
+d = json.load(open(os.path.expanduser('$LOCAL_CACHE')))
+for k, v in d.items():
+    parts = v.split('|')
+    url = parts[0] if len(parts) > 0 else ''
+    wt = parts[1] if len(parts) > 1 else ''
+    print(f'{k}|{url}|{wt}')
+" 2>/dev/null)
+
+  # +1 for the newly created tab
+  local total=$((count + 1))
+  if [ "$total" -le "$MAX_PROJECT_TABS" ]; then
+    log "close_excess: $total tabs open (limit=$MAX_PROJECT_TABS), no cleanup needed"
+    return
+  fi
+
+  local excess=$((total - MAX_PROJECT_TABS))
+  log "close_excess: $total tabs open, closing $excess oldest"
+
+  # Sort by WT index (ascending = oldest first) and close excess
+  local closed=0
+  for entry in $(echo "$open_tabs" | tr ' ' '
+' | sort -t: -k2 -n | head -$excess); do
+    local proj=$(echo "$entry" | cut -d'|' -f1)
+    local wt=$(echo "$entry" | cut -d'|' -f2)
+    
+    # Skip if BUSY
+    local st
+    st=$(bash "$TAB_MANAGER" check-status "$wt" 2>/dev/null)
+    if [ "$st" = "BUSY" ]; then
+      log "close_excess: $proj ($wt) is BUSY, skipping"
+      continue
+    fi
+
+    # Close the tab
+    local widx=$(echo "$wt" | cut -d: -f1)
+    local tidx=$(echo "$wt" | cut -d: -f2)
+    osascript -e "tell application "Google Chrome" to close tab $tidx of window $widx" 2>/dev/null
+    
+    # Clear WT from mapping (keep URL for re-resolve)
+    python3 -c "
+import json, os
+path = os.path.expanduser('$LOCAL_CACHE')
+d = json.load(open(path))
+if '$proj' in d:
+    url = d['$proj'].split('|')[0]
+    d['$proj'] = url + '|'
+    json.dump(d, open(path, 'w'), indent=2)
+" 2>/dev/null
+    
+    log "close_excess: closed $proj ($wt)"
+    closed=$((closed + 1))
+  done
+  
+  log "close_excess: closed $closed tabs"
 }
 
 # ============================================================
@@ -234,6 +315,9 @@ resolve)
 
   d1_set "$PROJECT_ID" "${CONV_URL}|${NEW_WT}" 2>/dev/null
   log "resolve: $PROJECT_ID -> $NEW_WT (new chat created: $CHAT_NAME)"
+
+  # Close excess project tabs (keep MAX_PROJECT_TABS)
+  close_excess_project_tabs "$NEW_WT"
   validate_wt "$NEW_WT"
   ;;
 
