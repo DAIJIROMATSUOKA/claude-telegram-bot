@@ -375,8 +375,8 @@ check-status)
   WIDX=$(echo "$WT" | cut -d: -f1)
   TIDX=$(echo "$WT" | cut -d: -f2)
   
-  # Use base64-encoded JS to avoid all escaping issues
-  JS_B64=$(printf '%s' '(() => { var e = document.querySelector(".ProseMirror"); if (!e) return "NO_EDITOR"; var btns = document.querySelectorAll("button"); var hasRetry = false; var hasStop = false; for (var i = 0; i < btns.length; i++) { var al = btns[i].getAttribute("aria-label") || ""; if (al === "Retry" || al.indexOf("\u518d") >= 0) hasRetry = true; if ((al === "Stop Response" || al.indexOf("\u505c\u6b62") >= 0) && btns[i].getBoundingClientRect().width > 0) hasStop = true; } if (hasRetry) return "READY"; if (hasStop) return "BUSY"; return "READY"; })()' | base64 | tr -d '\n')
+  # Use base64-encoded JS to avoid all escaping issues (includes TOOL_LIMIT detection)
+  JS_B64="KCgpID0+IHsgdmFyIGUgPSBkb2N1bWVudC5xdWVyeVNlbGVjdG9yKCIuUHJvc2VNaXJyb3IiKTsgaWYgKCFlKSByZXR1cm4gIk5PX0VESVRPUiI7IHZhciBidG5zID0gZG9jdW1lbnQucXVlcnlTZWxlY3RvckFsbCgiYnV0dG9uIik7IHZhciBoYXNSZXRyeSA9IGZhbHNlOyB2YXIgaGFzU3RvcCA9IGZhbHNlOyB2YXIgaGFzVG9vbExpbWl0ID0gZmFsc2U7IGZvciAodmFyIGkgPSAwOyBpIDwgYnRucy5sZW5ndGg7IGkrKykgeyB2YXIgYWwgPSBidG5zW2ldLmdldEF0dHJpYnV0ZSgiYXJpYS1sYWJlbCIpIHx8ICIiOyB2YXIgdHh0ID0gKGJ0bnNbaV0udGV4dENvbnRlbnQgfHwgIiIpLnRyaW0oKTsgaWYgKGFsID09PSAiUmV0cnkiIHx8IGFsLmluZGV4T2YoIlx1NTE4ZCIpID49IDApIGhhc1JldHJ5ID0gdHJ1ZTsgaWYgKChhbCA9PT0gIlN0b3AgUmVzcG9uc2UiIHx8IGFsLmluZGV4T2YoIlx1NTA1Y1x1NmI2MiIpID49IDApICYmIGJ0bnNbaV0uZ2V0Qm91bmRpbmdDbGllbnRSZWN0KCkud2lkdGggPiAwKSBoYXNTdG9wID0gdHJ1ZTsgaWYgKHR4dCA9PT0gIlx1N2Q5YVx1MzA1MVx1MzA4YiIgfHwgdHh0ID09PSAiQ29udGludWUiKSBoYXNUb29sTGltaXQgPSB0cnVlOyB9IGlmIChoYXNUb29sTGltaXQpIHJldHVybiAiVE9PTF9MSU1JVCI7IGlmIChoYXNSZXRyeSkgcmV0dXJuICJSRUFEWSI7IGlmIChoYXNTdG9wKSByZXR1cm4gIkJVU1kiOyByZXR1cm4gIlJFQURZIjsgfSkoKQ=="
   
   ASFILE="/tmp/croppy-check-status-$$.as"
   cat > "$ASFILE" << CSEOF
@@ -1069,6 +1069,15 @@ wait-response)
       exit 1
     fi
 
+    # TOOL_LIMIT = click "続ける" and keep polling
+    if [ "$STATUS" = "TOOL_LIMIT" ]; then
+      log "wait-response: $WT TOOL_LIMIT detected, auto-clicking..."
+      bash "$0" auto-continue "$WT" >> "$LOG" 2>&1 || true
+      sleep 3
+      ELAPSED=$((ELAPSED + 3))
+      continue
+    fi
+
     # BUSY = still generating, keep polling
     sleep 2
     ELAPSED=$((ELAPSED + 2))
@@ -1079,6 +1088,35 @@ wait-response)
   exit 0
   ;;
 
+
+
+# ============================================================
+# AUTO-CONTINUE: Click "続ける"/"Continue" button (tool usage limit)
+# Usage: auto-continue <W:T>
+# Returns: CLICKED / NO_BUTTON / ERROR
+# ============================================================
+auto-continue)
+  WT="$2"
+  if [ -z "$WT" ]; then
+    echo "Usage: $0 auto-continue <W:T>"
+    exit 1
+  fi
+  WIDX=$(echo "$WT" | cut -d: -f1)
+  TIDX=$(echo "$WT" | cut -d: -f2)
+
+  ASFILE="/tmp/croppy-autocont-$$.as"
+  cat > "$ASFILE" << ACEOF
+tell application "Google Chrome"
+  set t to tab $TIDX of window $WIDX
+  set clickJs to "(() => { var btns = document.querySelectorAll('button'); for (var i = 0; i < btns.length; i++) { var txt = (btns[i].textContent || '').trim(); if (txt === '\u7d9a\u3051\u308b' || txt === 'Continue') { btns[i].click(); return 'CLICKED'; } } return 'NO_BUTTON'; })()"
+  return execute t javascript clickJs
+end tell
+ACEOF
+  RESULT=$(osascript "$ASFILE" 2>&1)
+  rm -f "$ASFILE"
+  log "auto-continue: $WT -> $RESULT"
+  echo "$RESULT"
+  ;;
 
 *)
   echo "croppy-tab-manager.sh - Manage claude.ai worker tabs"

@@ -72,6 +72,38 @@ APPLESCRIPT
   fi
 
   if [ "$RESULT" = "STOPPED" ]; then
+    # First check for tool usage limit "続ける" button
+    CONTINUE_RESULT=$(osascript 2>/dev/null <<CONTSCRIPT
+set targetUrl to (do shell script "cat /tmp/autokick-target-url 2>/dev/null || echo ''")
+tell application "Google Chrome"
+  repeat with w in windows
+    set tabCount to count of tabs of w
+    repeat with i from 1 to tabCount
+      set t to tab i of w
+      set tabUrl to URL of t
+      set matched to false
+      if targetUrl is not "" then
+        if tabUrl contains targetUrl then set matched to true
+      else
+        if tabUrl contains "claude.ai/chat" then set matched to true
+      end if
+      if matched then
+        set clickJs to "(() => { var btns = document.querySelectorAll('button'); for (var j = 0; j < btns.length; j++) { var txt = (btns[j].textContent || '').trim(); if (txt === '続ける' || txt === 'Continue') { btns[j].click(); return 'CLICKED'; } } return 'NO_BUTTON'; })()"
+        return execute t javascript clickJs
+      end if
+    end repeat
+  end repeat
+  return "NO_TAB"
+end tell
+CONTSCRIPT
+    )
+    if [ "$CONTINUE_RESULT" = "CLICKED" ]; then
+      echo "[$(date '+%H:%M:%S')] Tool limit '続ける' clicked" >> "$LOG"
+      stopped_count=0
+      sleep "$CHECK_INTERVAL"
+      continue
+    fi
+
     stopped_count=$((stopped_count + 1))
     echo "[$(date '+%H:%M:%S')] STOPPED detected ($stopped_count/$STOPPED_THRESHOLD)" >> "$LOG"
 
