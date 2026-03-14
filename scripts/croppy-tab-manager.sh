@@ -333,7 +333,7 @@ read-response)
   cat > "$ASFILE" << READEOF
 tell application "Google Chrome"
   set t to tab $TIDX of window $WIDX
-  set readJs to "(() => { var r = document.querySelectorAll('.font-claude-response'); if (r.length === 0) return 'NO_RESPONSE'; var last = r[r.length - 1]; var md = last.querySelectorAll('p, ul, ol, h1, h2, h3, h4, pre, blockquote'); var parts = []; for (var j = 0; j < md.length; j++) { if (md[j].closest('details') || md[j].closest('summary')) continue; var t = md[j].innerText.trim(); if (t) parts.push(t); } var txt = parts.join(String.fromCharCode(10)); if (txt.length < 5) return 'NO_RESPONSE'; return txt.substring(txt.length > 4000 ? txt.length - 4000 : 0); })()"
+  set readJs to "(() => { var r = document.querySelectorAll('.font-claude-response'); if (r.length === 0) return 'NO_RESPONSE'; for (var idx = r.length - 1; idx >= 0; idx--) { var el = r[idx]; var md = el.querySelectorAll('p, ul, ol, h1, h2, h3, h4, pre, blockquote'); if (md.length === 0) { var inner = el.querySelector('div'); if (inner) md = inner.querySelectorAll('p, ul, ol, h1, h2, h3, h4, pre, blockquote'); } if (md.length > 0) { var parts = []; for (var j = 0; j < md.length; j++) { if (md[j].closest('details') || md[j].closest('summary')) continue; var t = md[j].innerText.trim(); if (t) parts.push(t); } var txt = parts.join(String.fromCharCode(10)); if (txt.length >= 5) return txt.substring(txt.length > 4000 ? txt.length - 4000 : 0); } var rawText = el.innerText.trim(); if (rawText.length >= 20) return rawText.substring(rawText.length > 4000 ? rawText.length - 4000 : 0); } return 'NO_RESPONSE'; })()"
   return execute t javascript readJs
 end tell
 READEOF
