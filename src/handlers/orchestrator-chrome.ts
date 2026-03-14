@@ -483,6 +483,15 @@ async function checkAndHandoff(
   // Reset inject counter for this project
   projectInjectCounts.set(projectId, 0);
 
+  // Update auto-kick target URL to track new chat
+  try {
+    const newUrl = newConvUrl.trim();
+    if (newUrl && newUrl.includes("/chat/")) {
+      writeFileSync("/tmp/autokick-target-url", newUrl, "utf-8");
+      console.log(`[AutoHandoff] auto-kick target updated: ${newUrl.substring(0, 60)}`);
+    }
+  } catch {}
+
   console.log(`[AutoHandoff] ${projectId}: ${tabWT} → ${newWT} (summary: ${summary ? "OK" : "FAILED, using ai-context.md"})`);
   return { triggered: true, newWT, error: null };
 }
@@ -694,7 +703,28 @@ export class ChromeOrchestrator {
             // G1: Wait for response and relay to Telegram
             // waitAndRelayResponse handles BUSY->READY polling with double-READY check
             // Also registers bridgeReplyMap (G4: reply->same tab)
-            await waitAndRelayResponse(opts.ctx, tabWT!, 180000, undefined, header);
+            try {
+              await waitAndRelayResponse(opts.ctx, tabWT!, 180000, undefined, header);
+            } catch (relayErr: any) {
+              // CONV_LIMIT or RATE_LIMIT from wait-response → force handoff
+              if (relayErr?.message?.includes("CONV_LIMIT") || relayErr?.message?.includes("ERROR:CONV_LIMIT")) {
+                console.log(`[ChromeOrch] CONV_LIMIT detected on ${decision.projectId} — forcing handoff`);
+                if (decision.projectId && tabWT) {
+                  const emergencyHandoff = await checkAndHandoff(decision.projectId, tabWT);
+                  if (emergencyHandoff.triggered && emergencyHandoff.newWT) {
+                    tabWT = emergencyHandoff.newWT;
+                    // Re-inject the original message into the new chat
+                    const retryFile = `/tmp/retry-msg-${Date.now()}.txt`;
+                    writeFileSync(retryFile, opts.text, "utf-8");
+                    await runShell(\`bash "\${TAB_MANAGER}" inject-file "\${tabWT}" "\${retryFile}"; rm -f "\${retryFile}"\`, 20000);
+                    await new Promise(r => setTimeout(r, 5000));
+                    await waitAndRelayResponse(opts.ctx, tabWT!, 180000, undefined, header);
+                  }
+                }
+              } else {
+                throw relayErr;
+              }
+            }
           } catch (e: any) {
             console.error("[ChromeOrch] G1 relay error:", e.message);
           }

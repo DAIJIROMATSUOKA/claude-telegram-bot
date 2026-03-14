@@ -133,10 +133,21 @@ echo $$ > "$LOCK_FILE"
 trap cleanup EXIT
 touch "$NIGHTLY_MODE"
 
-# Check Worker Tab health
+# Check Worker Tab health (with auto-recovery for TOOL_LIMIT)
 STATUS=$(bash "$TAB_MANAGER" check-status "$WORKER_WT" 2>/dev/null)
-if [[ "$STATUS" != *"READY"* ]]; then
-  log "ABORT: Worker Tab $WORKER_WT not READY (status: $STATUS)"
+if [ "$STATUS" = "TOOL_LIMIT" ]; then
+  log "Worker Tab has TOOL_LIMIT, auto-clicking Continue..."
+  bash "$TAB_MANAGER" auto-continue "$WORKER_WT" 2>/dev/null || true
+  sleep 5
+  STATUS=$(bash "$TAB_MANAGER" check-status "$WORKER_WT" 2>/dev/null)
+fi
+if [ "$STATUS" = "BUSY" ]; then
+  log "Worker Tab BUSY, waiting up to 120s..."
+  DRAIN=$(bash "$TAB_MANAGER" wait-response "$WORKER_WT" 120 2>/dev/null)
+  STATUS=$(bash "$TAB_MANAGER" check-status "$WORKER_WT" 2>/dev/null)
+fi
+if [ "$STATUS" != "READY" ]; then
+  log "ABORT: Worker Tab $WORKER_WT not READY after recovery (status: $STATUS)"
   notify "Nightly Forge ABORT: Worker Tab not READY ($STATUS)"
   exit 1
 fi
