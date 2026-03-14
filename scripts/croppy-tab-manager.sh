@@ -943,6 +943,65 @@ end tell"
 
 
 
+# ============================================================
+# WAIT-RESPONSE: Poll until BUSY->READY, then read response
+# Usage: wait-response <W:T> [timeout_sec]
+# Returns: response text, or TIMEOUT, or ERROR
+# ============================================================
+wait-response)
+  WT="$2"
+  TIMEOUT_SEC="${3:-300}"
+  if [ -z "$WT" ]; then
+    echo "Usage: $0 wait-response <W:T> [timeout_sec]"
+    exit 1
+  fi
+  WIDX=$(echo "$WT" | cut -d: -f1)
+  TIDX=$(echo "$WT" | cut -d: -f2)
+
+  log "wait-response: $WT timeout=${TIMEOUT_SEC}s"
+  ELAPSED=0
+  PREV_STATUS=""
+
+  while [ "$ELAPSED" -lt "$TIMEOUT_SEC" ]; do
+    STATUS=$(bash "$0" check-status "$WT" 2>/dev/null)
+
+    # Log status transitions
+    if [ "$STATUS" != "$PREV_STATUS" ]; then
+      log "wait-response: $WT status=$STATUS (${ELAPSED}s)"
+      PREV_STATUS="$STATUS"
+    fi
+
+    # READY = response complete
+    if [ "$STATUS" = "READY" ]; then
+      # Small delay to ensure DOM is settled
+      sleep 1
+      RESPONSE=$(bash "$0" read-response "$WT" 2>/dev/null)
+      if [ -z "$RESPONSE" ] || [ "$RESPONSE" = "NO_RESPONSE" ]; then
+        echo "NO_RESPONSE"
+      else
+        echo "$RESPONSE"
+      fi
+      exit 0
+    fi
+
+    # ERROR states = bail out
+    if [ "$STATUS" = "NO_EDITOR" ] || [ "$STATUS" = "ERROR" ]; then
+      log "wait-response: $WT error status=$STATUS"
+      echo "ERROR:$STATUS"
+      exit 1
+    fi
+
+    # BUSY = still generating, keep polling
+    sleep 2
+    ELAPSED=$((ELAPSED + 2))
+  done
+
+  log "wait-response: $WT TIMEOUT after ${TIMEOUT_SEC}s"
+  echo "TIMEOUT"
+  exit 0
+  ;;
+
+
 *)
   echo "croppy-tab-manager.sh - Manage claude.ai worker tabs"
   echo ""
