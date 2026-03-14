@@ -672,7 +672,7 @@ inject-raw)
     cat > "$CHKFILE" << CHKEOF
 tell application "Google Chrome"
   set t to tab $TIDX of window $WIDX
-  set js to "(() => { const e = document.querySelector('.ProseMirror'); if (!e) return 'NO_EDITOR'; const s = document.querySelector('button[aria-label=\"Stop Response\"]') || document.querySelector('button[aria-label=\"応答を停止\"]'); if (s && s.getBoundingClientRect().width > 0) return 'BUSY'; return 'READY'; })()"
+  set js to "(() => { const e = document.querySelector('.ProseMirror'); if (!e) return 'NO_EDITOR'; const retry = document.querySelector('button[aria-label=\"Retry\"]') || document.querySelector('button[aria-label=\"再試行\"]'); if (retry) return 'READY'; const s = document.querySelector('button[aria-label=\"Stop Response\"]') || document.querySelector('button[aria-label=\"応答を停止\"]'); if (s && s.getBoundingClientRect().width > 0) return 'BUSY'; return 'READY'; })()"
   return execute t javascript js
 end tell
 CHKEOF

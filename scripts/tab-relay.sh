@@ -47,7 +47,11 @@ ${RESPONSE}"
   fi
 
   # Inject into target tab
-  INJECT_RESULT=$(bash "$TAB_MANAGER" inject-raw "$TO_WT" "$MESSAGE" 2>/dev/null)
+  # Write to temp file to avoid shell quoting issues
+  TMPF="/tmp/tab-relay-msg-$$.txt"
+  printf '%s' "$MESSAGE" > "$TMPF"
+  INJECT_RESULT=$(bash "$TAB_MANAGER" inject-raw "$TO_WT" "$(cat "$TMPF")" 2>/dev/null)
+  rm -f "$TMPF"
   if echo "$INJECT_RESULT" | grep -q "INSERTED:SENT"; then
     local CHARS=${#RESPONSE}
     log "relay: $FROM_WT -> $TO_WT (${CHARS} chars)"
@@ -105,7 +109,11 @@ ${RESPONSE}"
     MESSAGE="$RESPONSE"
   fi
 
-  INJECT_RESULT=$(bash "$TAB_MANAGER" inject-raw "$TO_WT" "$MESSAGE" 2>/dev/null)
+  # Write to temp file to avoid shell quoting issues
+  TMPF="/tmp/tab-relay-msg-$$.txt"
+  printf '%s' "$MESSAGE" > "$TMPF"
+  INJECT_RESULT=$(bash "$TAB_MANAGER" inject-raw "$TO_WT" "$(cat "$TMPF")" 2>/dev/null)
+  rm -f "$TMPF"
   if echo "$INJECT_RESULT" | grep -q "INSERTED:SENT"; then
     local CHARS=${#RESPONSE}
     log "ask-and-forward: $FROM_WT -> $TO_WT (${CHARS} chars)"
@@ -136,7 +144,10 @@ do_debate() {
 
   # Round 0: Seed topic into Tab A
   log "debate: R0 seeding topic into $WT_A"
-  INJECT_RESULT=$(bash "$TAB_MANAGER" inject-raw "$WT_A" "$TOPIC" 2>/dev/null)
+  TMPF="/tmp/tab-relay-seed-$$.txt"
+  printf '%s' "$TOPIC" > "$TMPF"
+  INJECT_RESULT=$(bash "$TAB_MANAGER" inject-raw "$WT_A" "$(cat "$TMPF")" 2>/dev/null)
+  rm -f "$TMPF"
   if ! echo "$INJECT_RESULT" | grep -q "INSERTED:SENT"; then
     echo "ERROR: failed to seed topic into $WT_A"
     notify "debate FAILED: seed into $WT_A"
@@ -157,9 +168,10 @@ do_debate() {
     # B's turn: receive A's response, generate reply
     log "debate: R${R} B's turn"
     PREFIX_B="[Round ${R}/${ROUNDS}] The other participant said:"
-    INJECT_RESULT=$(bash "$TAB_MANAGER" inject-raw "$WT_B" "${PREFIX_B}
-
-${RESPONSE_A}" 2>/dev/null)
+    TMPF="/tmp/tab-relay-debate-$$.txt"
+    printf '%s\n\n%s' "$PREFIX_B" "$RESPONSE_A" > "$TMPF"
+    INJECT_RESULT=$(bash "$TAB_MANAGER" inject-raw "$WT_B" "$(cat "$TMPF")" 2>/dev/null)
+    rm -f "$TMPF"
     if ! echo "$INJECT_RESULT" | grep -q "INSERTED:SENT"; then
       echo "ERROR: R${R} inject into B failed"
       notify "debate FAILED R${R}: inject B"
@@ -182,9 +194,10 @@ ${RESPONSE_A}" 2>/dev/null)
     # A's turn: receive B's response
     log "debate: R${R} A's turn"
     PREFIX_A="[Round $((R+1))/${ROUNDS}] The other participant said:"
-    INJECT_RESULT=$(bash "$TAB_MANAGER" inject-raw "$WT_A" "${PREFIX_A}
-
-${RESPONSE_B}" 2>/dev/null)
+    TMPF="/tmp/tab-relay-debate-$$.txt"
+    printf '%s\n\n%s' "$PREFIX_A" "$RESPONSE_B" > "$TMPF"
+    INJECT_RESULT=$(bash "$TAB_MANAGER" inject-raw "$WT_A" "$(cat "$TMPF")" 2>/dev/null)
+    rm -f "$TMPF"
     if ! echo "$INJECT_RESULT" | grep -q "INSERTED:SENT"; then
       echo "ERROR: R${R} inject into A failed"
       notify "debate FAILED R${R}: inject A"
