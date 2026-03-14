@@ -274,6 +274,22 @@ build_context() {
     echo ""
   fi
 
+  # AI Context snapshot (auto-saved by orchestrator every 15 injects)
+  if [ -n "$FOLDER" ]; then
+    local FULL_FOLDER_PATH
+    if echo "$FOLDER" | grep -q '/'; then
+      FULL_FOLDER_PATH="$DROPBOX_DIR/$FOLDER"
+    else
+      FULL_FOLDER_PATH="$DROPBOX_DIR/$FOLDER"
+    fi
+    local AI_CTX="$FULL_FOLDER_PATH/${PID}_ai-context.md"
+    if [ -f "$AI_CTX" ]; then
+      echo "## AI文脈スナップショット (前回自動保存)"
+      cat "$AI_CTX"
+      echo ""
+    fi
+  fi
+
   # Instructions
   echo "## 役割"
   echo "- この案件に関する全情報を蓄積する"

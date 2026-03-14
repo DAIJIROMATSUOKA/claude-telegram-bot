@@ -25,6 +25,55 @@ const TAB_MANAGER = `${SCRIPTS_DIR}/croppy-tab-manager.sh`;
 const AUDIT_DIR = `${homedir()}/.jarvis/orchestrator`;
 const AUDIT_FILE = `${AUDIT_DIR}/audit.jsonl`;
 
+
+// ─── Periodic State Snapshot (Defense Line 1) ──────────────
+const projectInjectCounts: Map<string, number> = new Map();
+const SNAPSHOT_INTERVAL = 15;
+
+async function saveProjectSnapshot(
+  projectId: string,
+  tabWT: string
+): Promise<void> {
+  try {
+    const promptFile = `/tmp/snapshot-prompt-${Date.now()}.txt`;
+    writeFileSync(promptFile, "この案件の現在の状況を5行で要約してください。重要な決定事項、進行中の作業、未解決の課題、次のアクションを含めて。必ず5行以内で。", "utf-8");
+    await runShell(`bash "${TAB_MANAGER}" inject-file "${tabWT}" "${promptFile}"; rm -f "${promptFile}"`, 15000);
+
+    // 5s fixed wait + wait-response
+    await new Promise(r => setTimeout(r, 5000));
+    const summary = await runShell(`bash "${TAB_MANAGER}" wait-response "${tabWT}" 120`, 130000);
+
+    if (summary && summary !== "TIMEOUT" && summary !== "NO_RESPONSE" && !summary.startsWith("ERROR:")) {
+      // Save to Dropbox project folder
+      const folderName = await runShell(
+        `bash "${SCRIPTS_DIR}/project-context-builder.sh" folder-name "${projectId}"`, 5000
+      );
+      if (folderName && folderName.trim()) {
+        const dropboxDir = `${homedir()}/Machinelab Dropbox/machinelab/プロジェクト`;
+        const folderPath = `${dropboxDir}/${folderName.trim()}`;
+        const snapshotPath = `${folderPath}/${projectId}_ai-context.md`;
+        const content = [
+          `# ${projectId} AI文脈スナップショット`,
+          `更新: ${new Date().toISOString().replace("T", " ").substring(0, 16)}`,
+          "",
+          summary.substring(0, 2000),
+        ].join("\n");
+        writeFileSync(snapshotPath, content, "utf-8");
+        console.log(`[Snapshot] ${projectId}: saved to ${snapshotPath}`);
+      }
+    }
+  } catch (e: any) {
+    console.error(`[Snapshot] ${projectId}: failed -`, e.message);
+    // Non-fatal: snapshot failure must not break message routing
+  }
+}
+
+function shouldTakeSnapshot(projectId: string): boolean {
+  const count = projectInjectCounts.get(projectId) || 0;
+  projectInjectCounts.set(projectId, count + 1);
+  return (count + 1) % SNAPSHOT_INTERVAL === 0;
+}
+
 // ─── Types ────────────────────────────────────────────────────
 
 type RouteMethod = "m-number" | "sender-map" | "keyword" | "no-route";
@@ -293,66 +342,148 @@ async function checkAndHandoff(
   projectId: string,
   tabWT: string,
 ): Promise<{ triggered: boolean; newWT: string | null; error: string | null }> {
-  // Estimate: read DOM message count
-  const countStr = await runShell(
-    `bash "${TAB_MANAGER}" token-estimate "${tabWT}" 2>/dev/null | grep -o '[0-9]*' | head -1`,
-    10000
-  );
-  const count = parseInt(countStr) || 0;
+  // --- Token-estimate based trigger (pct >= 70) OR count >= 40 ---
+  let shouldHandoff = false;
+  const injectCount = projectInjectCounts.get(projectId) || 0;
 
-  if (count < HANDOFF_TRIGGER_THRESHOLD) {
+  try {
+    const estRaw = await runShell(
+      `bash "${TAB_MANAGER}" token-estimate "${tabWT}" 2>/dev/null | grep "Usage:" | grep -o '[0-9]*'`,
+      10000
+    );
+    const pct = parseInt(estRaw) || 0;
+    if (pct >= 70) {
+      console.log(`[AutoHandoff] ${projectId}: token ${pct}% >= 70% → handoff`);
+      shouldHandoff = true;
+    }
+  } catch (e: any) {
+    console.error(`[AutoHandoff] ${projectId}: token-estimate failed, falling back to count`);
+  }
+
+  if (!shouldHandoff && injectCount >= 40) {
+    console.log(`[AutoHandoff] ${projectId}: ${injectCount} injects >= 40 → handoff`);
+    shouldHandoff = true;
+  }
+
+  if (!shouldHandoff) {
     return { triggered: false, newWT: null, error: null };
   }
 
-  console.log(`[AutoHandoff] ${projectId}: ${count} messages → handoff triggered`);
+  console.log(`[AutoHandoff] ${projectId}: HANDOFF START (pct-based or count=${injectCount})`);
 
-  // 1. Ask for summary
-  const summaryPrompt = "この会話の要約を作成してください。重要な決定事項、未解決の課題、次のアクションを含めて。";
-  const tmpSummary = `/tmp/handoff-summary-${Date.now()}.txt`;
-  writeFileSync(tmpSummary, summaryPrompt, "utf-8");
-  await runShell(`bash "${TAB_MANAGER}" inject-file "${tabWT}" "${tmpSummary}"; rm -f "${tmpSummary}"`, 15000);
-  const summary = await runShell(`bash "${TAB_MANAGER}" wait-response "${tabWT}" 120`, 130000);
-
-  if (summary === "TIMEOUT" || summary.startsWith("ERROR:")) {
-    return { triggered: false, newWT: null, error: `要約取得失敗: ${summary}` };
+  // --- Step 1: Try to get summary from current chat ---
+  let summary = "";
+  try {
+    const promptFile = `/tmp/handoff-summary-${Date.now()}.txt`;
+    writeFileSync(promptFile, "この会話の要約を作成してください。重要な決定事項、未解決の課題、次のアクションを含めて。500文字以内で。", "utf-8");
+    await runShell(`bash "${TAB_MANAGER}" inject-file "${tabWT}" "${promptFile}"; rm -f "${promptFile}"`, 15000);
+    await new Promise(r => setTimeout(r, 5000));
+    const resp = await runShell(`bash "${TAB_MANAGER}" wait-response "${tabWT}" 120`, 130000);
+    if (resp && resp !== "TIMEOUT" && resp !== "NO_RESPONSE" && !resp.startsWith("ERROR:")) {
+      summary = resp.substring(0, 3000);
+    }
+  } catch (e: any) {
+    console.error(`[AutoHandoff] ${projectId}: summary failed -`, e.message);
   }
 
-  // 2. Create new chat with context + summary
+  // --- Step 2: Build context (includes _ai-context.md from Defense Line 1) ---
   const CONTEXT_BUILDER = `${SCRIPTS_DIR}/project-context-builder.sh`;
   const contextFile = `/tmp/handoff-context-${Date.now()}.txt`;
-  await runShell(`bash "${CONTEXT_BUILDER}" context "${projectId}" > "${contextFile}"`, 30000);
-
-  // Append summary
-  const contextContent = existsSync(contextFile) ? readFileSync(contextFile, "utf-8") : "";
-  const handoffContent = [
-    contextContent,
-    "",
-    "## 前チャットの要約（自動引き継ぎ）",
-    summary.substring(0, 3000),
-    "",
-    "以上の文脈を踏まえて、今後のメッセージに対応してください。「了解」とだけ返答してください。",
-  ].join("\n");
-  writeFileSync(contextFile, handoffContent, "utf-8");
-
-  // 3. Resolve new tab (this creates a fresh chat via project-tab-router)
-  // First, clear old mapping so resolve creates a new one
-  await runShell(`python3 -c "
-import json, os
-path = os.path.expanduser('~/.croppy-project-tabs.json')
-if os.path.exists(path):
-    d = json.load(open(path))
-    d.pop('${projectId}', None)
-    json.dump(d, open(path, 'w'), indent=2)
-"`, 5000);
-
-  const newWT = await runShell(`bash "${TAB_ROUTER}" resolve "${projectId}"`, 120000);
-  unlinkSync(contextFile);
-
-  if (newWT.startsWith("ERROR:")) {
-    return { triggered: true, newWT: null, error: newWT };
+  try {
+    await runShell(`bash "${CONTEXT_BUILDER}" context "${projectId}" > "${contextFile}"`, 30000);
+  } catch {
+    writeFileSync(contextFile, `これは案件 ${projectId} の専用チャットです。\n`, "utf-8");
   }
 
-  console.log(`[AutoHandoff] ${projectId}: ${tabWT} → ${newWT}`);
+  // Append summary (or note that it failed)
+  let contextContent = existsSync(contextFile) ? readFileSync(contextFile, "utf-8") : "";
+  if (summary) {
+    contextContent += "\n## 前チャットの要約（自動引き継ぎ）\n" + summary + "\n";
+  } else {
+    contextContent += "\n## 注意\n前チャットの要約取得に失敗しました。上記のAI文脈スナップショットが最新の状態です。\n";
+  }
+  contextContent += "\n以上の文脈を踏まえて、今後のメッセージに対応してください。「了解」とだけ返答してください。";
+  writeFileSync(contextFile, contextContent, "utf-8");
+
+  // --- Step 3: Create new chat DIRECTLY (not via resolve, to avoid stale mapping) ---
+  let newWT = "";
+  let newConvUrl = "";
+  try {
+    const CONFIG = `${homedir()}/claude-telegram-bot/.croppy-workers.json`;
+    let projectUrl = "https://claude.ai/project/019c15f4-3d2d-7263-a308-e7f6ccd6b3f8";
+    try {
+      const cfg = JSON.parse(readFileSync(CONFIG, "utf-8"));
+      projectUrl = cfg.workers?.[0]?.url || projectUrl;
+    } catch {}
+
+    // Open new tab
+    const beforeInfo = await runShell(
+      `osascript -e 'tell application "Google Chrome" to return ((index of front window as text) & " " & ((count of tabs of front window) as text))'`,
+      5000
+    );
+    const [widx, tbefore] = beforeInfo.trim().split(" ");
+    await runShell(
+      `osascript -e 'tell application "Google Chrome" to tell window ${widx} to set URL of (make new tab) to "${projectUrl}"'`,
+      5000
+    );
+    const newTidx = parseInt(tbefore) + 1;
+    newWT = `${widx}:${newTidx}`;
+
+    // Wait for page load
+    await new Promise(r => setTimeout(r, 8000));
+
+    // Inject context file
+    const injectResult = await runShell(
+      `bash "${TAB_MANAGER}" inject-file "${newWT}" "${contextFile}"`,
+      20000
+    );
+    if (!injectResult.includes("INSERTED:SENT")) {
+      throw new Error(`inject failed: ${injectResult}`);
+    }
+
+    // Wait for conv URL (project URL -> chat URL)
+    await new Promise(r => setTimeout(r, 5000));
+    newConvUrl = await runShell(
+      `osascript -e 'tell application "Google Chrome" to return URL of tab ${newTidx} of window ${widx}'`,
+      5000
+    );
+    if (newConvUrl.includes("/project/")) {
+      await new Promise(r => setTimeout(r, 5000));
+      newConvUrl = await runShell(
+        `osascript -e 'tell application "Google Chrome" to return URL of tab ${newTidx} of window ${widx}'`,
+        5000
+      );
+    }
+  } catch (e: any) {
+    console.error(`[AutoHandoff] ${projectId}: new chat creation failed -`, e.message);
+    try { unlinkSync(contextFile); } catch {}
+    // CRITICAL: do NOT clear old mapping — old chat is still better than nothing
+    return { triggered: true, newWT: null, error: e.message };
+  }
+
+  try { unlinkSync(contextFile); } catch {}
+
+  // --- Step 4: ONLY NOW update D1 mapping (old chat still works if this fails) ---
+  try {
+    await runShell(
+      `bash "${TAB_ROUTER}" register "${projectId}" "${newConvUrl}"`,
+      10000
+    );
+  } catch (e: any) {
+    console.error(`[AutoHandoff] ${projectId}: D1 update failed -`, e.message);
+    // Fallback: update local JSON
+    try {
+      const localPath = `${homedir()}/.croppy-project-tabs.json`;
+      const localData = existsSync(localPath) ? JSON.parse(readFileSync(localPath, "utf-8")) : {};
+      localData[projectId] = { conv_url: newConvUrl, wt: newWT, updated_at: new Date().toISOString() };
+      writeFileSync(localPath, JSON.stringify(localData, null, 2), "utf-8");
+    } catch {}
+  }
+
+  // Reset inject counter for this project
+  projectInjectCounts.set(projectId, 0);
+
+  console.log(`[AutoHandoff] ${projectId}: ${tabWT} → ${newWT} (summary: ${summary ? "OK" : "FAILED, using ai-context.md"})`);
   return { triggered: true, newWT, error: null };
 }
 
@@ -566,6 +697,15 @@ export class ChromeOrchestrator {
             await waitAndRelayResponse(opts.ctx, tabWT!, 180000, undefined, header);
           } catch (e: any) {
             console.error("[ChromeOrch] G1 relay error:", e.message);
+          }
+        }
+
+        // Defense Line 1: periodic state snapshot (every 15 injects)
+        if (decision.projectId && tabWT) {
+          if (shouldTakeSnapshot(decision.projectId)) {
+            saveProjectSnapshot(decision.projectId, tabWT).catch(e =>
+              console.error("[Snapshot] background error:", e.message)
+            );
           }
         }
 
