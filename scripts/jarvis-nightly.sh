@@ -30,9 +30,7 @@ START_EPOCH=$(date +%s)
 log() { echo "[$(date '+%H:%M:%S')] $1" | tee -a "$LOGFILE"; }
 
 notify() {
-  source "$ENV_FILE" 2>/dev/null || true
-  bash ~/scripts/notify-line.sh "通知"
-    -d "chat_id=${TELEGRAM_ALLOWED_USERS}" -d "text=$1" > /dev/null 2>&1 || true
+  bash ~/scripts/notify-line.sh "$1" 2>/dev/null || true
 }
 
 elapsed() {
@@ -65,8 +63,8 @@ else
 fi
 
 # === Nightly Forge (auto-improvement) ===
-FORGE_SCRIPT="$HOME/scripts/nightly-forge/nightly-forge.sh"
-if [ -f "$FORGE_SCRIPT" ] && [ ! -f /tmp/jarvis-forge-stop ]; then
+FORGE_SCRIPT="$HOME/claude-telegram-bot/scripts/nightly-forge-chrome.sh"
+if [ -f "$FORGE_SCRIPT" ] && [ ! -f /tmp/jarvis-nightly-stop ]; then
   log "Running Nightly Forge..."
   bash "$FORGE_SCRIPT" 2>&1 | tee -a "$LOGFILE" || log "Forge completed (or skipped)"
   log "Forge phase done. Continuing to Ralph Loop..."

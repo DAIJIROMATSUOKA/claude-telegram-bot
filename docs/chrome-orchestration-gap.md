@@ -56,17 +56,17 @@
 - あるべき: /refresh M1317 → Access DB再クエリ → 差分をチャットに投入
 - 場所: orchestrator-chrome.ts or 新規コマンド
 
-### G11: Nightly Forge v2 Chrome移行
+### G11: Nightly Forge v2 Chrome移行 ✅ DONE (2026-03-15)
 - 今: F8未移行
 - あるべき: Chrome Tab + exec bridge ループ（claude.aiで考える→M1で実行→結果投稿）
 - 場所: 新規 scripts/nightly-forge-chrome.sh or TypeScript
 
-### G12: DESIGN-RULES読み込みハードコード
+### G12: DESIGN-RULES読み込みハードコード ✅ DONE (2026-03-15)
 - 今: Nightly Forgeが未実装なのでこれも未実装
 - あるべき: Nightly開始時にDESIGN-RULES.mdを必ずinject
 - 場所: G11と同時に実装
 
-### G13: チェックポイント5行構造
+### G13: チェックポイント5行構造 ✅ DONE (2026-03-15)
 - 今: 未実装
 - あるべき: Nightly各ステップ完了時に5行要約をチャット投稿+Obsidianに全ログ
 - 場所: G11と同時に実装
