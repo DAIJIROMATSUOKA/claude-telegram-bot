@@ -220,6 +220,96 @@ do_debate() {
   return 0
 }
 
+
+# ============================================================
+# DEBATE3: Three-way round-robin debate (A->B->C->A->B->C...)
+# ============================================================
+do_debate3() {
+  local WT_A="$1"
+  local WT_B="$2"
+  local WT_C="$3"
+  local TOPIC="$4"
+  local ROUNDS="${5:-$DEFAULT_ROUNDS}"
+  local TIMEOUT="${6:-$DEFAULT_TIMEOUT}"
+
+  log "debate3: $WT_A vs $WT_B vs $WT_C | topic='$TOPIC' | rounds=$ROUNDS"
+  echo "=== 3-Way Debate: $ROUNDS rounds ==="
+  echo "Tab A: $WT_A"
+  echo "Tab B: $WT_B"
+  echo "Tab C: $WT_C"
+  echo "Topic: $TOPIC"
+  echo ""
+
+  # Seed topic into Tab A
+  log "debate3: seeding topic into $WT_A"
+  TMPF="/tmp/tab-relay-d3-$$.txt"
+  printf '%s' "$TOPIC" > "$TMPF"
+  INJECT_RESULT=$(bash "$TAB_MANAGER" inject-file "$WT_A" "$TMPF" 2>/dev/null)
+  rm -f "$TMPF"
+  if ! echo "$INJECT_RESULT" | grep -q "INSERTED:SENT"; then
+    echo "ERROR: failed to seed topic into $WT_A"
+    notify "debate3 FAILED: seed into $WT_A"
+    return 1
+  fi
+
+  # Wait for A's initial response
+  LAST_RESPONSE=$(bash "$TAB_MANAGER" wait-response "$WT_A" "$TIMEOUT" 2>/dev/null)
+  if [ "$LAST_RESPONSE" = "TIMEOUT" ] || echo "$LAST_RESPONSE" | grep -q "^ERROR:"; then
+    echo "ERROR: A failed to respond: $LAST_RESPONSE"
+    notify "debate3 FAILED: A initial timeout"
+    return 1
+  fi
+  LAST_SPEAKER="A"
+  echo "[R0] A responded (${#LAST_RESPONSE} chars)"
+
+  # Round-robin: B -> C -> A -> B -> C -> A ...
+  TABS=("$WT_A" "$WT_B" "$WT_C")
+  NAMES=("A" "B" "C")
+  # Start from B (index 1), since A already spoke
+  NEXT_IDX=1
+
+  for R in $(seq 1 $((ROUNDS * 3))); do
+    CURRENT_WT="${TABS[$NEXT_IDX]}"
+    CURRENT_NAME="${NAMES[$NEXT_IDX]}"
+    ROUND_NUM=$(( (R - 1) / 3 + 1 ))
+    STEP_IN_ROUND=$(( (R - 1) % 3 + 1 ))
+
+    log "debate3: R${ROUND_NUM}.${STEP_IN_ROUND} ${CURRENT_NAME}'s turn"
+
+    # Build message with context
+    PREFIX="[Round ${ROUND_NUM}/${ROUNDS}, ${LAST_SPEAKER} said]:"
+    TMPF="/tmp/tab-relay-d3-$$.txt"
+    printf '%s\n\n%s' "$PREFIX" "$LAST_RESPONSE" > "$TMPF"
+    INJECT_RESULT=$(bash "$TAB_MANAGER" inject-file "$CURRENT_WT" "$TMPF" 2>/dev/null)
+    rm -f "$TMPF"
+
+    if ! echo "$INJECT_RESULT" | grep -q "INSERTED:SENT"; then
+      echo "ERROR: R${ROUND_NUM}.${STEP_IN_ROUND} inject into ${CURRENT_NAME} failed"
+      notify "debate3 FAILED R${ROUND_NUM}: inject ${CURRENT_NAME}"
+      return 1
+    fi
+
+    LAST_RESPONSE=$(bash "$TAB_MANAGER" wait-response "$CURRENT_WT" "$TIMEOUT" 2>/dev/null)
+    if [ "$LAST_RESPONSE" = "TIMEOUT" ] || echo "$LAST_RESPONSE" | grep -q "^ERROR:"; then
+      echo "ERROR: R${ROUND_NUM}.${STEP_IN_ROUND} ${CURRENT_NAME} timeout: $LAST_RESPONSE"
+      notify "debate3 FAILED R${ROUND_NUM}: ${CURRENT_NAME} timeout"
+      return 1
+    fi
+
+    LAST_SPEAKER="$CURRENT_NAME"
+    echo "[R${ROUND_NUM}.${STEP_IN_ROUND}] ${CURRENT_NAME} responded (${#LAST_RESPONSE} chars)"
+
+    # Advance to next tab (round-robin)
+    NEXT_IDX=$(( (NEXT_IDX + 1) % 3 ))
+  done
+
+  log "debate3: completed $ROUNDS rounds ($(($ROUNDS * 3)) turns)"
+  echo ""
+  echo "=== 3-Way Debate complete: $ROUNDS rounds ($((ROUNDS * 3)) turns) ==="
+  notify "3-Way Debate complete: ${ROUNDS} rounds between $WT_A, $WT_B, $WT_C"
+  return 0
+}
+
 # ============================================================
 # MAIN
 # ============================================================
@@ -237,6 +327,10 @@ debate)
   do_debate "$2" "$3" "$4" "$5" "$6"
   ;;
 
+debate3)
+  do_debate3 "$2" "$3" "$4" "$5" "$6" "$7"
+  ;;
+
 *)
   echo "tab-relay.sh - Relay responses between claude.ai Chrome tabs"
   echo ""
@@ -249,6 +343,9 @@ debate)
   echo ""
   echo "  debate <wt_a> <wt_b> \"topic\" [rounds] [timeout]"
   echo "    Multi-round exchange: A and B take turns responding"
+  echo ""
+  echo "  debate3 <wt_a> <wt_b> <wt_c> \"topic\" [rounds] [timeout]"
+  echo "    3-way round-robin: A->B->C->A->B->C (3 turns per round)"
   ;;
 
 esac

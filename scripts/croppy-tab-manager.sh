@@ -944,6 +944,66 @@ end tell"
 
 
 # ============================================================
+# INJECT-FILE: Inject message from file (avoids shell quoting)
+# Usage: inject-file <W:T> <filepath>
+# ============================================================
+inject-file)
+  WT="$2"
+  FPATH="$3"
+  if [ -z "$WT" ] || [ -z "$FPATH" ] || [ ! -f "$FPATH" ]; then
+    echo "Usage: $0 inject-file <W:T> <filepath>"
+    exit 1
+  fi
+  WIDX=$(echo "$WT" | cut -d: -f1)
+  TIDX=$(echo "$WT" | cut -d: -f2)
+
+  # Wait for editor ready
+  EDITOR_READY=0
+  for i in 1 2 3 4 5 6 7 8; do
+    CHKFILE="/tmp/croppy-fileinj-chk-$$.as"
+    cat > "$CHKFILE" << CHKEOF
+tell application "Google Chrome"
+  set t to tab $TIDX of window $WIDX
+  set js to "(() => { const e = document.querySelector('.ProseMirror'); if (!e) return 'NO_EDITOR'; const retry = document.querySelector('button[aria-label=\"Retry\"]') || document.querySelector('button[aria-label=\"再試行\"]'); if (retry) return 'READY'; const s = document.querySelector('button[aria-label=\"Stop Response\"]') || document.querySelector('button[aria-label=\"応答を停止\"]'); if (s && s.getBoundingClientRect().width > 0) return 'BUSY'; return 'READY'; })()"
+  return execute t javascript js
+end tell
+CHKEOF
+    STATUS=$(osascript "$CHKFILE" 2>&1)
+    rm -f "$CHKFILE"
+    if [ "$STATUS" = "READY" ]; then
+      EDITOR_READY=1
+      break
+    fi
+    sleep 2
+  done
+
+  if [ "$EDITOR_READY" != "1" ]; then
+    echo "BLOCKED:NO_EDITOR_TIMEOUT:last=$STATUS"
+    exit 1
+  fi
+
+  # Base64 encode file content (safe for any content)
+  B64MSG=$(base64 < "$FPATH" | tr -d '\n')
+  ASFILE="/tmp/croppy-inject-file-$$.as"
+  cat > "$ASFILE" << INJECTEOF
+tell application "Google Chrome"
+  set t to tab $TIDX of window $WIDX
+  set insertJs to "(() => { const b = Uint8Array.from(atob('$B64MSG'), c => c.charCodeAt(0)); const msg = new TextDecoder().decode(b); const e = document.querySelector('.ProseMirror'); e.focus(); document.execCommand('selectAll'); document.execCommand('delete'); document.execCommand('insertText', false, msg); return 'INSERTED'; })()"
+  set r1 to execute t javascript insertJs
+  delay 0.5
+  set sendJs to "(() => { const e = document.querySelector('.ProseMirror'); const ev = new KeyboardEvent('keydown', {key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true}); e.dispatchEvent(ev); return 'SENT'; })()"
+  set r2 to execute t javascript sendJs
+  return r1 & ":" & r2
+end tell
+INJECTEOF
+  RESULT=$(osascript "$ASFILE" 2>&1)
+  rm -f "$ASFILE"
+  log "inject-file: $WT from $FPATH -> $RESULT"
+  echo "$RESULT"
+  ;;
+
+
+# ============================================================
 # WAIT-RESPONSE: Poll until BUSY->READY, then read response
 # Usage: wait-response <W:T> [timeout_sec]
 # Returns: response text, or TIMEOUT, or ERROR
