@@ -90,17 +90,34 @@ inject_and_wait() {
   local text_file="$1"
   local timeout="${2:-$WAIT_TIMEOUT}"
 
-  # Pre-inject: drain any ongoing BUSY response
-  local _pre_status
-  _pre_status=$(bash "$TAB_MANAGER" check-status "$WORKER_WT" 2>/dev/null)
-  if [ "$_pre_status" = "BUSY" ]; then
-    log "inject_and_wait: Worker BUSY, draining response first..."
-    bash "$TAB_MANAGER" wait-response "$WORKER_WT" 120 >/dev/null 2>&1 || true
+  # Pre-inject: wait for stable READY (3 consecutive checks over 6s)
+  # Handles BUSY from web searches, tool calls, or previous response still streaming
+  local _ready_count=0
+  for _wait_i in $(seq 1 60); do
+    local _pre_status
+    _pre_status=$(bash "$TAB_MANAGER" check-status "$WORKER_WT" 2>/dev/null)
+    if [ "$_pre_status" = "CONV_LIMIT" ] || [ "$_pre_status" = "RATE_LIMIT" ]; then
+      echo "ERROR:$_pre_status"
+      rm -f "$text_file"
+      return 0
+    elif [ "$_pre_status" = "READY" ]; then
+      _ready_count=$((_ready_count + 1))
+      if [ "$_ready_count" -ge 3 ]; then
+        break
+      fi
+    else
+      _ready_count=0  # Reset on any non-READY
+      if [ "$_wait_i" = "1" ]; then
+        log "inject_and_wait: waiting for stable READY (status=$_pre_status)..."
+      fi
+    fi
     sleep 2
-  elif [ "$_pre_status" = "CONV_LIMIT" ] || [ "$_pre_status" = "RATE_LIMIT" ]; then
-    echo "ERROR:$_pre_status"
+  done
+  if [ "$_ready_count" -lt 3 ]; then
+    log "inject_and_wait: never reached stable READY after 120s"
     rm -f "$text_file"
-    return 0
+    echo "INJECT_TIMEOUT"
+    return 1
   fi
 
   # Inject with retry
