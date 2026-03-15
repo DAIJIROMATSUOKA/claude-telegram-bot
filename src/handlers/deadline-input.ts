@@ -40,10 +40,7 @@ export async function handleDeadlineInput(ctx: Context): Promise<boolean> {
     year = new Date().getFullYear();
     // Last day of month: day 0 of next month
     day = new Date(year, month, 0).getDate();
-    if (new Date(year, month - 1, day) < new Date()) {
-      year++;
-      day = new Date(year, month, 0).getDate();
-    }
+    // Past dates are valid for deadlines
   } else if (match) {
     machineNo = match[1];
     if (match[4]) {
@@ -60,10 +57,7 @@ export async function handleDeadlineInput(ctx: Context): Promise<boolean> {
       month = parseInt(match[2]);
       day = parseInt(match[3]);
       year = new Date().getFullYear();
-      const testDate = new Date(year, month - 1, day);
-      if (testDate < new Date()) {
-        year++;
-      }
+      // Past dates are valid for deadlines (don't auto-bump to next year)
     }
   } else {
     return false;
