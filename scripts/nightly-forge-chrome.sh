@@ -164,9 +164,60 @@ fi
 
 ACTIVE_COUNT=$(echo "$TASK_STATE" | grep -c '^\- \[ \]' || true)
 if [ "$ACTIVE_COUNT" -eq 0 ]; then
-  log "No active tasks. Exiting."
-  notify "Nightly Forge: no active tasks"
-  exit 0
+  log "No active tasks. Entering RESEARCH MODE."
+  notify "Nightly Forge: RESEARCH MODE (no tasks)"
+
+  RESEARCH_PROMPT_FILE="/tmp/nightly-forge-research-$$.txt"
+RESEARCH_TOPICS_FILE="$HOME/claude-telegram-bot/autonomous/state/research-topics.md"
+CROPPY_NOTES="$HOME/Machinelab Dropbox/Matsuoka Daijiro/JARVIS-Journal/croppy-notes.md"
+
+  if [ ! -f "$RESEARCH_TOPICS_FILE" ]; then
+    log "ABORT: research-topics.md not found"
+    exit 0
+  fi
+
+  TOPICS=$(cat "$RESEARCH_TOPICS_FILE")
+  DATE_DOW=$(date +%u)  # 1=Mon..7=Sun
+  EXISTING_NOTES=$(tail -50 "$CROPPY_NOTES" 2>/dev/null || echo "")
+
+  cat > "$RESEARCH_PROMPT_FILE" << RESEARCH_EOF
+あなたはNightly Forge v2 リサーチモードとして動作中。
+タスクがないため、DJ運用を改善するアイデアをWeb検索で収集する。
+
+## リサーチトピック
+$TOPICS
+
+## 既存のcroppy-notes末尾（重複回避用）
+$EXISTING_NOTES
+
+## ルール
+1. 固定テーマ3つ + 回転テーマ1つ(今日は曜日${DATE_DOW}番目)を検索
+2. 各テーマ1-2回のWeb検索で効率よく情報収集
+3. DJ運用(FA設計/JARVIS/Nightly Forge/Claude Code)に直接適用可能なものだけ抽出
+4. 既にcroppy-notesにある内容は重複追記しない
+5. 発見があったら以下の形式でexecブロック出力:
+
+\`\`\`exec
+cat >> "$CROPPY_NOTES" << 'APPEND'
+
+## $(date +%Y-%m-%d) Nightly Research
+- [発見タイトル]: 概要（URL）
+APPEND
+\`\`\`
+
+6. 検索結果が既知の情報ばかりなら「NIGHTLY_DONE: 新規発見なし」と報告
+7. 最大3テーマ検索したら NIGHTLY_DONE と出力
+RESEARCH_EOF
+
+  RESPONSE=$(inject_and_wait "$RESEARCH_PROMPT_FILE" "$WAIT_TIMEOUT")
+  log "Research initial response: ${#RESPONSE} chars"
+
+  obsidian_append "## Research Mode
+$(date '+%H:%M:%S') - No active tasks, entering research mode
+"
+
+  # Research uses same main loop (exec block extraction + execution)
+  # Fall through to main loop with STEP=0
 fi
 
 log "=== Nightly Forge v2 Chrome START ==="
