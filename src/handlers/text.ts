@@ -94,8 +94,9 @@ export async function handleText(ctx: Context): Promise<void> {
     }
 
     // === F5: Orchestrator routing → chrome project tabs (G2: blocking, skip bridge if routed) ===
+    // Skip orchestrator for commands (/, 。, 、) — let command handlers process them
     let orchestratorHandled = false;
-    try {
+    if (!message.startsWith("/") && !message.startsWith("。") && !message.startsWith("、")) try {
       const orch = getChromeOrchestrator();
       if (orch) {
         const routeResult = orch.quickRoute(message, "telegram");
