@@ -5,7 +5,7 @@
 # G12: DESIGN-RULES.md inject at start
 # G13: 5-line checkpoint per step + Obsidian full log
 #
-# Flow: inject prompt -> 5s wait -> wait-response -> parse exec blocks -> execute -> inject results -> repeat
+# Flow: inject prompt -> AI uses native tools -> monitor task-state.md for completion -> checkpoint
 # Safety: max steps, max runtime, stop flag, command blocklist
 
 set -uo pipefail
@@ -324,16 +324,9 @@ $EXISTING_NOTES
 2. 各テーマ1-2回のWeb検索で効率よく情報収集
 3. DJ運用(FA設計/JARVIS/Nightly Forge/Claude Code)に直接適用可能なものだけ抽出
 4. 既にcroppy-notesにある内容は重複追記しない
-5. 発見があったら以下の形式でexecブロック出力:
-
-\`\`\`exec
-cat >> "$CROPPY_NOTES" << 'APPEND'
-
-## $(date +%Y-%m-%d) Nightly Research
-- [発見タイトル]: 概要（URL）
-APPEND
-\`\`\`
-
+5. 発見があったらclaude.aiのBashツールでcroppy-notesファイルに直接追記:
+   パス: $CROPPY_NOTES
+   形式: ## YYYY-MM-DD Nightly Research\n- [発見タイトル]: 概要（URL）
 6. 検索結果が既知の情報ばかりなら「NIGHTLY_DONE: 新規発見なし」と報告
 7. 最大3テーマ検索したら NIGHTLY_DONE と出力
 RESEARCH_EOF
@@ -382,25 +375,20 @@ cat > "$PROMPT_FILE" << 'NIGHTLY_PROMPT_EOF'
 
 ## ルール
 1. 以下のタスクリストから最優先の未完了タスク([ ])を1つ選んで作業
-2. コマンドを実行したい場合は以下の形式で出力（1メッセージに複数ブロック可）:
-```exec
-コマンド内容
-```
-3. 実行結果は次のメッセージで返される
-4. 1タスク完了したら nightly-tasks.md を更新するexecブロックを出力
-5. テスト(bun test)をコード変更後に必ず実行
-6. 禁止: git push / .env変更 / 本番プロセス再起動 / API key直接使用
-7. 行き詰まったら「STUCK: 理由」と報告して次タスクへ
-8. 全タスク完了 or 作業終了時は「NIGHTLY_DONE」と出力
-9. 1回のメッセージでexecブロックは最大3個まで（結果を見てから次を判断）
-10. レスポンスは簡潔に。分析・計画は短く、execブロック出力を優先
+2. ファイル編集・コマンド実行はclaude.aiのツール（Edit, Bash等）を直接使用
+3. 1タスク完了したら autonomous/state/nightly-tasks.md の該当行を [ ] → [x] に更新
+4. テスト(bun test)をコード変更後に必ず実行
+5. 禁止: git push / .env変更 / 本番プロセス再起動 / API key直接使用
+6. 行き詰まったら「STUCK: 理由」と報告して次タスクへ
+7. 全タスク完了 or 作業終了時は「NIGHTLY_DONE」と出力
+8. レスポンスは簡潔に。作業完了報告は1-2行で
 
 ## 現在のタスク
 NIGHTLY_PROMPT_EOF
 
 echo "$TASK_STATE" >> "$PROMPT_FILE"
 echo "" >> "$PROMPT_FILE"
-echo "最優先タスクから作業開始。まず関連ファイルを読むexecブロックを出力してください。" >> "$PROMPT_FILE"
+echo "最優先タスクから作業開始。claude.aiのツールで直接ファイルを読んで作業してください。" >> "$PROMPT_FILE"
 
 # --- Inject initial prompt ---
 log "Injecting initial prompt..."
@@ -414,22 +402,26 @@ $(echo "$RESPONSE" | head -80)
 \`\`\`
 "
 
-# --- Main Loop ---
+# --- Main Loop (Task Completion Detection) ---
+# Worker Tab Claude uses claude.ai native tools (Edit, Bash, MCP).
+# We don't parse exec blocks. We monitor:
+#   1. nightly-tasks.md changes ([ ] → [x])
+#   2. AI response text (NIGHTLY_DONE, STUCK)
+#   3. git log for new commits
 STEP=0
 CURRENT_TASK="initializing"
 COMPLETED_TASKS=0
-CONSECUTIVE_EMPTY=0
-CONV_LIMIT_RESTARTS=0
-MAX_CONV_LIMIT_RESTARTS=2
+PREV_ACTIVE_COUNT=$ACTIVE_COUNT
+STALL_COUNT=0
+MAX_STALL=4  # nudge after 4 checks with no progress (~2 min)
 
 while [ "$STEP" -lt "$MAX_STEPS" ]; do
   STEP=$((STEP + 1))
 
-  # Stop flag check
+  # Stop flag
   if [ -f "$STOP_FLAG" ]; then
     log "STOP FLAG at step $STEP"
     checkpoint "$STEP" "$CURRENT_TASK" "STOPPED" "Kill switch" "none"
-    notify "Nightly Forge STOPPED at step $STEP"
     break
   fi
 
@@ -437,175 +429,89 @@ while [ "$STEP" -lt "$MAX_STEPS" ]; do
   ELAPSED=$(elapsed_seconds)
   if [ "$ELAPSED" -gt "$MAX_RUNTIME" ]; then
     log "MAX RUNTIME at step $STEP (${ELAPSED}s)"
-    checkpoint "$STEP" "$CURRENT_TASK" "TIMEOUT" "Max runtime exceeded" "none"
-    notify "Nightly Forge TIMEOUT at step $STEP"
+    checkpoint "$STEP" "$CURRENT_TASK" "TIMEOUT" "Max runtime" "none"
     break
   fi
 
-  # Check for DONE
+  # Wait for AI to finish current turn (stable READY)
+_rc=0
+  for _ri in $(seq 1 30); do
+_rs=""
+    _rs=$(bash "$TAB_MANAGER" check-status "$WORKER_WT" 2>/dev/null)
+    if [ "$_rs" = "READY" ]; then
+      _rc=$((_rc + 1))
+      [ "$_rc" -ge 3 ] && break
+    elif [ "$_rs" = "CONV_LIMIT" ]; then
+      log "CONV_LIMIT during loop, ending"
+      checkpoint "$STEP" "$CURRENT_TASK" "CONV_LIMIT" "Hit limit" "none"
+      STEP=$MAX_STEPS  # force exit
+      break
+    elif [ "$_rs" = "TOOL_LIMIT" ]; then
+      bash "$TAB_MANAGER" auto-continue "$WORKER_WT" 2>/dev/null || true
+      _rc=0
+    else
+      _rc=0
+    fi
+    sleep 2
+  done
+
+  # Read response
+  RESPONSE=$(bash "$TAB_MANAGER" read-response "$WORKER_WT" 2>/dev/null)
+
+  # Check NIGHTLY_DONE
   if echo "$RESPONSE" | grep -q "NIGHTLY_DONE"; then
     log "NIGHTLY_DONE at step $STEP"
-    checkpoint "$STEP" "$CURRENT_TASK" "DONE" "All tasks completed ($COMPLETED_TASKS)" "none"
+    # Recount tasks to get accurate completed count
+    if [ -f "$NIGHTLY_TASK_FILE" ]; then
+      COMPLETED_TASKS=$(grep -c '^\- \[x\]' "$NIGHTLY_TASK_FILE" || true)
+    fi
+    checkpoint "$STEP" "$CURRENT_TASK" "DONE" "$COMPLETED_TASKS completed" "none"
     break
   fi
 
-  # Check for CONV_LIMIT in response (from inject_and_wait)
-  if echo "$RESPONSE" | grep -qE "^ERROR:(CONV_LIMIT|RATE_LIMIT)$"; then
-    CONV_LIMIT_RESTARTS=$((CONV_LIMIT_RESTARTS + 1))
-    log "CONV_LIMIT in loop (restart $CONV_LIMIT_RESTARTS/$MAX_CONV_LIMIT_RESTARTS)"
-    if [ "$CONV_LIMIT_RESTARTS" -gt "$MAX_CONV_LIMIT_RESTARTS" ]; then
-      log "ABORT: Max CONV_LIMIT restarts exceeded"
-      checkpoint "$STEP" "$CURRENT_TASK" "FAILED" "CONV_LIMIT x$CONV_LIMIT_RESTARTS" "none"
-      notify "Nightly Forge ABORT: CONV_LIMIT x$CONV_LIMIT_RESTARTS"
-      break
-    fi
-    # Recovery: navigate to fresh chat
-    log "Recovering: opening fresh chat..."
-    WIDX=$(echo "$WORKER_WT" | cut -d: -f1)
-    TIDX=$(echo "$WORKER_WT" | cut -d: -f2)
-    osascript -e "tell application \"Google Chrome\" to set URL of tab $TIDX of window $WIDX to \"$WORKER_PROJECT_URL\"" 2>/dev/null || true
-    sleep 12
-    STATUS=$(bash "$TAB_MANAGER" check-status "$WORKER_WT" 2>/dev/null)
-    if [ "$STATUS" != "READY" ]; then
-      sleep 10
-      STATUS=$(bash "$TAB_MANAGER" check-status "$WORKER_WT" 2>/dev/null)
-    fi
-    if [ "$STATUS" != "READY" ]; then
-      log "ABORT: Fresh chat not READY after CONV_LIMIT recovery ($STATUS)"
-      notify "Nightly Forge ABORT: recovery failed ($STATUS)"
-      break
-    fi
-    # Re-inject prompt (no DESIGN-RULES, just task list)
-    RETRY_PROMPT="/tmp/nightly-forge-retry-$$.txt"
-    cat > "$RETRY_PROMPT" << RETRY_EOF
-[Nightly Forge再開 — 前のチャットがCONV_LIMITに到達]
-
-前回の進捗: Step $STEP, $COMPLETED_TASKS tasks done, current: $CURRENT_TASK
-
-## ルール
-execブロックでコマンド出力。完了ならNIGHTLY_DONE。禁止: git push/.env変更/API key。
-
-## 残タスク
-$(cat "$NIGHTLY_TASK_FILE" 2>/dev/null)
-
-続きから作業開始。
-RETRY_EOF
-    RESPONSE=$(inject_and_wait "$RETRY_PROMPT" "$WAIT_TIMEOUT")
-    log "Recovery response: ${#RESPONSE} chars"
-    continue
-  fi
-
-  # Check for STUCK
+  # Check STUCK
   if echo "$RESPONSE" | grep -q "STUCK:"; then
     STUCK_REASON=$(echo "$RESPONSE" | grep "STUCK:" | head -1 | cut -c1-120)
     log "STUCK: $STUCK_REASON"
     checkpoint "$STEP" "$CURRENT_TASK" "STUCK" "$STUCK_REASON" "next task"
-    RESPONSE=$(inject_text "了解。次のタスクに移ってください。")
+    inject_text "了解。次のタスクに移ってください。" >/dev/null 2>&1
+    STALL_COUNT=0
     continue
   fi
 
-  # Extract ```exec blocks
-  EXEC_CMDS=$(echo "$RESPONSE" | sed -n '/^```exec$/,/^```$/p' | sed '/^```/d' | sed '/^$/d')
-
-  if [ -z "$EXEC_CMDS" ]; then
-    CONSECUTIVE_EMPTY=$((CONSECUTIVE_EMPTY + 1))
-    if [ "$CONSECUTIVE_EMPTY" -ge 3 ]; then
-      log "3 consecutive empty exec blocks. Nudging."
-      RESPONSE=$(inject_text "コマンド実行が必要なら \`\`\`exec ブロックで出力してください。完了なら NIGHTLY_DONE と出力。")
-      CONSECUTIVE_EMPTY=0
-      continue
-    fi
-    # Might be analysis - extract task name
-    CURRENT_TASK=$(echo "$RESPONSE" | grep -oE 'M[0-9]{4}' | head -1)
-    [ -z "$CURRENT_TASK" ] && CURRENT_TASK="analysis"
-    checkpoint "$STEP" "$CURRENT_TASK" "OK" "Planning/analysis" "exec expected next"
-    # Send continuation prompt
-    RESPONSE=$(inject_text "続けてください。実行するコマンドがあれば \`\`\`exec ブロックで出力。")
-    continue
+  # Check task-state progress: count remaining active tasks
+  NOW_ACTIVE=0
+  if [ -f "$NIGHTLY_TASK_FILE" ]; then
+    NOW_ACTIVE=$(grep -c '^\- \[ \]' "$NIGHTLY_TASK_FILE" || true)
   fi
 
-  CONSECUTIVE_EMPTY=0
+  if [ "$NOW_ACTIVE" -lt "$PREV_ACTIVE_COUNT" ]; then
+    # Tasks completed!
+    NEWLY_DONE=$((PREV_ACTIVE_COUNT - NOW_ACTIVE))
+    COMPLETED_TASKS=$((COMPLETED_TASKS + NEWLY_DONE))
+    log "Step $STEP: $NEWLY_DONE task(s) completed (remaining: $NOW_ACTIVE)"
+    checkpoint "$STEP" "task_complete" "OK" "$NEWLY_DONE done, $NOW_ACTIVE remaining" "next task"
+    PREV_ACTIVE_COUNT=$NOW_ACTIVE
+    STALL_COUNT=0
 
-  # Execute each command
-  RESULT_PARTS=""
-  CMD_COUNT=0
-  while IFS= read -r CMD; do
-    [ -z "$CMD" ] && continue
-    CMD_COUNT=$((CMD_COUNT + 1))
-
-    log "Exec [$CMD_COUNT]: ${CMD:0:100}"
-
-    if is_blocked "$CMD"; then
-      log "BLOCKED: $CMD"
-      RESULT_PARTS="${RESULT_PARTS}
-[BLOCKED] ${CMD:0:80}: Security policy violation
----"
-      continue
+    if [ "$NOW_ACTIVE" -eq 0 ]; then
+      log "All tasks completed!"
+      checkpoint "$STEP" "all_done" "DONE" "$COMPLETED_TASKS completed" "none"
+      break
     fi
-
-    # Execute locally on M1
-    CMD_OUTPUT=$(cd "$PROJECT_DIR" && timeout 120 bash -c "$CMD" 2>&1) || true
-    CMD_EXIT=$?
-    CMD_OUTPUT_TRUNC="${CMD_OUTPUT:0:3000}"
-
-    RESULT_PARTS="${RESULT_PARTS}
-\$ ${CMD:0:200}
-Exit: ${CMD_EXIT}
-${CMD_OUTPUT_TRUNC}
----"
-
-    log "  -> exit=$CMD_EXIT, ${#CMD_OUTPUT} chars"
-
-    # Obsidian detail
-    obsidian_append "### Step ${STEP} Exec: \`${CMD:0:80}\`
-Exit: ${CMD_EXIT}
-\`\`\`
-${CMD_OUTPUT:0:2000}
-\`\`\`
-"
-
-    # Check if nightly-tasks was updated (task completion signal)
-    if echo "$CMD" | grep -q "nightly-tasks"; then
-      COMPLETED_TASKS=$((COMPLETED_TASKS + 1))
+  else
+    # No progress detected
+    STALL_COUNT=$((STALL_COUNT + 1))
+    if [ "$STALL_COUNT" -ge "$MAX_STALL" ]; then
+      log "Step $STEP: stalled ($STALL_COUNT checks, no progress). Nudging."
+      inject_text "進捗を確認します。現在のタスク状況を報告してください。完了したなら nightly-tasks.md を更新して NIGHTLY_DONE と出力。" >/dev/null 2>&1
+      STALL_COUNT=0
     fi
-  done <<< "$EXEC_CMDS"
-
-  # Validate nightly-tasks.md structure after exec blocks
-  if ! validate_nightly_tasks; then
-    log "ERROR: nightly-tasks.md validation failed and restore unavailable"
-    checkpoint "$STEP" "$CURRENT_TASK" "ERROR" "nightly-tasks.md corrupted" "abort"
-    break
+    checkpoint "$STEP" "$CURRENT_TASK" "WAIT" "AI working (stall=$STALL_COUNT)" "monitoring"
   fi
 
-  # Detect current task from commands
-  TASK_FROM_CMD=$(echo "$EXEC_CMDS" | grep -oE 'M[0-9]{4}' | head -1)
-  [ -n "$TASK_FROM_CMD" ] && CURRENT_TASK="$TASK_FROM_CMD"
-
-  checkpoint "$STEP" "$CURRENT_TASK" "OK" "${CMD_COUNT} commands executed" "AI decides next"
-
-  # Inject results back
-  RESULT_FILE="/tmp/nightly-forge-result-$$.txt"
-  cat > "$RESULT_FILE" << RESULT_EOF
-[実行結果]
-${RESULT_PARTS}
-
-次のアクションを決定してください。完了なら NIGHTLY_DONE。
-RESULT_EOF
-
-  RESPONSE=$(inject_and_wait "$RESULT_FILE" "$WAIT_TIMEOUT")
-
-  if [ -z "$RESPONSE" ] || [ "$RESPONSE" = "TIMEOUT" ] || [ "$RESPONSE" = "NO_RESPONSE" ]; then
-    log "Step $STEP: no response after exec results"
-    checkpoint "$STEP" "$CURRENT_TASK" "WARN" "No AI response" "retry"
-    RESPONSE=$(inject_text "応答がタイムアウトしました。現在の状況を報告してください。")
-  fi
-
-  log "Step $STEP response: ${#RESPONSE} chars"
-  obsidian_append "## Step ${STEP} AI Response
-\`\`\`
-$(echo "$RESPONSE" | head -80)
-\`\`\`
-"
+  # Brief wait before next check
+  sleep 15
 done
 
 # --- Finalize ---
