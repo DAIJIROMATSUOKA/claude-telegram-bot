@@ -194,7 +194,7 @@ inject_text() {
 # Safety check for commands
 is_blocked() {
   local cmd="$1"
-  echo "$cmd" | grep -qiE 'git push|git reset --hard|rm -rf /|rm -rf ~|\.env|API_KEY|TELEGRAM_BOT_TOKEN|sudo |launchctl|pkill|kill -9|npm publish|chmod 777|crontab' && return 0
+  echo "$cmd" | grep -qiE 'git push|git reset --hard|rm -rf /|rm -rf ~|\.env|API_KEY|TELEGRAM_BOT_TOKEN|sudo |launchctl unload|launchctl load|launchctl remove|pkill|kill -9|npm publish|chmod 777|crontab' && return 0
   return 1
 }
 
