@@ -167,6 +167,19 @@ alias cbot-restart='launchctl kickstart -k gui/$(id -u)/com.claude-telegram-ts &
 alias cbot-logs='tail -f /tmp/claude-telegram-bot-ts.log'
 ```
 
+## Nightly Forge
+
+Autonomous nightly improvement agent that runs via Chrome Worker Tab on claude.ai.
+
+- **Task-driven**: Reads `nightly-tasks.md` for `[ ]` items, works through them sequentially
+- **Completion detection**: Monitors `[ ]` to `[x]` transitions in task list
+- **Research mode**: When no tasks remain, searches the web for improvements relevant to DJ workflow
+- **Safety**: Command blocklist (`is_blocked()`), max steps/runtime limits, stop flag kill switch
+- **Isolation**: Git branch per run, 3-file change limit, `bun test` required, git push forbidden
+- **Logging**: 5-line checkpoint per step + full log to Obsidian daily note
+
+Config: `scripts/nightly-forge-chrome.sh` | Schedule: 23:00 via LaunchAgent
+
 ## Development
 
 ```bash
