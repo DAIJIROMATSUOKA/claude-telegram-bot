@@ -13,37 +13,60 @@ import type { Context } from 'grammy';
 // Simpler pattern: "M1300の納期3/31" or "M1300の納期2026-03-31"
 const DEADLINE_SIMPLE = /[MP]M?(\d{3,4})\S*\s*(?:の)?(?:希望)?納期\s*[:：]?\s*(\d{1,4})[\/\-](\d{1,2})(?:[\/\-](\d{1,2}))?/i;
 
-// Extended pattern: "M1300の納期3月31日"
+// Extended pattern: "M1300の納期2026年3月31日" or "M1300の納期2026-3-31"
 const DEADLINE_PATTERN = /[MP]M?(\d{3,4})(?:[-\s]*\d*)?[\s]*(?:の)?納期[\s:：]*(\d{1,4})[\/\-年](\d{1,2})[\/\-月](\d{1,2})?日?/i;
+
+// Japanese month/day: "M1300の納期3月31日" or "M1300の納期3月末"
+const DEADLINE_JP = /[MP]M?(\d{3,4})\S*\s*(?:の)?(?:希望)?納期\s*[:：]?\s*(\d{1,2})月(\d{1,2})日?/i;
+
+// Month-end: "M1300の納期3月末"
+const DEADLINE_MONTH_END = /[MP]M?(\d{3,4})\S*\s*(?:の)?(?:希望)?納期\s*[:：]?\s*(\d{1,2})月末/i;
 
 export async function handleDeadlineInput(ctx: Context): Promise<boolean> {
   const text = ctx.message?.text;
   if (!text) return false;
 
-  const match = text.match(DEADLINE_SIMPLE) || text.match(DEADLINE_PATTERN);
-  if (!match) return false;
+  // Try all patterns
+  const match = text.match(DEADLINE_SIMPLE) || text.match(DEADLINE_PATTERN) || text.match(DEADLINE_JP);
+  const monthEndMatch = !match ? text.match(DEADLINE_MONTH_END) : null;
+  if (!match && !monthEndMatch) return false;
 
-  const machineNo = match[1];
-  let year: number, month: number, day: number;
+  let machineNo: string, year: number, month: number, day: number;
 
-  if (match[4]) {
-    if (parseInt(match[2]) > 2000) {
-      year = parseInt(match[2]);
-      month = parseInt(match[3]);
-      day = parseInt(match[4]);
+  if (monthEndMatch) {
+    // "3月末" → last day of month
+    machineNo = monthEndMatch[1];
+    month = parseInt(monthEndMatch[2]);
+    year = new Date().getFullYear();
+    // Last day of month: day 0 of next month
+    day = new Date(year, month, 0).getDate();
+    if (new Date(year, month - 1, day) < new Date()) {
+      year++;
+      day = new Date(year, month, 0).getDate();
+    }
+  } else if (match) {
+    machineNo = match[1];
+    if (match[4]) {
+      if (parseInt(match[2]) > 2000) {
+        year = parseInt(match[2]);
+        month = parseInt(match[3]);
+        day = parseInt(match[4]);
+      } else {
+        month = parseInt(match[2]);
+        day = parseInt(match[3]);
+        year = new Date().getFullYear();
+      }
     } else {
       month = parseInt(match[2]);
       day = parseInt(match[3]);
       year = new Date().getFullYear();
+      const testDate = new Date(year, month - 1, day);
+      if (testDate < new Date()) {
+        year++;
+      }
     }
   } else {
-    month = parseInt(match[2]);
-    day = parseInt(match[3]);
-    year = new Date().getFullYear();
-    const testDate = new Date(year, month - 1, day);
-    if (testDate < new Date()) {
-      year++;
-    }
+    return false;
   }
 
   const deadline = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
