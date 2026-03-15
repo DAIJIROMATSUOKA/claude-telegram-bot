@@ -147,7 +147,15 @@ export function getProjectContext(
   const generated = data.generated_at || 'unknown';
 
   // Group quotes by プロジェクトNo
-  const quotes = indices.map(i => data.projects[i]).filter(Boolean);
+  const quotes = indices.map(i => data.projects[i]).filter(q => {
+      if (!q) return false;
+      const mno = q['マシンNo'] || '';
+      // Skip underscore variants (M1300_1 = half-payment duplicate)
+      if (mno.includes('_')) return false;
+      // Skip P-numbers when searching for M-numbers (different machines)
+      if (mno.startsWith('P') && !mno.startsWith('PM')) return false;
+      return true;
+    });
   const byProject: Record<string, ProjectQuote[]> = {};
   for (const q of quotes) {
     const pno = q.プロジェクトNo || 'unknown';
