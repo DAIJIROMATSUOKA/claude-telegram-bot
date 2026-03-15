@@ -18,6 +18,7 @@ const execAsync = promisify(exec);
 
 // === Config ===
 const GATEWAY_URL = process.env.MEMORY_GATEWAY_URL || 'https://jarvis-memory-gateway.jarvis-matsuoka.workers.dev';
+const POLL_TARGET = process.env.POLL_TARGET || 'm3';
 const POLL_INTERVAL_IDLE_MS = 10000;  // 10s when no tasks
 const POLL_INTERVAL_ACTIVE_MS = 1000;  // 1s after finding a task
 const POLL_COOLDOWN_MS = 30000;        // 30s of no tasks -> back to idle
@@ -255,7 +256,7 @@ async function pollAndExecute(): Promise<void> {
   if (activeTasks >= MAX_CONCURRENT) return;
 
   try {
-    const pollRes = await fetchWithTimeout(`${GATEWAY_URL}/v1/exec/poll`);
+    const pollRes = await fetchWithTimeout(`${GATEWAY_URL}/v1/exec/poll?target=${POLL_TARGET}`);
     const pollData: any = await pollRes.json();
 
     if (!pollData.ok || !pollData.task) {
@@ -298,7 +299,7 @@ async function startupCleanup(): Promise<void> {
     // Drain all pending tasks from before this instance started
     // (they are stale - previous Poller died mid-execution)
     for (let i = 0; i < 50; i++) {
-      const res = await fetchWithTimeout(`${GATEWAY_URL}/v1/exec/poll`);
+      const res = await fetchWithTimeout(`${GATEWAY_URL}/v1/exec/poll?target=${POLL_TARGET}`);
       const data: any = await res.json();
       if (!data.ok || !data.task) break;
       // Complete as drained (exit 99)
