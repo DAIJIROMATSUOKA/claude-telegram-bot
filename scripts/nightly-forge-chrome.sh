@@ -26,8 +26,12 @@ WAIT_TIMEOUT=300   # 5 min per AI response
 DATE=$(date +%Y-%m-%d)
 TIME_START=$(date +%s)
 
+BACKUP_DIR="/tmp/nightly-forge"
+
+WORKER_PROJECT_URL="https://claude.ai/project/019c15f4-3d2d-7263-a308-e7f6ccd6b3f8"
 mkdir -p "$LOG_DIR"
 mkdir -p "$OBSIDIAN_BASE"
+mkdir -p "$BACKUP_DIR"
 
 LOG_FILE="$LOG_DIR/${DATE}-forge-chrome.log"
 OBSIDIAN_FILE="$OBSIDIAN_BASE/${DATE}-forge.md"
@@ -54,14 +58,24 @@ cleanup() {
   log "Cleanup done"
 }
 
-# G13: 5-line checkpoint
+# G13: 5-line checkpoint + test metrics
 checkpoint() {
   local step="$1" task="$2" status="$3" result="$4" next="$5"
+  # Collect bun test metrics
+  local test_line=""
+  local test_output
+  test_output=$(cd "$PROJECT_DIR" && timeout 60 bun test 2>&1 || true)
+  local test_pass test_fail
+  test_pass=$(echo "$test_output" | grep -oE '[0-9]+ pass' | grep -oE '[0-9]+' || echo "0")
+  test_fail=$(echo "$test_output" | grep -oE '[0-9]+ fail' | grep -oE '[0-9]+' || echo "0")
+  test_line="METRIC: test_pass=${test_pass:-0} test_fail=${test_fail:-0}"
+
   local cp="STEP: ${step}/${MAX_STEPS}
 TASK: ${task}
 STATUS: ${status}
 RESULT: ${result}
-NEXT: ${next}"
+NEXT: ${next}
+${test_line}"
   log "--- CHECKPOINT ---"
   log "$cp"
   obsidian_append "### Checkpoint ${step}
@@ -71,7 +85,7 @@ ${cp}
 "
 }
 
-# inject-file + 5s fixed wait + wait-response (double-READY mitigation)
+# inject-file + 5s fixed wait + wait-response (CONV_LIMIT aware)
 inject_and_wait() {
   local text_file="$1"
   local timeout="${2:-$WAIT_TIMEOUT}"
@@ -79,18 +93,29 @@ inject_and_wait() {
   bash "$TAB_MANAGER" inject-file "$WORKER_WT" "$text_file" 2>/dev/null
   rm -f "$text_file"
 
-  # 5-second fixed wait: Claude takes 3-5s to start processing (DESIGN-RULES lesson)
+  # 5-second fixed wait: Claude takes 3-5s to start processing
   sleep 5
 
-  # Double READY check
-  local s1 s2
+  # Check status before waiting
+  local s1
   s1=$(bash "$TAB_MANAGER" check-status "$WORKER_WT" 2>/dev/null)
+
+  # CONV_LIMIT / RATE_LIMIT: return special signal for caller to handle
+  if [ "$s1" = "CONV_LIMIT" ] || [ "$s1" = "RATE_LIMIT" ]; then
+    echo "ERROR:$s1"
+    return 0
+  fi
+
+  # Double READY check
   if [ "$s1" = "READY" ]; then
     sleep 1
+    local s2
     s2=$(bash "$TAB_MANAGER" check-status "$WORKER_WT" 2>/dev/null)
+    if [ "$s2" = "CONV_LIMIT" ] || [ "$s2" = "RATE_LIMIT" ]; then
+      echo "ERROR:$s2"
+      return 0
+    fi
     if [ "$s2" = "READY" ]; then
-      # Double READY = response already complete (fast) or stale
-      # Read and check length to distinguish
       local resp
       resp=$(bash "$TAB_MANAGER" read-response "$WORKER_WT" 2>/dev/null)
       echo "$resp"
@@ -99,7 +124,18 @@ inject_and_wait() {
   fi
 
   # Normal poll: BUSY -> READY
-  bash "$TAB_MANAGER" wait-response "$WORKER_WT" "$timeout" 2>/dev/null
+  local wait_result
+  wait_result=$(bash "$TAB_MANAGER" wait-response "$WORKER_WT" "$timeout" 2>/dev/null)
+
+  # Post-wait status check (might have hit CONV_LIMIT during generation)
+  local post_status
+  post_status=$(bash "$TAB_MANAGER" check-status "$WORKER_WT" 2>/dev/null)
+  if [ "$post_status" = "CONV_LIMIT" ] || [ "$post_status" = "RATE_LIMIT" ]; then
+    echo "ERROR:$post_status"
+    return 0
+  fi
+
+  echo "$wait_result"
 }
 
 inject_text() {
@@ -113,6 +149,36 @@ is_blocked() {
   local cmd="$1"
   echo "$cmd" | grep -qiE 'git push|git reset --hard|rm -rf /|rm -rf ~|\.env|API_KEY|TELEGRAM_BOT_TOKEN|sudo |launchctl|pkill|kill -9|npm publish|chmod 777|crontab' && return 0
   return 1
+}
+
+# Backup nightly-tasks.md before any modifications
+backup_nightly_tasks() {
+  if [ -f "$NIGHTLY_TASK_FILE" ]; then
+    cp "$NIGHTLY_TASK_FILE" "$BACKUP_DIR/nightly-tasks-${DATE}.md.bak"
+    log "Backed up nightly-tasks.md to $BACKUP_DIR/"
+  fi
+}
+
+# Validate nightly-tasks.md structure; restore from backup if corrupted
+validate_nightly_tasks() {
+  if [ ! -f "$NIGHTLY_TASK_FILE" ]; then
+    log "WARN: nightly-tasks.md missing, restoring from backup"
+    cp "$BACKUP_DIR/nightly-tasks-${DATE}.md.bak" "$NIGHTLY_TASK_FILE" 2>/dev/null && return 0
+    log "ERROR: no backup available to restore"
+    return 1
+  fi
+  # Check required headers exist
+  local has_active has_blocked has_rules
+  has_active=$(grep -c '^## Active' "$NIGHTLY_TASK_FILE" || true)
+  has_blocked=$(grep -c '^## Blocked' "$NIGHTLY_TASK_FILE" || true)
+  has_rules=$(grep -c '^## Rules' "$NIGHTLY_TASK_FILE" || true)
+  if [ "$has_active" -eq 0 ] || [ "$has_blocked" -eq 0 ] || [ "$has_rules" -eq 0 ]; then
+    log "WARN: nightly-tasks.md structure corrupted (Active=$has_active Blocked=$has_blocked Rules=$has_rules), restoring"
+    cp "$BACKUP_DIR/nightly-tasks-${DATE}.md.bak" "$NIGHTLY_TASK_FILE" 2>/dev/null && return 0
+    log "ERROR: restore failed"
+    return 1
+  fi
+  return 0
 }
 
 # --- Pre-flight ---
@@ -149,7 +215,6 @@ fi
 # CONV_LIMIT: auto-navigate to fresh chat
 if [ "$STATUS" = "CONV_LIMIT" ]; then
   log "Worker Tab CONV_LIMIT, opening fresh chat..."
-  WORKER_PROJECT_URL="https://claude.ai/project/019c15f4-3d2d-7263-a308-e7f6ccd6b3f8"
   WIDX=$(echo "$WORKER_WT" | cut -d: -f1)
   TIDX=$(echo "$WORKER_WT" | cut -d: -f2)
   osascript -e "tell application \"Google Chrome\" to set URL of tab $TIDX of window $WIDX to \"$WORKER_PROJECT_URL\"" 2>/dev/null || true
@@ -172,6 +237,7 @@ fi
 TASK_STATE=""
 if [ -f "$NIGHTLY_TASK_FILE" ]; then
   TASK_STATE=$(cat "$NIGHTLY_TASK_FILE")
+  backup_nightly_tasks
 else
   log "ABORT: nightly-tasks.md not found"
   notify "Nightly Forge ABORT: nightly-tasks.md not found"
@@ -247,23 +313,21 @@ Tasks: ${ACTIVE_COUNT}
 Worker: ${WORKER_WT}
 "
 
-# --- G12: Inject DESIGN-RULES.md ---
-log "G12: Injecting DESIGN-RULES.md..."
-DESIGN_RULES="$PROJECT_DIR/docs/DESIGN-RULES.md"
-if [ -f "$DESIGN_RULES" ]; then
-  bash "$TAB_MANAGER" inject-file "$WORKER_WT" "$DESIGN_RULES" 2>/dev/null
-  sleep 5
-  # Drain the response (we don't need it)
-  bash "$TAB_MANAGER" wait-response "$WORKER_WT" 120 >/dev/null 2>&1 || true
-  log "DESIGN-RULES.md injected and drained"
-else
-  log "WARNING: DESIGN-RULES.md not found"
-fi
+# --- G12: DESIGN-RULES embedded in initial prompt (no separate inject) ---
+# 14KB separate inject caused CONV_LIMIT after 1-2 steps. Minimal rules now in prompt.
+log "G12: DESIGN-RULES embedded in prompt (no separate inject)"
 
 # --- Build initial prompt ---
 PROMPT_FILE="/tmp/nightly-forge-prompt-$$.txt"
 cat > "$PROMPT_FILE" << 'NIGHTLY_PROMPT_EOF'
 あなたはNightly Forge v2（Chrome自律夜間改善エージェント）として動作中。
+
+## 設計ルール（DESIGN-RULES抜粋）
+- コードを書く前に深く考える。急がない。冪等性チェック必須
+- パッチはPythonスクリプト+文字列マッチ方式が安全（行ズレなし）
+- bun test + bash -n 構文チェック必須。git push禁止
+- 蓄積教訓: Bunのspawn timeoutはNode.jsと異なる。crontabはTCC権限でexec bridge不可→LaunchAgent
+- Phase分割禁止。一気に実装+フォールバック設計。外部依存だけ後回し
 
 ## ルール
 1. 以下のタスクリストから最優先の未完了タスク([ ])を1つ選んで作業
@@ -278,6 +342,7 @@ cat > "$PROMPT_FILE" << 'NIGHTLY_PROMPT_EOF'
 7. 行き詰まったら「STUCK: 理由」と報告して次タスクへ
 8. 全タスク完了 or 作業終了時は「NIGHTLY_DONE」と出力
 9. 1回のメッセージでexecブロックは最大3個まで（結果を見てから次を判断）
+10. レスポンスは簡潔に。分析・計画は短く、execブロック出力を優先
 
 ## 現在のタスク
 NIGHTLY_PROMPT_EOF
@@ -302,6 +367,8 @@ STEP=0
 CURRENT_TASK="initializing"
 COMPLETED_TASKS=0
 CONSECUTIVE_EMPTY=0
+CONV_LIMIT_RESTARTS=0
+MAX_CONV_LIMIT_RESTARTS=2
 
 while [ "$STEP" -lt "$MAX_STEPS" ]; do
   STEP=$((STEP + 1))
@@ -328,6 +395,52 @@ while [ "$STEP" -lt "$MAX_STEPS" ]; do
     log "NIGHTLY_DONE at step $STEP"
     checkpoint "$STEP" "$CURRENT_TASK" "DONE" "All tasks completed ($COMPLETED_TASKS)" "none"
     break
+  fi
+
+  # Check for CONV_LIMIT in response (from inject_and_wait)
+  if echo "$RESPONSE" | grep -qE "^ERROR:(CONV_LIMIT|RATE_LIMIT)$"; then
+    CONV_LIMIT_RESTARTS=$((CONV_LIMIT_RESTARTS + 1))
+    log "CONV_LIMIT in loop (restart $CONV_LIMIT_RESTARTS/$MAX_CONV_LIMIT_RESTARTS)"
+    if [ "$CONV_LIMIT_RESTARTS" -gt "$MAX_CONV_LIMIT_RESTARTS" ]; then
+      log "ABORT: Max CONV_LIMIT restarts exceeded"
+      checkpoint "$STEP" "$CURRENT_TASK" "FAILED" "CONV_LIMIT x$CONV_LIMIT_RESTARTS" "none"
+      notify "Nightly Forge ABORT: CONV_LIMIT x$CONV_LIMIT_RESTARTS"
+      break
+    fi
+    # Recovery: navigate to fresh chat
+    log "Recovering: opening fresh chat..."
+    WIDX=$(echo "$WORKER_WT" | cut -d: -f1)
+    TIDX=$(echo "$WORKER_WT" | cut -d: -f2)
+    osascript -e "tell application \"Google Chrome\" to set URL of tab $TIDX of window $WIDX to \"$WORKER_PROJECT_URL\"" 2>/dev/null || true
+    sleep 12
+    STATUS=$(bash "$TAB_MANAGER" check-status "$WORKER_WT" 2>/dev/null)
+    if [ "$STATUS" != "READY" ]; then
+      sleep 10
+      STATUS=$(bash "$TAB_MANAGER" check-status "$WORKER_WT" 2>/dev/null)
+    fi
+    if [ "$STATUS" != "READY" ]; then
+      log "ABORT: Fresh chat not READY after CONV_LIMIT recovery ($STATUS)"
+      notify "Nightly Forge ABORT: recovery failed ($STATUS)"
+      break
+    fi
+    # Re-inject prompt (no DESIGN-RULES, just task list)
+    RETRY_PROMPT="/tmp/nightly-forge-retry-$$.txt"
+    cat > "$RETRY_PROMPT" << RETRY_EOF
+[Nightly Forge再開 — 前のチャットがCONV_LIMITに到達]
+
+前回の進捗: Step $STEP, $COMPLETED_TASKS tasks done, current: $CURRENT_TASK
+
+## ルール
+execブロックでコマンド出力。完了ならNIGHTLY_DONE。禁止: git push/.env変更/API key。
+
+## 残タスク
+$(cat "$NIGHTLY_TASK_FILE" 2>/dev/null)
+
+続きから作業開始。
+RETRY_EOF
+    RESPONSE=$(inject_and_wait "$RETRY_PROMPT" "$WAIT_TIMEOUT")
+    log "Recovery response: ${#RESPONSE} chars"
+    continue
   fi
 
   # Check for STUCK
@@ -405,6 +518,13 @@ ${CMD_OUTPUT:0:2000}
     fi
   done <<< "$EXEC_CMDS"
 
+  # Validate nightly-tasks.md structure after exec blocks
+  if ! validate_nightly_tasks; then
+    log "ERROR: nightly-tasks.md validation failed and restore unavailable"
+    checkpoint "$STEP" "$CURRENT_TASK" "ERROR" "nightly-tasks.md corrupted" "abort"
+    break
+  fi
+
   # Detect current task from commands
   TASK_FROM_CMD=$(echo "$EXEC_CMDS" | grep -oE 'M[0-9]{4}' | head -1)
   [ -n "$TASK_FROM_CMD" ] && CURRENT_TASK="$TASK_FROM_CMD"
@@ -440,15 +560,43 @@ done
 TOTAL_ELAPSED=$(elapsed_seconds)
 log "=== Nightly Forge v2 Chrome END (${TOTAL_ELAPSED}s, ${STEP} steps, ${COMPLETED_TASKS} completed) ==="
 
+cd "$PROJECT_DIR"
+CHANGES=$(git status --short 2>/dev/null | wc -l | tr -d ' ')
+GIT_DIFF_STAT=$(git diff --stat 2>/dev/null || echo "no changes")
+
+# Parse final task state for completed/uncompleted summary
+TASKS_COMPLETED_LIST=""
+TASKS_UNCOMPLETED_LIST=""
+if [ -f "$NIGHTLY_TASK_FILE" ]; then
+  TASKS_COMPLETED_LIST=$(grep '^\- \[x\]' "$NIGHTLY_TASK_FILE" 2>/dev/null | sed 's/^- \[x\] /  - /' || echo "  (none)")
+  TASKS_UNCOMPLETED_LIST=$(grep '^\- \[ \]' "$NIGHTLY_TASK_FILE" 2>/dev/null | sed 's/^- \[ \] /  - /' || echo "  (none)")
+fi
+[ -z "$TASKS_COMPLETED_LIST" ] && TASKS_COMPLETED_LIST="  (none)"
+[ -z "$TASKS_UNCOMPLETED_LIST" ] && TASKS_UNCOMPLETED_LIST="  (none)"
+
+# Final checkpoint
+checkpoint "$STEP" "finalize" "END" "${COMPLETED_TASKS} tasks done, ${TOTAL_ELAPSED}s" "session complete"
+
 obsidian_append "
 ---
 ## Summary
 - Steps: ${STEP}/${MAX_STEPS}
 - Completed tasks: ${COMPLETED_TASKS}
 - Duration: ${TOTAL_ELAPSED}s
+- Changed files: ${CHANGES}
 - Ended: $(date '+%H:%M:%S')
+
+## Handoff
+### Completed Tasks
+${TASKS_COMPLETED_LIST}
+
+### Remaining Tasks
+${TASKS_UNCOMPLETED_LIST}
+
+### Git Diff Stat
+\`\`\`
+${GIT_DIFF_STAT}
+\`\`\`
 "
 
-cd "$PROJECT_DIR"
-CHANGES=$(git status --short 2>/dev/null | wc -l | tr -d ' ')
 notify "Nightly Forge v2 END: ${STEP} steps, ${COMPLETED_TASKS} done, ${CHANGES} changed, ${TOTAL_ELAPSED}s"
