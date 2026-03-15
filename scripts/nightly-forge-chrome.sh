@@ -90,8 +90,25 @@ inject_and_wait() {
   local text_file="$1"
   local timeout="${2:-$WAIT_TIMEOUT}"
 
-  bash "$TAB_MANAGER" inject-file "$WORKER_WT" "$text_file" 2>/dev/null
+  # Inject with retry (handles brief BUSY transitions after previous response)
+  local inject_ok=0
+  for _attempt in 1 2 3; do
+    local _inject_out
+    _inject_out=$(bash "$TAB_MANAGER" inject-file "$WORKER_WT" "$text_file" 2>/dev/null)
+    if echo "$_inject_out" | grep -q "INSERTED"; then
+      inject_ok=1
+      break
+    fi
+    log "inject_and_wait: attempt $_attempt failed ($_inject_out), retrying in 5s..."
+    sleep 5
+  done
   rm -f "$text_file"
+
+  if [ "$inject_ok" != "1" ]; then
+    log "inject_and_wait: all inject attempts failed"
+    echo "INJECT_FAILED"
+    return 1
+  fi
 
   # 5-second fixed wait: Claude takes 3-5s to start processing
   sleep 5
