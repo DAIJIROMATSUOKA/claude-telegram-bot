@@ -132,8 +132,11 @@ export async function handleText(ctx: Context): Promise<void> {
     }
 
   // ── Chat Reply Routing: TelegramリプライをClaude.aiチャットにルーティング
-  if (await handleChatReply(ctx)) return;
-  if (await handleBridgeReply(ctx)) return;
+  // Skip if orchestrator already handled (prevents double-routing on reply to M-number messages)
+  if (!orchestratorHandled) {
+    if (await handleChatReply(ctx)) return;
+    if (await handleBridgeReply(ctx)) return;
+  }
 
   // ── Memo mode: 。で始まるメッセージはJarvisスルー、🗑ボタンのみ ──
   if (ctx.message?.text?.startsWith('。')) {
