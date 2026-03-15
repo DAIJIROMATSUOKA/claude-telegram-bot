@@ -1,11 +1,11 @@
 #!/bin/bash
 # nightly-forge-chrome.sh — Nightly Forge v2: Chrome Worker Tab execution loop
 #
-# G11: Chrome Tab + local exec loop (think in claude.ai -> execute on M1 -> post results)
+# G11: Chrome Tab loop — AI uses claude.ai native tools (bash, edit, view), loop monitors task completion
 # G12: DESIGN-RULES.md inject at start
 # G13: 5-line checkpoint per step + Obsidian full log
 #
-# Flow: inject prompt -> AI uses native tools -> monitor task-state.md for completion -> checkpoint
+# Flow: inject prompt -> AI uses native tools -> monitor nightly-tasks.md for [ ]→[x] transitions -> checkpoint
 # Safety: max steps, max runtime, stop flag, command blocklist
 
 set -uo pipefail
