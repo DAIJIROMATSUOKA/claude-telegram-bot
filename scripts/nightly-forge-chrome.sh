@@ -146,6 +146,22 @@ if [ "$STATUS" = "BUSY" ]; then
   DRAIN=$(bash "$TAB_MANAGER" wait-response "$WORKER_WT" 120 2>/dev/null)
   STATUS=$(bash "$TAB_MANAGER" check-status "$WORKER_WT" 2>/dev/null)
 fi
+# CONV_LIMIT: auto-navigate to fresh chat
+if [ "$STATUS" = "CONV_LIMIT" ]; then
+  log "Worker Tab CONV_LIMIT, opening fresh chat..."
+  WORKER_PROJECT_URL="https://claude.ai/project/019c15f4-3d2d-7263-a308-e7f6ccd6b3f8"
+  WIDX=$(echo "$WORKER_WT" | cut -d: -f1)
+  TIDX=$(echo "$WORKER_WT" | cut -d: -f2)
+  osascript -e "tell application \"Google Chrome\" to set URL of tab $TIDX of window $WIDX to \"$WORKER_PROJECT_URL\"" 2>/dev/null || true
+  log "Navigated to project URL, waiting for load..."
+  sleep 10
+  STATUS=$(bash "$TAB_MANAGER" check-status "$WORKER_WT" 2>/dev/null)
+  if [ "$STATUS" != "READY" ]; then
+    sleep 10
+    STATUS=$(bash "$TAB_MANAGER" check-status "$WORKER_WT" 2>/dev/null)
+  fi
+  log "Post-navigate status: $STATUS"
+fi
 if [ "$STATUS" != "READY" ]; then
   log "ABORT: Worker Tab $WORKER_WT not READY after recovery (status: $STATUS)"
   notify "Nightly Forge ABORT: Worker Tab not READY ($STATUS)"
