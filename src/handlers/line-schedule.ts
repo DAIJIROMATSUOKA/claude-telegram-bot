@@ -56,7 +56,7 @@ function isDirectMedia(mimeType: string): boolean {
 export async function handleLineSchedule(ctx: Context): Promise<void> {
   const userId = ctx.from?.id;
   const chatId = ctx.chat?.id!;
-  const raw = (ctx.message?.text || '').replace(/^\/lineschedule\s*/i, '').trim();
+  const raw = (ctx.message?.text || '').replace(/^\/line_?schedule\s*/i, '').trim();
 
   // Sub-commands: list, cancel
   if (raw === 'list' || raw === '一覧') {

@@ -228,6 +228,7 @@ bot.command("cal", handleCal);
 bot.command("mail", handleMailSend);
 bot.command("imsg", handleImsgSend);
 bot.command("lineschedule", handleLineSchedule);
+bot.command("line_schedule", handleLineSchedule);
 bot.command("line", handleLinePost);
 bot.command("jarvisnotif", handleJarvisNotif);
 bot.command("timetimer", handleTimeTimer);

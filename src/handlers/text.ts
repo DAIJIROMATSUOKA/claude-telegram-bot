@@ -203,6 +203,14 @@ export async function handleText(ctx: Context): Promise<void> {
     }
   }
 
+  // LINE schedule command (must check before /line)
+  if (message.startsWith("/line_schedule") || message.startsWith("/lineschedule")) {
+    stopProcessing();
+    const { handleLineSchedule } = await import("./line-schedule");
+    await handleLineSchedule(ctx);
+    return;
+  }
+
   // LINE group post command
   if (message.startsWith("/line")) {
     stopProcessing();
