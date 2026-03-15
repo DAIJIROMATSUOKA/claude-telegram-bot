@@ -16,7 +16,7 @@ TAB_MANAGER="$HOME/claude-telegram-bot/scripts/croppy-tab-manager.sh"
 PROJECT_DIR="$HOME/claude-telegram-bot"
 LOG_DIR="$PROJECT_DIR/logs/nightly"
 OBSIDIAN_BASE="$HOME/Library/Mobile Documents/iCloud~md~obsidian/Documents/MyObsidian/90_System/NightlyForge"
-MEMORY_DIR="$HOME/.claude/projects/-Users-daijiromatsuokam1-claude-telegram-bot/memory"
+NIGHTLY_TASK_FILE="$HOME/claude-telegram-bot/autonomous/state/nightly-tasks.md"
 STOP_FLAG="/tmp/jarvis-nightly-stop"
 NIGHTLY_MODE="/tmp/nightly-mode"
 LOCK_FILE="/tmp/nightly-forge-chrome.lock"
@@ -152,13 +152,13 @@ if [ "$STATUS" != "READY" ]; then
   exit 1
 fi
 
-# Read task-state.md
+# Read nightly-tasks.md
 TASK_STATE=""
-if [ -f "$MEMORY_DIR/task-state.md" ]; then
-  TASK_STATE=$(cat "$MEMORY_DIR/task-state.md")
+if [ -f "$NIGHTLY_TASK_FILE" ]; then
+  TASK_STATE=$(cat "$NIGHTLY_TASK_FILE")
 else
-  log "ABORT: task-state.md not found"
-  notify "Nightly Forge ABORT: task-state.md not found"
+  log "ABORT: nightly-tasks.md not found"
+  notify "Nightly Forge ABORT: nightly-tasks.md not found"
   exit 1
 fi
 
@@ -205,7 +205,7 @@ cat > "$PROMPT_FILE" << 'NIGHTLY_PROMPT_EOF'
 コマンド内容
 ```
 3. 実行結果は次のメッセージで返される
-4. 1タスク完了したら task-state.md を更新するexecブロックを出力
+4. 1タスク完了したら nightly-tasks.md を更新するexecブロックを出力
 5. テスト(bun test)をコード変更後に必ず実行
 6. 禁止: git push / .env変更 / 本番プロセス再起動 / API key直接使用
 7. 行き詰まったら「STUCK: 理由」と報告して次タスクへ
@@ -332,8 +332,8 @@ ${CMD_OUTPUT:0:2000}
 \`\`\`
 "
 
-    # Check if task-state was updated (task completion signal)
-    if echo "$CMD" | grep -q "task-state"; then
+    # Check if nightly-tasks was updated (task completion signal)
+    if echo "$CMD" | grep -q "nightly-tasks"; then
       COMPLETED_TASKS=$((COMPLETED_TASKS + 1))
     fi
   done <<< "$EXEC_CMDS"
