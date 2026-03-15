@@ -90,7 +90,20 @@ inject_and_wait() {
   local text_file="$1"
   local timeout="${2:-$WAIT_TIMEOUT}"
 
-  # Inject with retry (handles brief BUSY transitions after previous response)
+  # Pre-inject: drain any ongoing BUSY response
+  local _pre_status
+  _pre_status=$(bash "$TAB_MANAGER" check-status "$WORKER_WT" 2>/dev/null)
+  if [ "$_pre_status" = "BUSY" ]; then
+    log "inject_and_wait: Worker BUSY, draining response first..."
+    bash "$TAB_MANAGER" wait-response "$WORKER_WT" 120 >/dev/null 2>&1 || true
+    sleep 2
+  elif [ "$_pre_status" = "CONV_LIMIT" ] || [ "$_pre_status" = "RATE_LIMIT" ]; then
+    echo "ERROR:$_pre_status"
+    rm -f "$text_file"
+    return 0
+  fi
+
+  # Inject with retry
   local inject_ok=0
   for _attempt in 1 2 3; do
     local _inject_out
@@ -316,7 +329,8 @@ $(date '+%H:%M:%S') - No active tasks, entering research mode
 "
 
   # Research uses same main loop (exec block extraction + execution)
-  # Fall through to main loop with STEP=0
+  # Fall through to main loop with STEP=0, but skip initial task prompt
+  RESEARCH_ACTIVE=1
 fi
 
 log "=== Nightly Forge v2 Chrome START ==="
@@ -334,7 +348,10 @@ Worker: ${WORKER_WT}
 # 14KB separate inject caused CONV_LIMIT after 1-2 steps. Minimal rules now in prompt.
 log "G12: DESIGN-RULES embedded in prompt (no separate inject)"
 
-# --- Build initial prompt ---
+# --- Build initial prompt (skip if research mode already injected) ---
+if [ "${RESEARCH_ACTIVE:-0}" = "1" ]; then
+  log "Skipping initial prompt (research mode active)"
+else
 PROMPT_FILE="/tmp/nightly-forge-prompt-$$.txt"
 cat > "$PROMPT_FILE" << 'NIGHTLY_PROMPT_EOF'
 あなたはNightly Forge v2（Chrome自律夜間改善エージェント）として動作中。
@@ -372,6 +389,7 @@ echo "最優先タスクから作業開始。まず関連ファイルを読むex
 log "Injecting initial prompt..."
 RESPONSE=$(inject_and_wait "$PROMPT_FILE" "$WAIT_TIMEOUT")
 log "Initial response: ${#RESPONSE} chars"
+fi  # end of non-research initial prompt
 
 obsidian_append "## Initial Response
 \`\`\`
