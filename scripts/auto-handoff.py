@@ -235,6 +235,20 @@ def _run():
     except Exception as e:
         log(f"M1.md update failed: {e}")
 
+    # 緊急リマインダー: セッション完了通知
+    try:
+        from datetime import timedelta
+        remind_time = (datetime.now() + timedelta(minutes=1)).strftime("%Y-%m-%d %H:%M")
+        label = "\U0001F99E Claude Code完了"
+        subprocess.run(
+            ["shortcuts", "run", "緊急リマインダー"],
+            input=f"{remind_time}\n{label}", text=True, timeout=15,
+            capture_output=True
+        )
+        log(f"Reminder set: {remind_time}")
+    except Exception as e:
+        log(f"Reminder failed: {e}")
+
     log("Done")
 
 if __name__ == "__main__":
