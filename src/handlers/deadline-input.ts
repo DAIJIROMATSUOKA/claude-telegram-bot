@@ -1,76 +1,44 @@
 /**
  * deadline-input.ts
- * Telegram message handler for deadline input
- * Pattern: "M1300の納期3/31" or "M1300 納期 2026-03-31"
+ * Telegram: "M1300の納期2026/03/31" → Access DB更新 + カレンダー登録
  * 
- * IMPORTANT: Parallels COM execution takes 60+ seconds.
- * Uses fire-and-forget (non-blocking) to avoid blocking Grammy handler.
+ * Format: YYYY/MM/DD 統一（年必須）
+ * Examples:
+ *   M1300の納期2026/03/31
+ *   M1322 納期 2026/04/15
+ *   M1319の納期2026-03-09
  */
 
 import { exec } from 'child_process';
 import type { Context } from 'grammy';
 
-// Simpler pattern: "M1300の納期3/31" or "M1300の納期2026-03-31"
-const DEADLINE_SIMPLE = /[MP]M?(\d{3,4})\S*\s*(?:の)?(?:希望)?納期\s*[:：]?\s*(\d{1,4})[\/\-](\d{1,2})(?:[\/\-](\d{1,2}))?/i;
-
-// Extended pattern: "M1300の納期2026年3月31日" or "M1300の納期2026-3-31"
-const DEADLINE_PATTERN = /[MP]M?(\d{3,4})(?:[-\s]*\d*)?[\s]*(?:の)?納期[\s:：]*(\d{1,4})[\/\-年](\d{1,2})[\/\-月](\d{1,2})?日?/i;
-
-// Japanese month/day: "M1300の納期3月31日" or "M1300の納期3月末"
-const DEADLINE_JP = /[MP]M?(\d{3,4})\S*\s*(?:の)?(?:希望)?納期\s*[:：]?\s*(\d{1,2})月(\d{1,2})日?/i;
-
-// Month-end: "M1300の納期3月末"
-const DEADLINE_MONTH_END = /[MP]M?(\d{3,4})\S*\s*(?:の)?(?:希望)?納期\s*[:：]?\s*(\d{1,2})月末/i;
+// YYYY/MM/DD or YYYY-MM-DD (年必須)
+const DEADLINE_REGEX = /[MP]M?(\d{3,4})\S*\s*(?:の)?(?:希望)?納期\s*[:：]?\s*(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/i;
 
 export async function handleDeadlineInput(ctx: Context): Promise<boolean> {
   const text = ctx.message?.text;
   if (!text) return false;
 
-  // Try all patterns
-  const match = text.match(DEADLINE_SIMPLE) || text.match(DEADLINE_PATTERN) || text.match(DEADLINE_JP);
-  const monthEndMatch = !match ? text.match(DEADLINE_MONTH_END) : null;
-  if (!match && !monthEndMatch) return false;
-
-  let machineNo: string, year: number, month: number, day: number;
-
-  if (monthEndMatch) {
-    // "3月末" → last day of month
-    machineNo = monthEndMatch[1];
-    month = parseInt(monthEndMatch[2]);
-    year = new Date().getFullYear();
-    // Last day of month: day 0 of next month
-    day = new Date(year, month, 0).getDate();
-    // Past dates are valid for deadlines
-  } else if (match) {
-    machineNo = match[1];
-    if (match[4]) {
-      if (parseInt(match[2]) > 2000) {
-        year = parseInt(match[2]);
-        month = parseInt(match[3]);
-        day = parseInt(match[4]);
-      } else {
-        month = parseInt(match[2]);
-        day = parseInt(match[3]);
-        year = new Date().getFullYear();
-      }
-    } else {
-      month = parseInt(match[2]);
-      day = parseInt(match[3]);
-      year = new Date().getFullYear();
-      // Past dates are valid for deadlines (don't auto-bump to next year)
-    }
-  } else {
-    return false;
+  // Check if it looks like a deadline message but wrong format
+  if (/[MP]M?\d{3,4}.*納期/i.test(text) && !DEADLINE_REGEX.test(text)) {
+    await ctx.reply('⚠️ 納期は YYYY/MM/DD 形式で入力してください\n例: M1300の納期2026/03/31');
+    return true;
   }
+
+  const match = text.match(DEADLINE_REGEX);
+  if (!match) return false;
+
+  const machineNo = match[1];
+  const year = parseInt(match[2]);
+  const month = parseInt(match[3]);
+  const day = parseInt(match[4]);
 
   const deadline = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
   const machineLabel = `M${machineNo}`;
   const chatId = ctx.chat?.id;
 
-  // Send immediate ack (non-blocking)
   await ctx.reply(`⏳ ${machineLabel}の希望納期を ${deadline} に更新中...（Parallels経由、約60秒）`);
 
-  // Fire-and-forget: spawn background process, callback sends result via Telegram
   exec(
     `python3 ~/scripts/access-write-deadline.py M${machineNo} ${deadline}`,
     { timeout: 180000, shell: '/bin/zsh' },
@@ -96,5 +64,5 @@ export async function handleDeadlineInput(ctx: Context): Promise<boolean> {
   );
 
   console.log(`[Deadline] fired: M${machineNo} ${deadline}`);
-  return true; // Return immediately, don't block Grammy
+  return true;
 }
