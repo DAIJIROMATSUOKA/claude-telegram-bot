@@ -1,20 +1,19 @@
-# Nightly Tasks (Updated 2026-03-16 by Croppy)
-# Auto memory管理外。直接編集OK。
+# Nightly Tasks (Updated 2026-03-16 09:05 by Croppy)
 
 ## Active
-- [x] NIGHTLY-001: nightly-forge-chrome.sh メインループ冒頭でnightly-tasks.mdを/tmp/nightly-forge/にバックアップ。execブロック実行後にファイル構造検証、壊れたら復元するvalidate_nightly_tasks()追加。bash -n scripts/nightly-forge-chrome.sh で構文確認後commit
-- [x] NIGHTLY-002: checkpoint()にbun test結果メトリクス行を追加(METRIC: test_pass=N test_fail=N)。obsidian_appendにも含める。bash -n確認後commit
-- [x] NIGHTLY-003: Finalizeセクションで完了/未完了タスク一覧+git diff stat+最終checkpointをObsidian ## Handoffに追記。bash -n確認後commit
+- [ ] SKILL-PLC-001: ~/machinelab-knowledge/plc-ladder/journal.ndjsonの最新50件を分析。high/medium confidenceでまだpatterns.mdにないパターンを抽出→patterns.mdに追記。特にMRデバイスアドレス計算、DM割付、EtherNet/IP速度指令パターン。追記後 git add ~/machinelab-knowledge/plc-ladder/patterns.md && git commit --no-verify -m "skill: promote PLC journal findings to patterns"
+- [ ] SKILL-VISION-001: ~/machinelab-knowledge/inspection-vision/journal.ndjsonの全13件 + patterns.md(3KB)を読み、不足を分析。Web検索でKEYENCE XGシリーズ AI検査機能、食品向け照明設計ガイドを調査→patterns.mdに追記。git add ~/machinelab-knowledge/inspection-vision/patterns.md && git commit --no-verify -m "skill: enrich inspection-vision patterns with web research"
 
 ## Blocked
 - (none)
 
 ## Recently Completed
-- (none)
+- [x] NIGHTLY-001 to NIGHTLY-007
 
 ## Rules
-- bash -n scripts/nightly-forge-chrome.sh で構文チェック必須
+- 既存patterns.mdの構造（## セクション）を壊さない。追記のみ
+- journal.ndjsonは読むだけ。書き換えない
+- Web検索結果はURLを必ず含める
 - git push禁止
 - 完了行は [ ] を [x] に更新
-- ヘッダ構造変更禁止
 - 迷ったら STUCK: 理由
