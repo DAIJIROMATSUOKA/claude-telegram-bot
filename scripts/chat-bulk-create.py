@@ -20,20 +20,15 @@ Usage:
 
 import sys
 import os
-import json
 import time
 import subprocess
 import tempfile
-import base64
-import urllib.request
-import urllib.error
 from datetime import datetime
 
 import yaml
 
 YAML_PATH = os.path.expanduser("~/claude-telegram-bot/autonomous/state/chat-routing.yaml")
 TAB_MANAGER = os.path.expanduser("~/claude-telegram-bot/scripts/croppy-tab-manager.sh")
-CHATLOG_CONFIG = os.path.expanduser("~/.claude-chatlog-config.json")
 
 # Timing
 LOAD_WAIT = 10        # 新タブ読み込み待ち（秒）
@@ -64,31 +59,14 @@ def save_yaml(cfg):
         yaml.dump(cfg, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
 
 
-def load_chatlog_config():
-    """chatlog-api.pyの設定からsession_keyとorg_idを取得"""
-    try:
-        with open(CHATLOG_CONFIG, "r") as f:
-            return json.load(f)
-    except FileNotFoundError:
-        log(f"WARNING: {CHATLOG_CONFIG} not found — rename skipped")
-        return None
-
-
-def rename_chat_api(org_id, session_key, chat_id, new_title):
-    """claude.ai APIでチャットタイトルを変更"""
-    url = f"https://claude.ai/api/organizations/{org_id}/chat_conversations/{chat_id}"
-    data = json.dumps({"name": new_title}).encode("utf-8")
-    req = urllib.request.Request(url, data=data, method="PUT", headers={
-        "Content-Type": "application/json",
-        "Cookie": f"sessionKey={session_key}",
-        "User-Agent": "Mozilla/5.0",
-    })
-    try:
-        with urllib.request.urlopen(req) as resp:
-            log(f"  RENAMED: {new_title[:60]}")
-            return True
-    except urllib.error.HTTPError as e:
-        log(f"  RENAME FAILED: {e.code} {e.reason}")
+def rename_chat_chrome(wt, new_title):
+    """Chrome JS経由でチャットタイトルを変更（tab-manager rename-conversation）"""
+    out, _, rc = run(f'bash "{TAB_MANAGER}" rename-conversation "{wt}" "{new_title}"')
+    if "200:" in out:
+        log(f"  RENAMED: {new_title[:60]}")
+        return True
+    else:
+        log(f"  RENAME: {out}")
         return False
 
 
@@ -205,7 +183,7 @@ end tell' ''')
     return wt
 
 
-def create_domain_chat(domain_name, domain_cfg, project_uuid, chatlog_cfg):
+def create_domain_chat(domain_name, domain_cfg, project_uuid):
     """1ドメインのチャット作成"""
     log(f"--- {domain_name} ---")
 
@@ -246,17 +224,10 @@ def create_domain_chat(domain_name, domain_cfg, project_uuid, chatlog_cfg):
         return False
     log(f"  Chat ID: {chat_id}")
 
-    # 6. タイトル設定
+    # 6. タイトル設定（Chrome JS経由）
     title_tmpl = domain_cfg.get("title_template", domain_name)
     title = title_tmpl.replace("{date}", datetime.now().strftime("%Y-%m-%d"))
-
-    if chatlog_cfg:
-        rename_chat_api(
-            chatlog_cfg["org_id"],
-            chatlog_cfg["session_key"],
-            chat_id,
-            title,
-        )
+    rename_chat_chrome(wt, title)
 
     # 7. URL書き込み
     chat_url = f"https://claude.ai/chat/{chat_id}"
@@ -265,11 +236,46 @@ def create_domain_chat(domain_name, domain_cfg, project_uuid, chatlog_cfg):
 
 def main():
     dry_run = "--dry-run" in sys.argv
+    rename_only = "--rename-only" in sys.argv
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
 
     cfg = load_yaml()
     project_uuid = cfg.get("default_project", "")
     domains = cfg.get("domains", {})
+
+    # --- rename-only モード ---
+    if rename_only:
+        if args:
+            targets = [a for a in args if a in domains]
+        else:
+            targets = [name for name, d in domains.items() if d.get("url", "")]
+
+        log(f"Renaming {len(targets)} chats...")
+        for domain_name in targets:
+            d = domains[domain_name]
+            url = d.get("url", "")
+            if not url:
+                log(f"SKIP {domain_name}: no URL")
+                continue
+            title = d.get("title_template", domain_name).replace("{date}", datetime.now().strftime("%Y-%m-%d"))
+
+            # Chrome新タブでURL開く→rename→閉じる
+            log(f"--- {domain_name}: {title} ---")
+            out, _, _ = run('''osascript -e 'tell application "Google Chrome" to return ((index of front window as text) & " " & ((count of tabs of front window) as text))' ''')
+            parts = out.split()
+            widx, tabs_before = parts[0], int(parts[1])
+            run(f'''osascript -e 'tell application "Google Chrome" to tell window {widx} to set URL of (make new tab) to "{url}"' ''')
+            new_tidx = tabs_before + 1
+            wt = f"{widx}:{new_tidx}"
+            time.sleep(5)
+            rename_chat_chrome(wt, title)
+            # タブ閉じる
+            run(f'''osascript -e 'tell application "Google Chrome" to tell window {widx} to delete tab {new_tidx}' ''')
+            time.sleep(1)
+        log("Rename done")
+        return
+
+    # --- 通常モード（チャット作成） ---
 
     # 対象ドメイン決定
     if args:
@@ -290,8 +296,6 @@ def main():
             log(f"  {t}: {title}")
         return
 
-    chatlog_cfg = load_chatlog_config()
-
     created = 0
     failed = []
 
@@ -303,7 +307,7 @@ def main():
             log(f"SKIP {domain_name}: already has URL")
             continue
 
-        chat_url = create_domain_chat(domain_name, domain_cfg, project_uuid, chatlog_cfg)
+        chat_url = create_domain_chat(domain_name, domain_cfg, project_uuid)
 
         if chat_url:
             # YAMLに書き込み（毎回保存 — 途中で死んでも部分的に保存される）
