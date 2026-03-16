@@ -1,20 +1,14 @@
 #!/bin/bash
-# domain-relay.sh — Domain-routed message relay to specialized chats
+# domain-relay.sh — Domain-routed message relay (single-tab navigate method)
 # 場所: ~/claude-telegram-bot/scripts/domain-relay.sh
+#
+# 設計: 専用リレータブ1本を使い回す。新タブは絶対に開かない。
+# URLナビゲートで切り替え→inject→応答取得→次回また同じタブを再利用。
 #
 # Usage:
 #   ./domain-relay.sh "メッセージテキスト"              # 自動ルーティング
 #   ./domain-relay.sh --domain fa "PLCの質問"           # ドメイン指定
 #   ./domain-relay.sh --url URL "メッセージ"            # URL直接指定
-#
-# Output (stdout):
-#   DOMAIN: <name>
-#   URL: <chat_url>
-#   WT: <window:tab>
-#   RESPONSE: <Claude応答テキスト>
-#
-# Exit codes:
-#   0 = success, 1 = routing fail, 2 = inject fail, 3 = response timeout
 
 set -uo pipefail
 
@@ -22,7 +16,8 @@ SCRIPTS_DIR="$(cd "$(dirname "$0")" && pwd)"
 TAB_MANAGER="$SCRIPTS_DIR/croppy-tab-manager.sh"
 CHAT_ROUTER="$SCRIPTS_DIR/chat-router.py"
 LOG="/tmp/domain-relay.log"
-RESPONSE_TIMEOUT=120  # seconds
+RELAY_WT_FILE="/tmp/domain-relay-wt"
+RESPONSE_TIMEOUT=120
 
 log() { echo "[$(date '+%H:%M:%S')] $*" >> "$LOG"; }
 
@@ -58,7 +53,6 @@ else
   DOMAIN=$(echo "$ROUTE_OUTPUT" | grep "^DOMAIN:" | sed 's/DOMAIN: //')
   URL=$(echo "$ROUTE_OUTPUT" | grep "^URL:" | sed 's/URL: //')
   if [ -z "$URL" ] || [ "$URL" = "(未作成)" ]; then
-    # Fallback to inbox
     DOMAIN="inbox"
     URL=$(python3 "$CHAT_ROUTER" url inbox 2>/dev/null)
     if [ -z "$URL" ] || [ "$URL" = "(未作成)" ]; then
@@ -72,44 +66,57 @@ log "Route: $DOMAIN -> $URL"
 echo "DOMAIN: $DOMAIN"
 echo "URL: $URL"
 
-# --- 2. Find or open tab ---
-# Search open tabs for this URL
-CHAT_ID=$(echo "$URL" | sed 's|.*/chat/||')
-FOUND_WT=""
+# --- 2. Get relay tab (reuse single tab, never open new) ---
+get_relay_wt() {
+  if [ -f "$RELAY_WT_FILE" ]; then
+    local saved_wt
+    saved_wt=$(cat "$RELAY_WT_FILE")
+    local status
+    status=$(bash "$TAB_MANAGER" check-status "$saved_wt" 2>/dev/null)
+    if [ -n "$status" ] && [ "$status" != "NO_EDITOR" ] && ! echo "$status" | grep -q "ERROR\|error"; then
+      echo "$saved_wt"
+      return 0
+    fi
+  fi
+  # Find first claude.ai tab
+  local first_tab
+  first_tab=$(bash "$TAB_MANAGER" list-all 2>/dev/null | head -1 | awk -F' \\| ' '{print $1}' | tr -d ' ')
+  if [ -n "$first_tab" ]; then
+    echo "$first_tab" > "$RELAY_WT_FILE"
+    echo "$first_tab"
+    return 0
+  fi
+  echo ""
+  return 1
+}
 
-TAB_LIST=$(bash "$TAB_MANAGER" list-all 2>/dev/null)
-if [ -n "$TAB_LIST" ]; then
-  FOUND_WT=$(echo "$TAB_LIST" | grep "$CHAT_ID" | head -1 | awk -F' \\| ' '{print $1}' | tr -d ' ')
+WT=$(get_relay_wt)
+if [ -z "$WT" ]; then
+  log "No relay tab"
+  echo "ERROR: no Chrome tab available"
+  exit 2
 fi
 
-if [ -n "$FOUND_WT" ]; then
-  log "Found existing tab: $FOUND_WT"
-  WT="$FOUND_WT"
+# --- 3. Navigate to target URL (skip if already there) ---
+WIDX=$(echo "$WT" | cut -d: -f1)
+TIDX=$(echo "$WT" | cut -d: -f2)
+
+CURRENT_URL=$(osascript -e "tell application \"Google Chrome\" to return URL of tab $TIDX of window $WIDX" 2>/dev/null)
+CHAT_ID=$(echo "$URL" | sed 's|.*/chat/||')
+
+if echo "$CURRENT_URL" | grep -q "$CHAT_ID"; then
+  log "Already on target"
 else
-  # Open new tab
-  log "Opening new tab for $URL"
-  BEFORE_INFO=$(osascript 2>/dev/null -e 'tell application "Google Chrome" to return ((index of front window as text) & " " & ((count of tabs of front window) as text))')
-  WIDX=$(echo "$BEFORE_INFO" | awk '{print $1}')
-  TBEFORE=$(echo "$BEFORE_INFO" | awk '{print $2}')
-
-  osascript 2>/dev/null -e "
-tell application \"Google Chrome\"
-  tell window $WIDX
-    set newTab to make new tab
-    set URL of newTab to \"$URL\"
-  end tell
-end tell"
-
-  WT="${WIDX}:$((TBEFORE + 1))"
-  sleep 8  # 読み込み待ち
-  log "Opened tab: $WT"
+  log "Navigate $WT -> $URL"
+  osascript -e "tell application \"Google Chrome\" to set URL of tab $TIDX of window $WIDX to \"$URL\"" 2>/dev/null
+  sleep 6
 fi
 
 echo "WT: $WT"
 
-# --- 3. Wait for READY ---
+# --- 4. Wait READY ---
 READY_COUNT=0
-for i in $(seq 1 20); do
+for i in $(seq 1 30); do
   STATUS=$(bash "$TAB_MANAGER" check-status "$WT" 2>/dev/null)
   if [ "$STATUS" = "READY" ]; then
     READY_COUNT=$((READY_COUNT + 1))
@@ -121,28 +128,26 @@ for i in $(seq 1 20); do
 done
 
 if [ "$READY_COUNT" -lt 2 ]; then
-  log "Tab not READY (status=$STATUS)"
+  log "Not READY ($STATUS)"
   echo "ERROR: tab not READY"
   exit 2
 fi
 
-# --- 4. Inject message ---
+# --- 5. Inject ---
 MSG_FILE="/tmp/domain-relay-msg-$$.txt"
 printf '%s' "$MESSAGE" > "$MSG_FILE"
-
 INJECT_OUT=$(bash "$TAB_MANAGER" inject-file "$WT" "$MSG_FILE" 2>/dev/null)
 rm -f "$MSG_FILE"
 
 if ! echo "$INJECT_OUT" | grep -q "INSERTED"; then
-  log "Inject failed: $INJECT_OUT"
-  echo "ERROR: inject failed: $INJECT_OUT"
+  log "Inject fail: $INJECT_OUT"
+  echo "ERROR: inject failed"
   exit 2
 fi
+log "Injected (${#MESSAGE} chars)"
 
-log "Injected message (${#MESSAGE} chars)"
-
-# --- 5. Wait for response (BUSY→READY) ---
-sleep 5  # Initial wait for Claude to start processing
+# --- 6. Wait response ---
+sleep 5
 SAW_BUSY=0
 ELAPSED=0
 while [ "$ELAPSED" -lt "$RESPONSE_TIMEOUT" ]; do
@@ -150,35 +155,25 @@ while [ "$ELAPSED" -lt "$RESPONSE_TIMEOUT" ]; do
   if [ "$STATUS" = "BUSY" ]; then
     SAW_BUSY=1
   elif [ "$STATUS" = "READY" ] && [ "$SAW_BUSY" -eq 1 ]; then
-    # Double-check READY
     sleep 2
     STATUS2=$(bash "$TAB_MANAGER" check-status "$WT" 2>/dev/null)
-    if [ "$STATUS2" = "READY" ]; then
-      break
-    fi
+    [ "$STATUS2" = "READY" ] && break
   elif [ "$STATUS" = "READY" ] && [ "$ELAPSED" -gt 20 ]; then
-    # Never saw BUSY but 20s passed → response already done
     break
   fi
   sleep 3
   ELAPSED=$((ELAPSED + 3))
 done
 
-if [ "$ELAPSED" -ge "$RESPONSE_TIMEOUT" ]; then
-  log "Response timeout (${RESPONSE_TIMEOUT}s)"
-  echo "ERROR: response timeout"
-  exit 3
-fi
-
-# --- 6. Read response ---
+# --- 7. Read response ---
 RESPONSE=$(bash "$TAB_MANAGER" read-response "$WT" 2>/dev/null)
 
 if [ -z "$RESPONSE" ] || [ "$RESPONSE" = "NO_RESPONSE" ]; then
-  log "No response text"
+  log "No response"
   echo "ERROR: no response"
   exit 3
 fi
 
-log "Response received (${#RESPONSE} chars)"
+log "Response (${#RESPONSE} chars)"
 echo "RESPONSE: $RESPONSE"
 exit 0
