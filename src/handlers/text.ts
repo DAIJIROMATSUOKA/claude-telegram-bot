@@ -45,6 +45,7 @@ import { dispatchToWorker, handleBridgeReply } from "./croppy-bridge";
 import { handleChatReply } from "./claude-chat";
 import { routeToProjectNotes } from "../services/obsidian-writer";
 import { getChromeOrchestrator } from "./orchestrator-chrome";
+import { handleDomainRelay } from "./domain-router";
 
 /**
  * Handle incoming text messages.
@@ -114,15 +115,21 @@ export async function handleText(ctx: Context): Promise<void> {
             orchestratorHandled = true;
           }
         } else if (routeResult.method === "no-route") {
-          // No code-layer match: try Claude Inbox fallback
-          const result = await orch.route({
-            text: message,
-            source: "telegram",
-            autoPost: true,
-            ctx,
-          });
-          if (result.forwarded) {
+          // === Domain routing (chat-routing.yaml) ===
+          // Try keyword-based domain routing before generic inbox fallback
+          if (await handleDomainRelay(ctx, message)) {
             orchestratorHandled = true;
+          } else {
+            // No domain match: try Claude Inbox fallback
+            const result = await orch.route({
+              text: message,
+              source: "telegram",
+              autoPost: true,
+              ctx,
+            });
+            if (result.forwarded) {
+              orchestratorHandled = true;
+            }
           }
         }
       }
