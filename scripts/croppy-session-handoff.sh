@@ -62,15 +62,21 @@ echo "[2/4] New tab: $NEW_WT (waiting for load...)"
 
 sleep 8
 
-# Check if ready
-STATUS=$(bash "$TAB_MANAGER" check-status "$NEW_WT" 2>/dev/null)
-if [ "$STATUS" != "READY" ]; then
-  sleep 5
+# Wait for stable READY (3 consecutive checks)
+READY_COUNT=0
+for i in $(seq 1 30); do
   STATUS=$(bash "$TAB_MANAGER" check-status "$NEW_WT" 2>/dev/null)
-fi
+  if [ "$STATUS" = "READY" ]; then
+    READY_COUNT=$((READY_COUNT + 1))
+    [ "$READY_COUNT" -ge 3 ] && break
+  else
+    READY_COUNT=0
+  fi
+  sleep 2
+done
 
-if [ "$STATUS" != "READY" ]; then
-  echo "ERROR: New chat not READY (status=$STATUS)"
+if [ "$READY_COUNT" -lt 3 ]; then
+  echo "ERROR: New chat not READY after 60s (status=$STATUS)"
   exit 1
 fi
 
