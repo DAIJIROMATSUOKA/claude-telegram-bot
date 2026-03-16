@@ -26,9 +26,66 @@ def load_config():
         return yaml.safe_load(f)
 
 
+def _get_obsidian_path():
+    """Read Obsidian chat list path from chat-routing.yaml (single source of truth)"""
+    try:
+        with open(YAML_PATH, "r") as f:
+            cfg = yaml.safe_load(f)
+        return os.path.expanduser(cfg.get("obsidian_chat_list", ""))
+    except:
+        return ""
+
+
+OBSIDIAN_CHAT_LIST = _get_obsidian_path()
+
+
+def sync_obsidian_chat_list(cfg):
+    """Auto-regenerate Obsidian link list from chat-routing.yaml"""
+    try:
+        groups = [
+            ("## 案件", ["m1317", "m1319", "m1311", "m1300"]),
+            ("## 技術", ["fa", "icad", "vision", "access"]),
+            ("## 環境", ["pc"]),
+            ("## Forge", ["forge-code", "forge-plc", "forge-vision", "forge-research"]),
+            ("## その他", ["inbox", "debate"]),
+        ]
+        domains = cfg.get("domains", {})
+        # Include any domains not in predefined groups
+        known = set()
+        for _, dl in groups:
+            known.update(dl)
+        extra = [d for d in domains if d not in known]
+        if extra:
+            groups.append(("## 追加", extra))
+
+        lines = ["# 専門チャット一覧", f"自動生成: chat-routing.yaml (更新時に自動同期)", ""]
+        for header, dlist in groups:
+            lines.append(header)
+            for d in dlist:
+                info = domains.get(d, {})
+                url = info.get("url", "")
+                if not url or url == "(未作成)":
+                    continue
+                tpl = info.get("title_template", d)
+                kw = ", ".join(info.get("keywords", [])[:5])
+                name = tpl.replace("{date}_", "")
+                lines.append(f"- [{name}]({url})  ← {kw}")
+            lines.append("")
+
+        out_path = os.path.expanduser(cfg.get("obsidian_chat_list", ""))
+        if not out_path:
+            return
+        os.makedirs(os.path.dirname(out_path), exist_ok=True)
+        with open(out_path, "w") as f:
+            f.write("\n".join(lines))
+    except Exception as e:
+        print(f"WARN: Obsidian sync failed: {e}", file=sys.stderr)
+
+
 def save_config(cfg):
     with open(YAML_PATH, "w") as f:
         yaml.dump(cfg, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+    sync_obsidian_chat_list(cfg)
 
 
 def route(text, cfg):
@@ -207,6 +264,10 @@ def main():
             print("ERROR: usage: chat-router.py get-field <domain> <field>", file=sys.stderr)
             sys.exit(1)
         print(get_field(sys.argv[2], sys.argv[3], cfg))
+
+    elif cmd == "sync-obsidian":
+        sync_obsidian_chat_list(cfg)
+        print("OK: Obsidian synced")
 
     elif cmd == "history":
         if len(sys.argv) < 3:

@@ -57,6 +57,15 @@ def load_yaml():
 def save_yaml(cfg):
     with open(YAML_PATH, "w") as f:
         yaml.dump(cfg, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+    # Auto-sync Obsidian chat list (same as chat-router.py)
+    try:
+        import subprocess
+        subprocess.run(
+            ["python3", os.path.expanduser("~/claude-telegram-bot/scripts/chat-router.py"), "sync-obsidian"],
+            timeout=5, capture_output=True
+        )
+    except:
+        pass
 
 
 def rename_chat_chrome(wt, new_title):
