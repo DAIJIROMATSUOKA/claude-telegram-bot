@@ -94,12 +94,16 @@ export async function handleText(ctx: Context): Promise<void> {
       // Non-fatal: never break message flow
     }
 
-    // === F5: Orchestrator routing → chrome project tabs (G2: blocking, skip bridge if routed) ===
-    // Skip orchestrator for commands (/, 。, 、) — let command handlers process them
+    // === F5: Domain routing (chat-routing.yaml) → specialized chats (PRIORITY over Orchestrator) ===
     let orchestratorHandled = false;
     if (!message.startsWith("/") && !message.startsWith("。") && !message.startsWith("、")) try {
+      // Domain routing first: check chat-routing.yaml keywords
+      if (await handleDomainRelay(ctx, message)) {
+        orchestratorHandled = true;
+      } else {
+      // Orchestrator fallback: M-number → project tabs
       const orch = getChromeOrchestrator();
-      if (orch) {
+      if (orch && !orchestratorHandled) {
         const routeResult = orch.quickRoute(message, "telegram");
         console.log(`[Text] Orchestrator quickRoute: method=${routeResult.method} project=${routeResult.projectId} conf=${routeResult.confidence}`);
         if (routeResult.projectId && routeResult.confidence >= 0.8) {
@@ -115,11 +119,6 @@ export async function handleText(ctx: Context): Promise<void> {
             orchestratorHandled = true;
           }
         } else if (routeResult.method === "no-route") {
-          // === Domain routing (chat-routing.yaml) ===
-          // Try keyword-based domain routing before generic inbox fallback
-          if (await handleDomainRelay(ctx, message)) {
-            orchestratorHandled = true;
-          } else {
             // No domain match: try Claude Inbox fallback
             const result = await orch.route({
               text: message,
