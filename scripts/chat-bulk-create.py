@@ -131,18 +131,24 @@ def inject_bootstrap(wt, bootstrap_text):
 def wait_response(wt, timeout=RESPONSE_TIMEOUT):
     """応答完了待ち（BUSY→READY遷移を検出）"""
     saw_busy = False
+    ready_after_busy = 0
     elapsed = 0
     while elapsed < timeout:
         status = check_status(wt)
         if status == "BUSY":
             saw_busy = True
-        elif status == "READY" and saw_busy:
-            # BUSY→READY: 応答完了
-            time.sleep(2)  # 安定待ち
-            return True
+            ready_after_busy = 0
+        elif status == "READY":
+            if saw_busy:
+                ready_after_busy += 1
+                if ready_after_busy >= 2:  # 2連続READYで確定
+                    return True
+            elif elapsed > 15:
+                # BUSYを見ないまま15秒経過→既に応答済みと判断
+                return True
         time.sleep(3)
         elapsed += 3
-    return saw_busy  # BUSYを見たなら応答は始まった
+    return True  # タイムアウトでも続行（応答は来てるはず）
 
 
 def get_tab_url(wt):
@@ -166,7 +172,7 @@ def extract_chat_id(url):
 
 
 def open_new_chat(project_uuid):
-    """プロジェクトURLで新タブを開く"""
+    """プロジェクトURLで新タブを開く → エディタREADY待ち"""
     project_url = f"https://claude.ai/project/{project_uuid}"
 
     # 現在のタブ数を取得
@@ -188,8 +194,14 @@ end tell' ''')
 
     new_tidx = tabs_before + 1
     wt = f"{widx}:{new_tidx}"
-    log(f"  Opened tab {wt}, waiting {LOAD_WAIT}s...")
-    time.sleep(LOAD_WAIT)
+    log(f"  Opened tab {wt}, waiting for editor...")
+
+    # エディタがREADYになるまで待つ（最大60秒）
+    # プロジェクトページ読み込み→エディタ表示まで時間がかかる
+    time.sleep(8)  # 初回読み込み待ち
+    if not wait_ready(wt, timeout=60):
+        log(f"  WARNING: editor not READY after 60s, proceeding anyway")
+
     return wt
 
 
@@ -220,9 +232,15 @@ def create_domain_chat(domain_name, domain_cfg, project_uuid, chatlog_cfg):
     wait_response(wt)
     log(f"  Response received")
 
-    # 5. URL取得
-    url = get_tab_url(wt)
-    chat_id = extract_chat_id(url)
+    # 5. URL取得（inject後に/project/→/chat/に遷移するのを待つ）
+    url = ""
+    chat_id = None
+    for i in range(15):
+        url = get_tab_url(wt)
+        chat_id = extract_chat_id(url)
+        if chat_id:
+            break
+        time.sleep(2)
     if not chat_id:
         log(f"  FAILED: could not extract chat_id from {url}")
         return False
