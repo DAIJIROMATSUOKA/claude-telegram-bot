@@ -36,6 +36,9 @@ echo "[1/4] Bootstrap saved: $BOOTSTRAP_FILE"
 # Also save as latest (next session reads this)
 cp "$BOOTSTRAP_FILE" "$HANDOFF_DIR/croppy-latest.md"
 
+# Save current active tab WT (source chat) before opening new tab
+SOURCE_WT=$(bash "$TAB_MANAGER" list-all 2>/dev/null | head -1 | awk -F' \| ' '{print $1}' | tr -d ' ')
+
 # --- 2. Create new chat ---
 # Use inject-file instead of new-chat's inject-raw (handles long content better)
 # Open new tab at project URL
@@ -102,6 +105,17 @@ curl -s -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage" \
 # 緊急リマインダー
 NOW_REMIND=$(date -v+1M '+%Y-%m-%d %H:%M')
 printf '%s\n%s' "$NOW_REMIND" "🦞 新チャットに移動" | shortcuts run '緊急リマインダー' 2>/dev/null || true
+
+# --- 4.5. Rename new chat (inherit source title with updated date) ---
+if [ -n "$SOURCE_WT" ]; then
+  SOURCE_TITLE=$(bash "$TAB_MANAGER" get-title "$SOURCE_WT" 2>/dev/null)
+  if [ -n "$SOURCE_TITLE" ]; then
+    CLEAN_TITLE=$(echo "$SOURCE_TITLE" | sed 's/^[0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}_[0-9]\{4\}_//; s/ - Claude$//')
+    NEW_TITLE="${DATE}_${CLEAN_TITLE}"
+    RENAME_RESULT=$(bash "$TAB_MANAGER" rename-conversation "$NEW_WT" "$NEW_TITLE" 2>/dev/null)
+    echo "[4.5/4] Renamed: $NEW_TITLE ($RENAME_RESULT)"
+  fi
+fi
 
 echo "HANDOFF_COMPLETE"
 echo "URL: $CONV_URL"
