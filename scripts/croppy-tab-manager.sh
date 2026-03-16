@@ -229,7 +229,7 @@ tell application "Google Chrome"
   set insertJs to "(() => { const b = Uint8Array.from(atob('$B64MSG'), c => c.charCodeAt(0)); const msg = new TextDecoder().decode(b); const e = document.querySelector('.ProseMirror'); e.focus(); document.execCommand('selectAll'); document.execCommand('delete'); document.execCommand('insertText', false, msg); return 'INSERTED'; })()"
   set r1 to execute t javascript insertJs
   delay 0.5
-  set sendJs to "(() => { const e = document.querySelector('.ProseMirror'); const ev = new KeyboardEvent('keydown', {key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true}); e.dispatchEvent(ev); return 'SENT'; })()"
+  set sendJs to "(() => { const btns = document.querySelectorAll('button'); let send=null; for(const b of btns){const r=b.getBoundingClientRect();if(r.y>980&&r.height>20&&r.height<50&&r.width>20&&r.width<50&&b.querySelector('svg')){const a=b.getAttribute('aria-label')||'';const d=b.getAttribute('data-testid')||'';if(!d.includes('menu')&&!a.includes('Jarvis')&&a.indexOf('Opus')<0&&a.indexOf('Sonnet')<0){send=b;}}} if(!send)return 'NO_SEND_BTN'; send.click(); return 'SENT'; })()"
   set r2 to execute t javascript sendJs
   return r1 & ":" & r2
 end tell
@@ -716,7 +716,7 @@ tell application "Google Chrome"
   set insertJs to "(() => { const b = Uint8Array.from(atob('$B64MSG'), c => c.charCodeAt(0)); const msg = new TextDecoder().decode(b); const e = document.querySelector('.ProseMirror'); e.focus(); document.execCommand('selectAll'); document.execCommand('delete'); document.execCommand('insertText', false, msg); return 'INSERTED'; })()"
   set r1 to execute t javascript insertJs
   delay 0.5
-  set sendJs to "(() => { const e = document.querySelector('.ProseMirror'); const ev = new KeyboardEvent('keydown', {key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true}); e.dispatchEvent(ev); return 'SENT'; })()"
+  set sendJs to "(() => { const btns = document.querySelectorAll('button'); let send=null; for(const b of btns){const r=b.getBoundingClientRect();if(r.y>980&&r.height>20&&r.height<50&&r.width>20&&r.width<50&&b.querySelector('svg')){const a=b.getAttribute('aria-label')||'';const d=b.getAttribute('data-testid')||'';if(!d.includes('menu')&&!a.includes('Jarvis')&&a.indexOf('Opus')<0&&a.indexOf('Sonnet')<0){send=b;}}} if(!send)return 'NO_SEND_BTN'; send.click(); return 'SENT'; })()"
   set r2 to execute t javascript sendJs
   return r1 & ":" & r2
 end tell
@@ -1009,7 +1009,7 @@ tell application "Google Chrome"
   set insertJs to "(() => { const b = Uint8Array.from(atob('$B64MSG'), c => c.charCodeAt(0)); const msg = new TextDecoder().decode(b); const e = document.querySelector('.ProseMirror'); e.focus(); document.execCommand('selectAll'); document.execCommand('delete'); document.execCommand('insertText', false, msg); return 'INSERTED'; })()"
   set r1 to execute t javascript insertJs
   delay 0.5
-  set sendJs to "(() => { const e = document.querySelector('.ProseMirror'); const ev = new KeyboardEvent('keydown', {key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true}); e.dispatchEvent(ev); return 'SENT'; })()"
+  set sendJs to "(() => { const btns = document.querySelectorAll('button'); let send=null; for(const b of btns){const r=b.getBoundingClientRect();if(r.y>980&&r.height>20&&r.height<50&&r.width>20&&r.width<50&&b.querySelector('svg')){const a=b.getAttribute('aria-label')||'';const d=b.getAttribute('data-testid')||'';if(!d.includes('menu')&&!a.includes('Jarvis')&&a.indexOf('Opus')<0&&a.indexOf('Sonnet')<0){send=b;}}} if(!send)return 'NO_SEND_BTN'; send.click(); return 'SENT'; })()"
   set r2 to execute t javascript sendJs
   return r1 & ":" & r2
 end tell
