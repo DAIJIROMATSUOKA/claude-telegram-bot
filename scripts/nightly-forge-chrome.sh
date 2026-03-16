@@ -11,7 +11,10 @@
 set -uo pipefail
 
 # --- Config ---
-WORKER_WT="1:6"
+# WORKER_WT resolved dynamically per task domain (see resolve_worker_tab below)
+WORKER_WT=""
+CHAT_ROUTER="$HOME/claude-telegram-bot/scripts/chat-router.py"
+RELAY_WT_FILE="/tmp/domain-relay-wt"
 TAB_MANAGER="$HOME/claude-telegram-bot/scripts/croppy-tab-manager.sh"
 PROJECT_DIR="$HOME/claude-telegram-bot"
 LOG_DIR="$PROJECT_DIR/logs/nightly"
@@ -51,6 +54,76 @@ obsidian_append() {
 
 elapsed_seconds() {
   echo $(( $(date +%s) - TIME_START ))
+}
+
+# Resolve Forge Worker Tab: classify task -> domain -> navigate relay tab
+resolve_worker_tab() {
+  local task_state="$1"
+  local first_task
+  first_task=$(echo "$task_state" | grep '^- \[ \]' | head -1 | sed 's/^- \[ \] //')
+  
+  local forge_domain="forge-code"
+  if echo "$first_task" | grep -qi 'SKILL-PLC\|plc-ladder\|KV.STUDIO'; then
+    forge_domain="forge-plc"
+  elif echo "$first_task" | grep -qi 'SKILL-VISION\|inspection-vision\|KamiCheck'; then
+    forge_domain="forge-vision"
+  elif echo "$first_task" | grep -qi 'SKILL-ICAD\|icad\|CAD'; then
+    forge_domain="icad"
+  fi
+  
+  if [ "${RESEARCH_ACTIVE:-0}" = "1" ] || [ -z "$first_task" ]; then
+    forge_domain="forge-research"
+  fi
+  
+  log "Forge domain: $forge_domain (task: ${first_task:0:60})"
+  
+  local target_url
+  target_url=$(python3 "$CHAT_ROUTER" url "$forge_domain" 2>/dev/null)
+  if [ -z "$target_url" ] || [ "$target_url" = "(未作成)" ]; then
+    log "WARN: no URL for $forge_domain, falling back to forge-code"
+    forge_domain="forge-code"
+    target_url=$(python3 "$CHAT_ROUTER" url "$forge_domain" 2>/dev/null)
+  fi
+  
+  local wt=""
+  if [ -f "$RELAY_WT_FILE" ]; then
+    wt=$(cat "$RELAY_WT_FILE")
+    local status
+    status=$(bash "$TAB_MANAGER" check-status "$wt" 2>/dev/null)
+    if [ -z "$status" ] || echo "$status" | grep -q "ERROR"; then
+      wt=""
+    fi
+  fi
+  if [ -z "$wt" ]; then
+    wt=$(bash "$TAB_MANAGER" list-all 2>/dev/null | head -1 | awk -F' \| ' '{print $1}' | tr -d ' ')
+  fi
+  
+  if [ -z "$wt" ]; then
+    log "ERROR: no Chrome tab for forge worker"
+    return 1
+  fi
+  
+  echo "$wt" > "$RELAY_WT_FILE"
+  
+  local widx tidx current_url chat_id
+  widx=$(echo "$wt" | cut -d: -f1)
+  tidx=$(echo "$wt" | cut -d: -f2)
+  current_url=$(osascript -e "tell application \"Google Chrome\" to return URL of tab $tidx of window $widx" 2>/dev/null)
+  chat_id=$(echo "$target_url" | sed 's|.*/chat/||')
+  
+  if echo "$current_url" | grep -q "$chat_id"; then
+    log "Worker tab already on $forge_domain"
+  else
+    log "Navigating worker tab to $forge_domain: $target_url"
+    osascript -e "tell application \"Google Chrome\" to set URL of tab $tidx of window $widx to \"$target_url\"" 2>/dev/null
+    sleep 6
+  fi
+  
+  WORKER_WT="$wt"
+  FORGE_DOMAIN="$forge_domain"
+  export WORKER_WT FORGE_DOMAIN
+  log "Worker resolved: WT=$WORKER_WT domain=$FORGE_DOMAIN"
+  return 0
 }
 
 cleanup() {
@@ -245,6 +318,14 @@ fi
 echo $$ > "$LOCK_FILE"
 trap cleanup EXIT
 touch "$NIGHTLY_MODE"
+
+# --- Resolve Worker Tab from task domain + chat-routing.yaml ---
+resolve_worker_tab "$TASK_STATE"
+if [ -z "$WORKER_WT" ]; then
+  log "ABORT: could not resolve worker tab"
+  notify "Nightly Forge ABORT: no worker tab"
+  exit 1
+fi
 
 # Check Worker Tab health (with auto-recovery for TOOL_LIMIT)
 STATUS=$(bash "$TAB_MANAGER" check-status "$WORKER_WT" 2>/dev/null)
