@@ -109,6 +109,28 @@ All config via `.env` (copy from `.env.example`). Key variables:
 
 ---
 
+
+## Past Context Retrieval
+
+実装中に過去の設計決定や解決策が必要な場合、以下のツールを使う:
+
+**ChatLog検索** (M1上で直接実行):
+```bash
+python3 ~/scripts/search-chatlogs.py "キーワード" --list    # ファイル一覧
+python3 ~/scripts/search-chatlogs.py "キーワード" --context 3  # 前後3行
+```
+
+**時間旅行** (過去のclaude.aiチャットに直接質問):
+```bash
+bash ~/claude-telegram-bot/scripts/time-travel.sh --search "キーワード" "質問"
+bash ~/claude-telegram-bot/scripts/time-travel.sh <chat_id> "質問"
+```
+注意: Chromeタブを一時的にナビゲートするため、他のChrome操作と競合する。
+
+**使い分け**:
+- まずsearch-chatlogs.pyでログ検索（高速、ローカル）
+- ログだけで不十分なら time-travel.sh で当時のClaudeに直接質問（遅い、Chrome占有）
+
 ## Patterns
 
 **Adding a command**: Create handler in `commands.ts`, register in `index.ts` with `bot.command("name", handler)`

@@ -358,6 +358,49 @@ Worker: ${WORKER_WT}
 # 14KB separate inject caused CONV_LIMIT after 1-2 steps. Minimal rules now in prompt.
 log "G12: DESIGN-RULES embedded in prompt (no separate inject)"
 
+# --- G14: Recon phase — search past chatlogs for task context ---
+RECON_CONTEXT=""
+if [ -f "$NIGHTLY_TASK_FILE" ]; then
+  # Extract keywords from active tasks (first 3 uncompleted)
+  TASK_KEYWORDS=$(grep '^\- \[ \]' "$NIGHTLY_TASK_FILE" | head -3 |     sed 's/^- \[ \] //' | tr '
+' ' ' |     sed 's/[^a-zA-Z0-9ぁ-んァ-ヶー一-龠 ]/ /g' |     awk '{for(i=1;i<=NF;i++) if(length($i)>2) print $i}' | sort -u | head -5)
+  
+  if [ -n "$TASK_KEYWORDS" ]; then
+    RECON_HITS=""
+    for kw in $TASK_KEYWORDS; do
+      HITS=$(python3 "$HOME/scripts/search-chatlogs.py" "$kw" --list --recent 30 2>/dev/null | head -3)
+      if [ -n "$HITS" ]; then
+        RECON_HITS="${RECON_HITS}${HITS}
+"
+      fi
+    done
+    
+    if [ -n "$RECON_HITS" ]; then
+      # Deduplicate and extract summaries (first 500 chars from top 2 matches)
+      RECON_FILES=$(echo -e "$RECON_HITS" | sort -u | head -2)
+      RECON_SUMMARIES=""
+      while IFS= read -r filepath; do
+        [ -z "$filepath" ] && continue
+        if [ -f "$filepath" ]; then
+          SUMMARY=$(head -30 "$filepath" | tail -20 | head -c 500)
+          CHATNAME=$(head -5 "$filepath" | grep '^# ' | head -1 | sed 's/^# //')
+          RECON_SUMMARIES="${RECON_SUMMARIES}
+### 過去チャット: ${CHATNAME}
+${SUMMARY}
+---
+"
+        fi
+      done <<< "$RECON_FILES"
+      
+      if [ -n "$RECON_SUMMARIES" ]; then
+        RECON_CONTEXT="## 関連する過去の議論（自動検索結果）
+${RECON_SUMMARIES}"
+        log "Recon: found relevant past chats for task context"
+      fi
+    fi
+  fi
+fi
+
 # --- Build initial prompt (skip if research mode already injected) ---
 if [ "${RESEARCH_ACTIVE:-0}" = "1" ]; then
   log "Skipping initial prompt (research mode active)"
@@ -387,6 +430,13 @@ cat > "$PROMPT_FILE" << 'NIGHTLY_PROMPT_EOF'
 NIGHTLY_PROMPT_EOF
 
 echo "$TASK_STATE" >> "$PROMPT_FILE"
+
+# Append recon context if available
+if [ -n "$RECON_CONTEXT" ]; then
+  echo "" >> "$PROMPT_FILE"
+  echo -e "$RECON_CONTEXT" >> "$PROMPT_FILE"
+  log "Recon context appended to prompt (${#RECON_CONTEXT} chars)"
+fi
 echo "" >> "$PROMPT_FILE"
 echo "最優先タスクから作業開始。claude.aiのツールで直接ファイルを読んで作業してください。" >> "$PROMPT_FILE"
 
