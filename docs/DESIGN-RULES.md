@@ -279,3 +279,9 @@ IDLE → RUNNING → DONE/FAILED/WAITING
 - API completionはtool_useイベントを返さない(completionタイプのみ)。ブラウザのツール実行ループはクライアント側の実装
 - bash_tool/computer useはAnthropicコンテナ上で動く。M1のコマンド実行にはexec bridge連携が唯一の手段
 - 実行ループ設計: chat応答パース→exec bridge→M1実行→結果をchatに再投稿→次ステップ
+
+### DOM / Chrome Inject (2026-03-16)
+- claude.ai ProseMirrorエディタは合成KeyboardEvent (Enter) を無視する → 送信ボタンの直接click()が唯一の方法
+- 送信ボタンはテキストがない時は非表示。aria-label="メッセージを送信"で検出
+- Orchestrator codeLayerRoute(M番号検出)とDomain Routing(chat-routing.yamlキーワード)は競合する → Domain Routingを先にチェック
+- rename-conversationのChrome JS + withCredentials = ブラウザ操作同等（sessionKey直接使用とは別物、許容範囲）
