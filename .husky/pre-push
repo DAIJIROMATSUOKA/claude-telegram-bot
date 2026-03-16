@@ -1,0 +1,4 @@
+#!/bin/bash
+# pre-push: git push is BLOCKED
+echo "ERROR: git push is blocked. DJ pushes manually after review."
+exit 1

@@ -41,7 +41,10 @@ fi
 
 # --- 1. Save bootstrap to file ---
 BOOTSTRAP_FILE="$HANDOFF_DIR/croppy-${DATE}.md"
-echo "$BOOTSTRAP" > "$BOOTSTRAP_FILE"
+# Auto-prepend timestamp
+echo "Generated: $(date '+%Y-%m-%d %H:%M:%S JST')" > "$BOOTSTRAP_FILE"
+echo "" >> "$BOOTSTRAP_FILE"
+echo "$BOOTSTRAP" >> "$BOOTSTRAP_FILE"
 echo "[1/4] Bootstrap saved: $BOOTSTRAP_FILE"
 
 # Also save as latest (next session reads this)

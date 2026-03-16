@@ -156,6 +156,17 @@ ${test_line}"
 ${cp}
 \`\`\`
 "
+
+  # Token usage check — auto-handoff at 80%
+  if [ -n "${WORKER_WT:-}" ]; then
+    local token_pct
+    token_pct=$(bash "$TAB_MANAGER" token-estimate "$WORKER_WT" 2>/dev/null | grep -oE '[0-9]+%' | head -1 | tr -d '%')
+    if [ -n "$token_pct" ] && [ "$token_pct" -ge 80 ] 2>/dev/null; then
+      log "TOKEN WARNING: ${token_pct}% — approaching limit. Triggering handoff."
+      notify "Nightly Forge: token ${token_pct}% — auto-handoff triggered"
+      STEP=$MAX_STEPS  # Force loop exit
+    fi
+  fi
 }
 
 # inject-file + 5s fixed wait + wait-response (CONV_LIMIT aware)
