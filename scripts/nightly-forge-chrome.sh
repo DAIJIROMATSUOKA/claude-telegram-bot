@@ -330,15 +330,10 @@ echo $$ > "$LOCK_FILE"
 trap cleanup EXIT
 touch "$NIGHTLY_MODE"
 
-# --- Resolve Worker Tab from task domain + chat-routing.yaml ---
-resolve_worker_tab "$TASK_STATE"
-if [ -z "$WORKER_WT" ]; then
-  log "ABORT: could not resolve worker tab"
-  notify "Nightly Forge ABORT: no worker tab"
-  exit 1
-fi
-
 # Check Worker Tab health (with auto-recovery for TOOL_LIMIT)
+# Note: WORKER_WT resolved after TASK_STATE is read
+# Pre-resolve: use relay tab for health check
+WORKER_WT=$(cat "$RELAY_WT_FILE" 2>/dev/null || bash "$TAB_MANAGER" list-all 2>/dev/null | head -1 | awk -F' \| ' '{print $1}' | tr -d ' ')
 STATUS=$(bash "$TAB_MANAGER" check-status "$WORKER_WT" 2>/dev/null)
 if [ "$STATUS" = "TOOL_LIMIT" ]; then
   log "Worker Tab has TOOL_LIMIT, auto-clicking Continue..."
@@ -384,6 +379,14 @@ else
 fi
 
 ACTIVE_COUNT=$(echo "$TASK_STATE" | grep -c '^\- \[ \]' || true)
+
+# --- Resolve Worker Tab from task domain + chat-routing.yaml ---
+resolve_worker_tab "$TASK_STATE"
+if [ -z "$WORKER_WT" ]; then
+  log "ABORT: could not resolve worker tab"
+  notify "Nightly Forge ABORT: no worker tab"
+  exit 1
+fi
 if [ "$ACTIVE_COUNT" -eq 0 ]; then
   log "No active tasks. Entering RESEARCH MODE."
   notify "Nightly Forge: RESEARCH MODE (no tasks)"
