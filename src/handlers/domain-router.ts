@@ -51,6 +51,64 @@ export function quickDomainRoute(text: string): { domain: string; url: string } 
  * Full domain relay: route → inject → wait → response → Telegram reply.
  * Returns true if handled, false if should fall through.
  */
+
+/**
+ * Parse XREF tags from domain chat response and auto-query target domains.
+ * Format: [XREF:domain:question]
+ * Returns response with XREF results appended.
+ */
+async function resolveXrefs(
+  response: string,
+  sourceDomain: string,
+  maxXrefs: number = 3
+): Promise<string> {
+  const xrefPattern = /\[XREF:([a-z0-9-]+):([^\]]+)\]/g;
+  const matches: RegExpExecArray[] = []; let m: RegExpExecArray | null; while ((m = xrefPattern.exec(response)) !== null) matches.push(m);
+
+  if (matches.length === 0) return response;
+
+  const xrefResults: string[] = [];
+  let count = 0;
+
+  for (const match of matches) {
+    if (count >= maxXrefs) break;
+    const [fullMatch, targetDomain, question] = match;
+
+    // Don't query self
+    if (targetDomain === sourceDomain) continue;
+
+    console.log(`[XREF] ${sourceDomain} -> ${targetDomain}: ${question.substring(0, 60)}`);
+
+    try {
+      const escapedQ = question.replace(/'/g, "'\''");
+      const { stdout } = await execAsync(
+        `bash "${DOMAIN_RELAY}" --domain "${targetDomain}" '${escapedQ}'`,
+        {
+          timeout: 120_000,
+          maxBuffer: 1024 * 1024,
+          env: { ...process.env, PATH: `/opt/homebrew/bin:/usr/local/bin:${process.env.PATH}` },
+        }
+      );
+
+      const xrefResponse = stdout.match(/^RESPONSE: ([\s\S]+)$/m)?.[1]?.trim();
+      if (xrefResponse) {
+        xrefResults.push(`📎 [${targetDomain}] ${xrefResponse}`);
+        count++;
+      }
+    } catch (e: any) {
+      console.error(`[XREF] Error querying ${targetDomain}:`, e?.message?.substring(0, 100));
+      xrefResults.push(`⚠️ [${targetDomain}] 参照エラー`);
+    }
+  }
+
+  if (xrefResults.length === 0) return response;
+
+  // Remove XREF tags from response, append results
+  let cleanResponse = response.replace(xrefPattern, "").trim();
+  const xrefSection = "\n\n--- XREF参照結果 ---\n" + xrefResults.join("\n\n");
+  return cleanResponse + xrefSection;
+}
+
 export async function handleDomainRelay(
   ctx: Context,
   message: string
@@ -94,6 +152,9 @@ export async function handleDomainRelay(
       return true; // handled (with error), don't fall through
     }
 
+    // Resolve XREF cross-domain queries
+    const resolvedResponse = await resolveXrefs(response, route.domain);
+
     // Delete status message
     try {
       await ctx.api.deleteMessage(chatId, statusMsg.message_id);
@@ -101,15 +162,15 @@ export async function handleDomainRelay(
 
     // Send response (split if too long)
     const MAX_TG = 4000;
-    if (response.length <= MAX_TG) {
+    if (resolvedResponse.length <= MAX_TG) {
       await ctx.reply(`📋 [${route.domain}]\n${response}`, {
         reply_to_message_id: ctx.message?.message_id,
       });
     } else {
       // Split into chunks
       const chunks: string[] = [];
-      for (let i = 0; i < response.length; i += MAX_TG) {
-        chunks.push(response.substring(i, i + MAX_TG));
+      for (let i = 0; i < resolvedResponse.length; i += MAX_TG) {
+        chunks.push(resolvedResponse.substring(i, i + MAX_TG));
       }
       for (let i = 0; i < chunks.length; i++) {
         const prefix = i === 0 ? `📋 [${route.domain}] (${i + 1}/${chunks.length})\n` : "";
@@ -119,7 +180,7 @@ export async function handleDomainRelay(
       }
     }
 
-    console.log(`[DomainRouter] ${route.domain}: relayed ${response.length} chars`);
+    console.log(`[DomainRouter] ${route.domain}: relayed ${resolvedResponse.length} chars`);
     return true;
   } catch (error: any) {
     console.error(`[DomainRouter] Error:`, error?.message);
