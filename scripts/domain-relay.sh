@@ -176,4 +176,17 @@ fi
 
 log "Response (${#RESPONSE} chars)"
 echo "RESPONSE: $RESPONSE"
+
+# --- 8. Token usage check (async handoff trigger) ---
+if [ "$DOMAIN" != "inbox" ] && [ "$DOMAIN" != "direct" ]; then
+  TOKEN_RAW=$(bash "$TAB_MANAGER" token-estimate "$WT" 2>/dev/null)
+  TOKEN_PCT=$(echo "$TOKEN_RAW" | grep -o '"pct":[0-9]*' | grep -o '[0-9]*' 2>/dev/null)
+  if [ "${TOKEN_PCT:-0}" -ge 70 ]; then
+    log "Token warning: ${TOKEN_PCT}% -> triggering handoff for $DOMAIN"
+    echo "TOKEN_WARNING: ${TOKEN_PCT}%"
+    # Fire-and-forget handoff (don't block relay response)
+    nohup bash "$SCRIPTS_DIR/domain-handoff.sh" "$DOMAIN" > /tmp/domain-handoff-$DOMAIN.log 2>&1 &
+  fi
+fi
+
 exit 0

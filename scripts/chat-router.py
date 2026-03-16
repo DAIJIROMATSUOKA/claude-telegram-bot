@@ -95,6 +95,57 @@ def list_unrouted(cfg):
             print(name)
 
 
+
+def archive_url(domain, cfg):
+    """Move current URL to chat_history"""
+    d = cfg.get("domains", {}).get(domain)
+    if not d:
+        return f"ERROR: unknown domain '{domain}'"
+    url = d.get("url", "")
+    if not url or url == "(未作成)":
+        return "ERROR: no URL to archive"
+    chat_id = url.split("/chat/")[-1] if "/chat/" in url else ""
+    if not chat_id:
+        return "ERROR: invalid URL"
+    if "chat_history" not in d:
+        d["chat_history"] = []
+    from datetime import datetime
+    entry = {
+        "id": chat_id,
+        "created": datetime.now().strftime("%Y-%m-%d"),
+        "title": d.get("title_template", "").replace("{date}", datetime.now().strftime("%Y-%m-%d_%H%M")),
+    }
+    d["chat_history"].append(entry)
+    save_config(cfg)
+    return f"ARCHIVED: {chat_id} ({len(d['chat_history'])} entries)"
+
+
+def get_field(domain, field, cfg):
+    """Get a specific field from domain config"""
+    d = cfg.get("domains", {}).get(domain)
+    if not d:
+        return ""
+    val = d.get(field, "")
+    if isinstance(val, list):
+        import json
+        return json.dumps(val)
+    return str(val) if val else ""
+
+
+def show_history(domain, cfg):
+    """Show chat_history for a domain"""
+    d = cfg.get("domains", {}).get(domain)
+    if not d:
+        return f"ERROR: unknown domain '{domain}'"
+    history = d.get("chat_history", [])
+    if not history:
+        return f"{domain}: no history"
+    lines = []
+    for h in history:
+        lines.append(f"  {h.get('created','')} | {h.get('id','')} | {h.get('title','')}")
+    return "\n".join(lines)
+
+
 def main():
     if len(sys.argv) < 2:
         print(__doc__)
@@ -144,6 +195,28 @@ def main():
 
     elif cmd == "unrouted":
         list_unrouted(cfg)
+
+    elif cmd == "archive-url":
+        if len(sys.argv) < 3:
+            print("ERROR: usage: chat-router.py archive-url <domain>", file=sys.stderr)
+            sys.exit(1)
+        print(archive_url(sys.argv[2], cfg))
+
+    elif cmd == "get-field":
+        if len(sys.argv) < 4:
+            print("ERROR: usage: chat-router.py get-field <domain> <field>", file=sys.stderr)
+            sys.exit(1)
+        print(get_field(sys.argv[2], sys.argv[3], cfg))
+
+    elif cmd == "history":
+        if len(sys.argv) < 3:
+            # Show all domains summary
+            for name, d in cfg.get("domains", {}).items():
+                h = d.get("chat_history", [])
+                cid = d.get("url", "").split("/chat/")[-1][:8] if "/chat/" in d.get("url", "") else "?"
+                print(f"{name}: current={cid} history={len(h)}")
+        else:
+            print(show_history(sys.argv[2], cfg))
 
     else:
         print(f"ERROR: unknown command '{cmd}'", file=sys.stderr)
