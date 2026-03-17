@@ -229,7 +229,7 @@ tell application "Google Chrome"
   set insertJs to "(() => { const b = Uint8Array.from(atob('$B64MSG'), c => c.charCodeAt(0)); const msg = new TextDecoder().decode(b); const e = document.querySelector('.ProseMirror'); e.focus(); document.execCommand('selectAll'); document.execCommand('delete'); document.execCommand('insertText', false, msg); return 'INSERTED'; })()"
   set r1 to execute t javascript insertJs
   delay 0.5
-  set sendJs to "(() => { const btns = document.querySelectorAll('button'); let send=null; for(const b of btns){const r=b.getBoundingClientRect();if(r.y>980&&r.height>20&&r.height<50&&r.width>20&&r.width<50&&b.querySelector('svg')){const a=b.getAttribute('aria-label')||'';const d=b.getAttribute('data-testid')||'';if(!d.includes('menu')&&!a.includes('Jarvis')&&a.indexOf('Opus')<0&&a.indexOf('Sonnet')<0){send=b;}}} if(!send)return 'NO_SEND_BTN'; send.click(); return 'SENT'; })()"
+  set sendJs to "(() => { var send=null; var btns=document.querySelectorAll('button[aria-label]'); for(var i=0;i<btns.length;i++){var a=btns[i].getAttribute('aria-label')||''; if(a==='Send Message'||a==='メッセージを送信'){var r=btns[i].getBoundingClientRect();if(r.width>0&&r.height>0){send=btns[i];break;}}} if(!send){var editor=document.querySelector('.ProseMirror');if(editor){var eR=editor.getBoundingClientRect();var all=document.querySelectorAll('button');for(var j=0;j<all.length;j++){var b=all[j];var br=b.getBoundingClientRect();if(br.width>20&&br.width<60&&br.height>20&&br.height<60&&br.y>=eR.y&&br.y<=eR.y+eR.height+80&&br.x>eR.x+eR.width-100&&b.querySelector('svg')){send=b;break;}}}} if(!send)return 'NO_SEND_BTN'; send.click(); return 'SENT'; })()"
   set r2 to execute t javascript sendJs
   return r1 & ":" & r2
 end tell
@@ -716,7 +716,7 @@ tell application "Google Chrome"
   set insertJs to "(() => { const b = Uint8Array.from(atob('$B64MSG'), c => c.charCodeAt(0)); const msg = new TextDecoder().decode(b); const e = document.querySelector('.ProseMirror'); e.focus(); document.execCommand('selectAll'); document.execCommand('delete'); document.execCommand('insertText', false, msg); return 'INSERTED'; })()"
   set r1 to execute t javascript insertJs
   delay 0.5
-  set sendJs to "(() => { const btns = document.querySelectorAll('button'); let send=null; for(const b of btns){const r=b.getBoundingClientRect();if(r.y>980&&r.height>20&&r.height<50&&r.width>20&&r.width<50&&b.querySelector('svg')){const a=b.getAttribute('aria-label')||'';const d=b.getAttribute('data-testid')||'';if(!d.includes('menu')&&!a.includes('Jarvis')&&a.indexOf('Opus')<0&&a.indexOf('Sonnet')<0){send=b;}}} if(!send)return 'NO_SEND_BTN'; send.click(); return 'SENT'; })()"
+  set sendJs to "(() => { var send=null; var btns=document.querySelectorAll('button[aria-label]'); for(var i=0;i<btns.length;i++){var a=btns[i].getAttribute('aria-label')||''; if(a==='Send Message'||a==='メッセージを送信'){var r=btns[i].getBoundingClientRect();if(r.width>0&&r.height>0){send=btns[i];break;}}} if(!send){var editor=document.querySelector('.ProseMirror');if(editor){var eR=editor.getBoundingClientRect();var all=document.querySelectorAll('button');for(var j=0;j<all.length;j++){var b=all[j];var br=b.getBoundingClientRect();if(br.width>20&&br.width<60&&br.height>20&&br.height<60&&br.y>=eR.y&&br.y<=eR.y+eR.height+80&&br.x>eR.x+eR.width-100&&b.querySelector('svg')){send=b;break;}}}} if(!send)return 'NO_SEND_BTN'; send.click(); return 'SENT'; })()"
   set r2 to execute t javascript sendJs
   return r1 & ":" & r2
 end tell
@@ -1009,7 +1009,7 @@ tell application "Google Chrome"
   set insertJs to "(() => { const b = Uint8Array.from(atob('$B64MSG'), c => c.charCodeAt(0)); const msg = new TextDecoder().decode(b); const e = document.querySelector('.ProseMirror'); e.focus(); document.execCommand('selectAll'); document.execCommand('delete'); document.execCommand('insertText', false, msg); return 'INSERTED'; })()"
   set r1 to execute t javascript insertJs
   delay 0.5
-  set sendJs to "(() => { const btns = document.querySelectorAll('button'); let send=null; for(const b of btns){const r=b.getBoundingClientRect();if(r.y>980&&r.height>20&&r.height<50&&r.width>20&&r.width<50&&b.querySelector('svg')){const a=b.getAttribute('aria-label')||'';const d=b.getAttribute('data-testid')||'';if(!d.includes('menu')&&!a.includes('Jarvis')&&a.indexOf('Opus')<0&&a.indexOf('Sonnet')<0){send=b;}}} if(!send)return 'NO_SEND_BTN'; send.click(); return 'SENT'; })()"
+  set sendJs to "(() => { var send=null; var btns=document.querySelectorAll('button[aria-label]'); for(var i=0;i<btns.length;i++){var a=btns[i].getAttribute('aria-label')||''; if(a==='Send Message'||a==='メッセージを送信'){var r=btns[i].getBoundingClientRect();if(r.width>0&&r.height>0){send=btns[i];break;}}} if(!send){var editor=document.querySelector('.ProseMirror');if(editor){var eR=editor.getBoundingClientRect();var all=document.querySelectorAll('button');for(var j=0;j<all.length;j++){var b=all[j];var br=b.getBoundingClientRect();if(br.width>20&&br.width<60&&br.height>20&&br.height<60&&br.y>=eR.y&&br.y<=eR.y+eR.height+80&&br.x>eR.x+eR.width-100&&b.querySelector('svg')){send=b;break;}}}} if(!send)return 'NO_SEND_BTN'; send.click(); return 'SENT'; })()"
   set r2 to execute t javascript sendJs
   return r1 & ":" & r2
 end tell
