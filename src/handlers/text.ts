@@ -94,6 +94,18 @@ export async function handleText(ctx: Context): Promise<void> {
       // Non-fatal: never break message flow
     }
 
+    // === Inbox Zero: quote-replies to inbox sources (MUST run BEFORE domain routing) ===
+    if (ctx.message?.reply_to_message) {
+      try {
+        const handled = await handleInboxReply(ctx);
+        if (handled) {
+          return;  // No stopProcessing needed - session not started yet
+        }
+      } catch (e) {
+        console.error("[Text] Inbox reply error:", e);
+      }
+    }
+
     // === F5: Domain routing (chat-routing.yaml) → specialized chats (PRIORITY over Orchestrator) ===
     let orchestratorHandled = false;
     if (!message.startsWith("/") && !message.startsWith("。") && !message.startsWith("、")) try {
@@ -199,19 +211,6 @@ export async function handleText(ctx: Context): Promise<void> {
   }
 
   const stopProcessing = session.startProcessing();
-
-  // Inbox Zero: route quote-replies to inbox sources (BEFORE AI session)
-  if (ctx.message?.reply_to_message) {
-    try {
-      const handled = await handleInboxReply(ctx);
-      if (handled) {
-        stopProcessing();
-        return;
-      }
-    } catch (e) {
-      console.error("[Text] Inbox reply error:", e);
-    }
-  }
 
   // LINE schedule command (must check before /line)
   if (message.startsWith("/line_schedule") || message.startsWith("/lineschedule")) {
