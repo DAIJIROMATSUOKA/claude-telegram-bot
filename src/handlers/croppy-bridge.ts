@@ -27,6 +27,9 @@ const DATE_PREFIX_RE = /^\d{4}-\d{2}-\d{2}_\d{4}/;
 const bridgeReplyMap = new Map<number, string>();
 const BRIDGE_REPLY_MAP_MAX = 100;
 
+// Worker-level lock: prevents concurrent inject to same worker
+const lockedWorkers = new Set<string>();
+
 // Check if a WT belongs to a project tab (skip J-WORKER marking for these)
 function isProjectTab(wt: string): boolean {
   try {
@@ -214,6 +217,13 @@ async function handleBridgeStatus(ctx: Context): Promise<void> {
     }
   }
 
+  // Locked workers
+  if (lockedWorkers.size > 0) {
+    msg += '\n🔒 <b>Locked (responding):</b> ';
+    msg += [...lockedWorkers].map(w => `<code>${escapeHtml(w)}</code>`).join(', ');
+    msg += '\n';
+  }
+
   // Inject counts
   if (workerInjectCounts.size > 0) {
     msg += '\n📊 <b>Inject counts:</b>\n';
@@ -249,10 +259,13 @@ async function handleNightshift(ctx: Context): Promise<void> {
  * Dispatch a task to the first available worker tab
  */
 export async function dispatchToWorker(ctx: Context, task: string, options?: { raw?: boolean }): Promise<void> {
-  // 1. Find READY worker
-  const readyWT = await runLocal(`bash ${TAB_MANAGER} ready`);
+  // 1. Find READY worker (skip locked/busy ones)
+  const allReadyRaw = await runLocal(`bash ${TAB_MANAGER} ready`);
+  const readyWT = (allReadyRaw && !allReadyRaw.includes('ERROR'))
+    ? (allReadyRaw.split('\n').map(l => l.trim()).find(l => l && !lockedWorkers.has(l)) || '')
+    : '';
 
-  if (!readyWT || readyWT.includes('ERROR') || readyWT.trim() === '') {
+  if (!readyWT) {
     // Check health for more info
     const health = await runLocal(`bash ${TAB_MANAGER} health`);
 
@@ -261,8 +274,11 @@ export async function dispatchToWorker(ctx: Context, task: string, options?: { r
       // TODO: implement task queue
       // For now, wait and retry once
       await new Promise(r => setTimeout(r, 30000));
-      const retryWT = await runLocal(`bash ${TAB_MANAGER} ready`);
-      if (!retryWT || retryWT.trim() === '') {
+      const retryAllRaw = await runLocal(`bash ${TAB_MANAGER} ready`);
+      const retryWT = (retryAllRaw && !retryAllRaw.includes('ERROR'))
+        ? (retryAllRaw.split('\n').map(l => l.trim()).find(l => l && !lockedWorkers.has(l)) || '')
+        : '';
+      if (!retryWT) {
         await ctx.reply('❌ Workers still busy after 30s. Try again later.');
         return;
       }
@@ -296,6 +312,9 @@ export async function dispatchToWorker(ctx: Context, task: string, options?: { r
  */
 async function injectAndNotify(ctx: Context, wt: string, task: string, raw = false): Promise<void> {
   const prompt = raw ? task : buildWorkerPrompt(task);
+
+  // Lock this worker until response is relayed
+  lockedWorkers.add(wt);
 
   const tmpFile = `/tmp/croppy-bridge-task-${Date.now()}.txt`;
   // Write to temp file and use inject-file (avoids all shell escaping)
@@ -334,8 +353,10 @@ async function injectAndNotify(ctx: Context, wt: string, task: string, raw = fal
       );
     }
   } else if (result.includes('BLOCKED')) {
+    lockedWorkers.delete(wt);
     await ctx.reply(`⚠️ Worker ${wt} blocked: <code>${escapeHtml(result)}</code>`, { parse_mode: 'HTML' });
   } else {
+    lockedWorkers.delete(wt);
     await ctx.reply(`❌ Inject failed: <code>${escapeHtml(result)}</code>`, { parse_mode: 'HTML' });
     // Cleanup temp file
     await runLocal(`rm -f ${tmpFile}`);
@@ -399,6 +420,9 @@ export async function waitAndRelayResponse(ctx: Context, wt: string, maxWaitMs =
         }
       }
 
+      // Unlock worker
+      lockedWorkers.delete(wt);
+
       // Skip rename/re-mark for project tabs (they have their own naming)
       if (!isProjectTab(wt)) {
         // Fire-and-forget: rename conversation with date prefix
@@ -417,7 +441,8 @@ export async function waitAndRelayResponse(ctx: Context, wt: string, maxWaitMs =
     await new Promise(r => setTimeout(r, pollInterval));
   }
   
-  // Timeout
+  // Timeout - unlock worker
+  lockedWorkers.delete(wt);
   try {
     await ctx.reply('⏱ Worker still running after 3min. Check /workers for status.');
   } catch {}
