@@ -219,6 +219,14 @@ async function main() {
       minute: "2-digit",
     });
 
+    // Skip calls older than 10 minutes (iCloud sync delay dedup)
+    const callAgeMs = Date.now() - dateUtc.getTime();
+    const MAX_CALL_AGE_MS = 10 * 60 * 1000; // 10 minutes
+    if (callAgeMs > MAX_CALL_AGE_MS) {
+      console.log(`[Phone Bridge] Skipping old call: ${phone} (${Math.round(callAgeMs/60000)}min ago)`);
+      continue;
+    }
+
     const icon = answered ? "📞" : "📵";
     const statusText = answered
       ? `応答済み (${duration}秒)`
