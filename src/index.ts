@@ -60,6 +60,7 @@ import { handleCode } from "./handlers/code-command";
 import { handleScout } from "./handlers/scout-command";
 import { handleManual } from "./handlers/manual-command";
 import { handleSearch } from "./handlers/search-command";
+import { handleVoice } from "./handlers/voice-chat";
 import { registerMediaCommands } from "./handlers/media-commands";
 import { handleCal } from "./handlers/cal-command";
 import { handleTaskCommand, handleStopCommand as handleOrchestratorStop, handleTaskStatusCommand } from "./task/task-command";
@@ -305,7 +306,8 @@ bot.on("message:pinned_message", async (ctx) => { try { await ctx.deleteMessage(
 
 bot.on("message:text", handleText);
 
-// Voice messages
+// Voice messages: STT (whisper) -> Claude -> TTS (Kyoko)
+bot.on("message:voice", handleVoice);
 
 
 // Photo messages (store as pending attachment)
