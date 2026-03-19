@@ -24,9 +24,11 @@ mkdir -p "$HANDOFF_DIR"
 
 # Parse flags
 AUTO=0
+FORCE_TITLE=""
 while [ $# -gt 1 ]; do
   case "$1" in
     --auto) AUTO=1; shift ;;
+    --title) FORCE_TITLE="$2"; shift 2 ;;
     *) break ;;
   esac
 done
@@ -142,7 +144,12 @@ curl -s -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage" \
 # NOW_REMIND=$(date -v+1M '+%Y-%m-%d %H:%M')
 # printf '%s\n%s' "$NOW_REMIND" "🦞 新チャットに移動" | shortcuts run '緊急リマインダー' 2>/dev/null || true
 
-# --- 4.5. Rename new chat (inherit source title with updated date) ---
+# --- 4.5. Rename new chat ---
+if [ -n "$FORCE_TITLE" ]; then
+  RENAME_RESULT=$(bash "$TAB_MANAGER" rename-conversation "$NEW_WT" "$FORCE_TITLE" 2>/dev/null)
+  echo "[4.5/5] Renamed to: $FORCE_TITLE ($RENAME_RESULT)"
+fi
+# --- 4.5b. Inherit source title (manual handoff only) ---
 if [ -n "$SOURCE_WT" ]; then
   SOURCE_TITLE=$(bash "$TAB_MANAGER" get-title "$SOURCE_WT" 2>/dev/null)
   if [ -n "$SOURCE_TITLE" ]; then
