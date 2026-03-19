@@ -235,19 +235,30 @@ def _run():
     except Exception as e:
         log(f"M1.md update failed: {e}")
 
-    # 緊急リマインダー: 無効化（Telegram通知で十分、溜まると一斉発火するため）
-    # try:
-    #     from datetime import timedelta
-    #     remind_time = (datetime.now() + timedelta(minutes=1)).strftime("%Y-%m-%d %H:%M")
-    #     label = "\U0001F99E Claude Code完了"
-    #     subprocess.run(
-    #         ["shortcuts", "run", "緊急リマインダー"],
-    #         input=f"{remind_time}\n{label}", text=True, timeout=15,
-    #         capture_output=True
-    #     )
-    #     log(f"Reminder set: {remind_time}")
-    # except Exception as e:
-    #     log(f"Reminder failed: {e}")
+    # Telegram通知: セッション完了
+    try:
+        env = {}
+        env_path = os.path.join(PROJECT_DIR, ".env")
+        if os.path.exists(env_path):
+            with open(env_path) as ef:
+                for line in ef:
+                    line = line.strip()
+                    if "=" in line and not line.startswith("#"):
+                        k, v = line.split("=", 1)
+                        env[k.strip()] = v.strip().strip('"').strip("'")
+        token = env.get("TELEGRAM_BOT_TOKEN", "")
+        chat_id = env.get("TELEGRAM_ALLOWED_USERS", "")
+        if token and chat_id:
+            import urllib.request, urllib.parse
+            msg = "\U0001F99E Claude Code セッション完了\n" + datetime.now().strftime("%H:%M JST")
+            data = urllib.parse.urlencode({"chat_id": chat_id, "text": msg}).encode()
+            req = urllib.request.Request(f"https://api.telegram.org/bot{token}/sendMessage", data=data)
+            urllib.request.urlopen(req, timeout=10)
+            log("Telegram notified")
+        else:
+            log("Telegram: missing token/chat_id")
+    except Exception as e:
+        log(f"Telegram notify failed: {e}")
 
     log("Done")
 
