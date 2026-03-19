@@ -119,8 +119,14 @@ sleep 3
 CONV_URL=$(osascript 2>/dev/null -e "tell application \"Google Chrome\" to return URL of tab $TIDX of window $WIDX" || echo "")
 echo "[4/5] New chat URL: $CONV_URL"
 
-# --- 4a. Rename chat if --title specified ---
+# --- 4a. Wait for Claude response before rename ---
 if [ -n "$FORCE_TITLE" ]; then
+  # Wait for Claude to finish responding (and auto-naming)
+  for i in $(seq 1 20); do
+    STATUS=$(bash "$TAB_MANAGER" check-status "$NEW_WT" 2>/dev/null)
+    [ "$STATUS" = "READY" ] && break
+    sleep 3
+  done
   sleep 2
   RENAME_RESULT=$(bash "$TAB_MANAGER" rename-conversation "$NEW_WT" "$FORCE_TITLE" 2>/dev/null)
   echo "[4a/5] Renamed to: $FORCE_TITLE ($RENAME_RESULT)"
