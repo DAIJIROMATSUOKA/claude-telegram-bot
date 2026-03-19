@@ -116,9 +116,9 @@ curl -s -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage" \
   -d "chat_id=$TELEGRAM_ALLOWED_USERS" \
   -d "text=$MSG" > /dev/null 2>&1
 
-# 緊急リマインダー
-NOW_REMIND=$(date -v+1M '+%Y-%m-%d %H:%M')
-printf '%s\n%s' "$NOW_REMIND" "🦞 新チャットに移動" | shortcuts run '緊急リマインダー' 2>/dev/null || true
+# 緊急リマインダー: 無効化（Telegram通知で十分、溜まると一斉発火するため）
+# NOW_REMIND=$(date -v+1M '+%Y-%m-%d %H:%M')
+# printf '%s\n%s' "$NOW_REMIND" "🦞 新チャットに移動" | shortcuts run '緊急リマインダー' 2>/dev/null || true
 
 # --- 4.5. Rename new chat (inherit source title with updated date) ---
 if [ -n "$SOURCE_WT" ]; then
