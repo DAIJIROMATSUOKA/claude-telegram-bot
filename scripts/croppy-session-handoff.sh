@@ -107,14 +107,25 @@ CONV_URL=$(osascript 2>/dev/null -e "tell application \"Google Chrome\" to retur
 echo "[4/4] New chat URL: $CONV_URL"
 
 # --- 4. Notify DJ ---
-# Telegram
+# Get current chat title (strip date prefix + " - Claude" suffix)
+_NOTIFY_TITLE=$(osascript 2>/dev/null -e "tell application \"Google Chrome\" to return title of tab $TIDX of window $WIDX" || echo "")
+_NOTIFY_TITLE=$(echo "$_NOTIFY_TITLE" | sed 's/^\[J-WORKER-[0-9]*\] *//; s/^[0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}_[0-9]\{4\}_//; s/ *- *Claude *$//')
+[ -z "$_NOTIFY_TITLE" ] && _NOTIFY_TITLE="Croppyセッション"
+
+# Extract Direction from bootstrap for summary
+_NOTIFY_SUMMARY=$(echo "$BOOTSTRAP" | grep -o 'Direction:[^,]*' | head -1 | sed 's/^Direction: *//')
+[ -z "$_NOTIFY_SUMMARY" ] && _NOTIFY_SUMMARY="セッション引き継ぎ完了"
+
+# Telegram (HTML format with hyperlink)
 source "$HOME/claude-telegram-bot/.env" 2>/dev/null
-MSG="🦞 Croppyセッション引き継ぎ完了
-新チャット: $CONV_URL
-引き継ぎファイル: $BOOTSTRAP_FILE"
+MSG="🦞 <b>${_NOTIFY_TITLE}</b>
+${_NOTIFY_SUMMARY}
+<a href=\"${CONV_URL}\">チャットを開く</a>"
 curl -s -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage" \
   -d "chat_id=$TELEGRAM_ALLOWED_USERS" \
-  -d "text=$MSG" > /dev/null 2>&1
+  -d "text=$MSG" \
+  -d "parse_mode=HTML" \
+  -d "disable_web_page_preview=true" > /dev/null 2>&1
 
 # 緊急リマインダー: 無効化（Telegram通知で十分、溜まると一斉発火するため）
 # NOW_REMIND=$(date -v+1M '+%Y-%m-%d %H:%M')
