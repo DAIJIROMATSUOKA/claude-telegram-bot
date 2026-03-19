@@ -120,6 +120,50 @@ async function findReadyWorker(): Promise<string | null> {
   return result.trim();
 }
 
+/**
+ * Check if triage item matches a domain in chat-routing.yaml.
+ * Returns domain name if matched, null otherwise.
+ */
+async function matchDomain(item: TriageItem): Promise<string | null> {
+  try {
+    const searchText = `${item.subject || ""} ${item.body.substring(0, 200)} ${item.sender_name || ""}`;
+    const result = await runLocal(
+      `python3 "${SCRIPTS_DIR}/chat-router.py" route ${JSON.stringify(searchText)}`,
+      5000
+    );
+    const domain = result.match(/^DOMAIN: (.+)$/m)?.[1]?.trim();
+    const url = result.match(/^URL: (.+)$/m)?.[1]?.trim();
+    if (domain && domain !== "inbox" && url && !url.includes("未作成")) {
+      return domain;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Route triage item to domain-specific chat via domain-relay.sh.
+ * Returns Claude response if successful, null otherwise.
+ */
+async function domainTriageInject(domain: string, item: TriageItem): Promise<string | null> {
+  try {
+    const prompt = buildTriagePrompt(item);
+    const tmpFile = `/tmp/triage-domain-${Date.now()}.txt`;
+    await runLocal(`cat > ${tmpFile} << 'DTEOF'\n${prompt}\nDTEOF`);
+    const result = await runLocal(
+      `MSG=$(cat ${tmpFile}) && bash "${SCRIPTS_DIR}/domain-relay.sh" --domain "${domain}" "$MSG" && rm -f ${tmpFile}`,
+      150000
+    );
+    await runLocal(`rm -f ${tmpFile}`);
+    const response = result.match(/^RESPONSE: ([\s\S]+)$/m)?.[1]?.trim();
+    return response || null;
+  } catch (e: any) {
+    console.error(`[Triage] Domain relay error (${domain}):`, e?.message);
+    return null;
+  }
+}
+
 async function injectTriage(wt: string, item: TriageItem): Promise<boolean> {
   const prompt = buildTriagePrompt(item);
   const tmpFile = `/tmp/triage-inject-${Date.now()}.txt`;
@@ -326,23 +370,31 @@ async function triageCycle(): Promise<void> {
     for (const item of items) {
       if (existsSync(STOP_FLAG)) break;
 
-      // Find ready worker (DJ messages take priority - if all busy, skip)
-      const wt = await findReadyWorker();
-      if (!wt) {
-        console.log('[Triage] No workers available, deferring');
-        // Reset items to pending via cleanup (they'll be picked up next cycle)
-        break;
+      // Try domain routing first (route to specialized chat)
+      const domain = await matchDomain(item);
+      let response: string | null = null;
+
+      if (domain) {
+        console.log(`[Triage] Domain match: ${domain} for ${item.id}`);
+        response = await domainTriageInject(domain, item);
       }
 
-      // Inject triage prompt
-      const injected = await injectTriage(wt, item);
-      if (!injected) {
-        console.error(`[Triage] Inject failed for ${item.id}`);
-        continue;
-      }
+      // Fallback: generic worker if no domain or domain relay failed
+      if (!response) {
+        const wt = await findReadyWorker();
+        if (!wt) {
+          console.log('[Triage] No workers available, deferring');
+          break;
+        }
 
-      // Wait for 🦞 response
-      const response = await waitForResponse(wt);
+        const injected = await injectTriage(wt, item);
+        if (!injected) {
+          console.error(`[Triage] Inject failed for ${item.id}`);
+          continue;
+        }
+
+        response = await waitForResponse(wt);
+      }
       if (!response) {
         console.error(`[Triage] No response for ${item.id}`);
         await reportResult(item.id, 'escalate', 0, 'No response from 🦞', false);
