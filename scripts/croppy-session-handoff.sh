@@ -22,21 +22,32 @@ DATE=$(date '+%Y-%m-%d_%H%M')
 
 mkdir -p "$HANDOFF_DIR"
 
+# Parse flags
+AUTO=0
+while [ $# -gt 1 ]; do
+  case "$1" in
+    --auto) AUTO=1; shift ;;
+    *) break ;;
+  esac
+done
+
 BOOTSTRAP="$1"
 if [ -z "$BOOTSTRAP" ]; then
-  echo "ERROR: usage: croppy-session-handoff.sh \"bootstrap prompt\""
+  echo "ERROR: usage: croppy-session-handoff.sh [--auto] \"bootstrap prompt\""
   exit 1
 fi
 
-# Validate required sections
-MISSING=""
-echo "$BOOTSTRAP" | grep -qi 'Direction' || MISSING="${MISSING} Direction"
-echo "$BOOTSTRAP" | grep -qi 'Decisions' || MISSING="${MISSING} Decisions"
-echo "$BOOTSTRAP" | grep -qi 'State' || MISSING="${MISSING} State"
-if [ -n "$MISSING" ]; then
-  echo "ERROR: bootstrap missing required sections:${MISSING}"
-  echo "State must describe CURRENT design state, not just commit list."
-  exit 1
+# Validate required sections (skip in auto mode)
+if [ "$AUTO" = "0" ]; then
+  MISSING=""
+  echo "$BOOTSTRAP" | grep -qi 'Direction' || MISSING="${MISSING} Direction"
+  echo "$BOOTSTRAP" | grep -qi 'Decisions' || MISSING="${MISSING} Decisions"
+  echo "$BOOTSTRAP" | grep -qi 'State' || MISSING="${MISSING} State"
+  if [ -n "$MISSING" ]; then
+    echo "ERROR: bootstrap missing required sections:${MISSING}"
+    echo "State must describe CURRENT design state, not just commit list."
+    exit 1
+  fi
 fi
 
 # --- 1. Save bootstrap to file ---
