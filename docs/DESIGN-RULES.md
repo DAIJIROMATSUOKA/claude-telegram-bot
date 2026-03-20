@@ -285,3 +285,45 @@ IDLE → RUNNING → DONE/FAILED/WAITING
 - 送信ボタンはテキストがない時は非表示。aria-label="メッセージを送信"で検出
 - Orchestrator codeLayerRoute(M番号検出)とDomain Routing(chat-routing.yamlキーワード)は競合する → Domain Routingを先にチェック
 - rename-conversationのChrome JS + withCredentials = ブラウザ操作同等（sessionKey直接使用とは別物、許容範囲）
+
+
+---
+
+## 11. 夜間予防的handoff (2026-03-20 DECIDED)
+
+### 原則
+- チャットが何回世代交代しても知識が消えない仕組み
+- 対症療法(handoff)ではなく永続化(圧縮履歴)が本質
+
+### 専門チャット永続履歴
+- `machinelab-knowledge/{domain}/history.compressed.md` にAI専用圧縮履歴
+- 元ChatLogはObsidianにそのまま残す（DJ検索用）
+- handoff時にClaude CLIが圧縮版を生成・追記
+
+### 圧縮記法 Level 2
+- 日本語排除、英語キーワード+記号のみ（トークン70%削減）
+- 凡例: D:=決定 Q:=未解決 F:=修正 E:=エラー
+- 情報は削るな、形式だけ変えろ
+
+### 文脈注入: 圧縮push
+- bootstrapに圧縮history全文を含める（~7%消費、漏れゼロ）
+- pull型は撤回（読み忘れリスク+exec bridge不通時に文脈ゼロ）
+- 全文ChatLogパスはフォールバック深掘り用に記載
+
+### token監視: ChatLogファイルサイズ
+- `wc -c` でChatLogファイルサイズ参照（新しい積算仕組み不要）
+- navigate巡回(15チャット90秒)は完全廃止
+- 監視タイミング: auto-handoff発火時(30分チャット非活動) + Forgeチェックポイント時
+- 推定式: file_size_bytes × 1.5 / 200000 = pct
+
+### ウォームスタンバイ
+- 50%到達 → 新チャットを裏で事前作成 + bootstrap + 圧縮history push済み
+- 70%到達 → chat-routing.yamlのURL切替のみ（0.5秒、ダウンタイムほぼゼロ）
+
+### 時間減衰圧縮（蒸留）
+- 最新世代=詳細(10行)、前世代=2行、古い世代=1行
+- handoff時に自動再圧縮、history.compressed.mdは常に20-30行
+
+### Forge配給制
+- Forge起動時に各チャットの残り寿命(ChatLogサイズ)を確認
+- 残量に応じてタスク数を配分（残25%→1タスクのみ等）
