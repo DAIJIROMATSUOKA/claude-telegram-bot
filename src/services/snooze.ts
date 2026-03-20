@@ -58,8 +58,10 @@ async function checkSnoozeQueue(bot: Bot): Promise<void> {
         if (!chatId) continue;
 
         // Re-send notification with snooze badge
-        // content.text is pre-formatted HTML from midnightInboxCheck - do NOT re-escape
-        const text = `⏰ スヌーズ復帰\n\n${content.text || "(内容不明)"}`;
+        // Escape stray angle brackets (e.g. email addresses) that break HTML parse
+        const rawText = content.text || "(内容不明)";
+        const safeText = rawText.replace(/<(?!\/?(?:b|i|u|s|a|code|pre|em|strong)[ >])/gi, "&lt;");
+        const text = `⏰ スヌーズ復帰\n\n${safeText}`;
         const replyMarkup = content.reply_markup ? JSON.parse(content.reply_markup) : undefined;
 
         const sent = await bot.api.sendMessage(chatId, text.substring(0, 4000), {
