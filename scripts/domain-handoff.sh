@@ -167,67 +167,25 @@ if [ "$READY_COUNT" -lt 3 ]; then
   exit 2
 fi
 
-# --- 3. Bootstrap + compressed history ---
-BOOTSTRAP=$(python3 "$CHAT_ROUTER" get-field "$DOMAIN" bootstrap 2>/dev/null)
-BOOT_FILE="/tmp/domain-handoff-boot-$$.txt"
+# --- 3. Bootstrap via unified generator ---
+BOOTSTRAP_SCRIPT="$HOME/scripts/generate-handoff-bootstrap.py"
+BOOT_FILE="/tmp/handoff-bootstrap-${DOMAIN}.txt"
 
-# Resolve domain → knowledge directory
-KNOWLEDGE_BASE="$HOME/machinelab-knowledge"
-HISTORY_FILE=""
-python3 -c "
-domain_map = {
-    'forge-plc': 'plc-ladder', 'forge-vision': 'inspection-vision',
-    'icad': 'icad', 'access': 'access-db', 'vision': 'inspection-vision',
-    'fa': 'fa', 'pc': 'pc', 'forge-code': 'forge-code',
-    'forge-research': 'forge-research', 'm1317': 'projects/m1317',
-    'm1319': 'projects/m1319', 'm1311': 'projects/m1311',
-    'm1300': 'projects/m1300', 'debate': 'debate',
-    'secretary': 'secretary', 'research': 'research', 'inbox': 'inbox',
-}
-import os, sys
-d = sys.argv[1]
-dn = domain_map.get(d, d)
-p = os.path.join(os.path.expanduser('~/machinelab-knowledge'), dn, 'history.compressed.md')
-print(p if os.path.exists(p) else '')
-" "$DOMAIN" > /tmp/domain-handoff-histpath-$$.txt 2>/dev/null
-HISTORY_FILE=$(cat /tmp/domain-handoff-histpath-$$.txt)
-rm -f /tmp/domain-handoff-histpath-$$.txt
-
-# Build bootstrap: domain instructions + compressed history + chatlog fallback
-{
-  if [ -n "$BOOTSTRAP" ]; then
-    printf '%s
-
-' "$BOOTSTRAP"
-  fi
-
-  if [ -n "$HISTORY_FILE" ] && [ -f "$HISTORY_FILE" ]; then
-    printf '## Compressed History (AI-only, all generations)
-'
-    printf 'Legend: D:=decided Q:=open F:=fixed E:=error W:=done
-
-'
-    cat "$HISTORY_FILE"
-    printf '
-
-'
-    log "History pushed: $HISTORY_FILE ($(wc -c < "$HISTORY_FILE")B)"
-  fi
-
-  printf '## Deep Dive (if needed)
-'
-  printf 'Full ChatLog available via exec bridge:
-'
-  printf 'cat ~/Library/Mobile\ Documents/iCloud~md~obsidian/Documents/MyObsidian/90_System/ChatLogs/2026/
-'
-  printf 'Use grep or tail to read selectively.
-'
-} > "$BOOT_FILE"
+log "Generating bootstrap (compress + summarize)..."
+python3 "$BOOTSTRAP_SCRIPT" "$DOMAIN" "$CURRENT_CHAT_ID" 2>/dev/null
 
 if [ -s "$BOOT_FILE" ]; then
   bash "$TAB_MANAGER" inject-file "$NEW_WT" "$BOOT_FILE" 2>/dev/null
-  log "Bootstrap + history injected"
+  log "Bootstrap injected ($(wc -c < "$BOOT_FILE")B)"
   sleep 5
+else
+  log "WARN: bootstrap generation failed, injecting domain-only fallback"
+  FALLBACK=$(python3 "$CHAT_ROUTER" get-field "$DOMAIN" bootstrap 2>/dev/null)
+  if [ -n "$FALLBACK" ]; then
+    printf '%s' "$FALLBACK" > "$BOOT_FILE"
+    bash "$TAB_MANAGER" inject-file "$NEW_WT" "$BOOT_FILE" 2>/dev/null
+    sleep 5
+  fi
 fi
 rm -f "$BOOT_FILE"
 
