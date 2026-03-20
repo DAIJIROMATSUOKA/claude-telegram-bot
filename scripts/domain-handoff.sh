@@ -128,7 +128,7 @@ echo "DOMAIN: $DOMAIN"
 echo "USAGE: ${PCT}%"
 echo "STATUS: $STATUS"
 
-if [ "${PCT:-0}" -lt 70 ]; then
+if [ "${PCT:-0}" -lt 70 ] && [ "$MODE" != "warm" ]; then
   echo "NO_HANDOFF_NEEDED"
   exit 0
 fi
