@@ -3,7 +3,9 @@
 # When CONV_LIMIT approaches, create new generation + preserve old in chat_history
 #
 # Usage:
-#   ./domain-handoff.sh <domain>
+#   ./domain-handoff.sh <domain>              # full handoff (create + switch)
+#   ./domain-handoff.sh --warm <domain>        # warm standby (create only, no switch)
+#   ./domain-handoff.sh --activate <domain>    # activate standby (switch only, 0.5s)
 #
 # Flow:
 #   1. token-estimate on current domain chat
@@ -22,10 +24,67 @@ DATE=$(date '+%Y-%m-%d_%H%M')
 
 log() { echo "[$(date '+%H:%M:%S')] $*" >> "$LOG"; }
 
-DOMAIN="$1"
+# --- Mode parsing ---
+MODE="full"
+if [ "${1:-}" = "--warm" ]; then
+  MODE="warm"
+  shift
+elif [ "${1:-}" = "--activate" ]; then
+  MODE="activate"
+  shift
+fi
+
+DOMAIN="${1:-}"
 if [ -z "$DOMAIN" ]; then
-  echo "ERROR: usage: domain-handoff.sh <domain>"
+  echo "ERROR: usage: domain-handoff.sh [--warm|--activate] <domain>"
   exit 1
+fi
+
+STANDBY_FILE="/tmp/domain-warm-standby-${DOMAIN}.json"
+
+# --- Mode: --activate (fast path, no Chrome needed) ---
+if [ "$MODE" = "activate" ]; then
+  if [ ! -f "$STANDBY_FILE" ]; then
+    log "No standby for $DOMAIN — falling back to full handoff"
+    MODE="full"
+  else
+    NEW_URL=$(python3 -c "import json; print(json.load(open('$STANDBY_FILE')).get('url',''))" 2>/dev/null)
+    NEW_CHAT_ID=$(echo "$NEW_URL" | sed 's|.*/chat/||')
+    CURRENT_URL=$(python3 "$CHAT_ROUTER" url "$DOMAIN" 2>/dev/null)
+    CURRENT_CHAT_ID=$(echo "$CURRENT_URL" | sed 's|.*/chat/||')
+
+    if [ -z "$NEW_URL" ]; then
+      log "Standby file corrupt for $DOMAIN — falling back to full handoff"
+      rm -f "$STANDBY_FILE"
+      MODE="full"
+    else
+      # Archive old + set new URL
+      python3 "$CHAT_ROUTER" archive-url "$DOMAIN" 2>/dev/null
+      python3 "$CHAT_ROUTER" set-url "$DOMAIN" "$NEW_URL" 2>/dev/null
+      log "ACTIVATED: $DOMAIN → $NEW_URL"
+
+      # Navigate relay tab
+      WT=""
+      if [ -f "$RELAY_WT_FILE" ]; then WT=$(cat "$RELAY_WT_FILE"); fi
+      if [ -n "$WT" ]; then
+        WIDX=$(echo "$WT" | cut -d: -f1)
+        TIDX=$(echo "$WT" | cut -d: -f2)
+        osascript -e "tell application \"Google Chrome\" to set URL of tab $TIDX of window $WIDX to \"$NEW_URL\"" 2>/dev/null
+      fi
+
+      # Telegram notify
+      source "$HOME/claude-telegram-bot/.env" 2>/dev/null
+      MSG="⚡ $DOMAIN ウォーム切替 (0.5s)
+旧: $CURRENT_CHAT_ID
+新: $NEW_CHAT_ID"
+      curl -s -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage"         -d "chat_id=$TELEGRAM_ALLOWED_USERS" -d "text=$MSG" > /dev/null 2>&1
+
+      rm -f "$STANDBY_FILE"
+      echo "ACTIVATE_COMPLETE"
+      echo "NEW_URL: $NEW_URL"
+      exit 0
+    fi
+  fi
 fi
 
 # Get current URL and title_template
@@ -178,29 +237,47 @@ NEW_URL=$(osascript 2>/dev/null -e "tell application \"Google Chrome\" to return
 NEW_CHAT_ID=$(echo "$NEW_URL" | sed 's|.*/chat/||')
 log "New URL: $NEW_URL"
 
-# --- 5. Update chat-routing.yaml ---
-# Save old URL to chat_history
-python3 "$CHAT_ROUTER" archive-url "$DOMAIN" 2>/dev/null
-# Set new URL
-python3 "$CHAT_ROUTER" set-url "$DOMAIN" "$NEW_URL" 2>/dev/null
-log "Routing updated: $DOMAIN -> $NEW_URL"
-
-# --- 6. Rename new chat ---
+# --- 5. Rename new chat ---
 if [ -n "$TITLE_TEMPLATE" ]; then
   NEW_TITLE=$(echo "$TITLE_TEMPLATE" | sed "s/{date}/$DATE/g")
   bash "$TAB_MANAGER" rename-conversation "$NEW_WT" "$NEW_TITLE" 2>/dev/null
   log "Renamed: $NEW_TITLE"
 fi
 
-# --- 7. Close new tab (relay tab stays on original) ---
+# --- 6. Close new tab ---
 osascript 2>/dev/null -e "tell application \"Google Chrome\" to close tab $NEW_TIDX of window $WIDX"
 log "Closed new tab"
 
-# --- 8. Navigate relay tab to new chat ---
+# --- Warm standby: save and exit (no URL switch) ---
+if [ "$MODE" = "warm" ]; then
+  python3 -c "
+import json
+info = {'domain': '$DOMAIN', 'url': '$NEW_URL', 'chat_id': '$NEW_CHAT_ID', 'created_at': '$(date -Iseconds)'}
+with open('$STANDBY_FILE', 'w') as f:
+    json.dump(info, f)
+print('SAVED')
+"
+  log "WARM STANDBY saved: $DOMAIN → $NEW_URL"
+
+  source "$HOME/claude-telegram-bot/.env" 2>/dev/null
+  MSG="🟡 $DOMAIN ウォームスタンバイ作成 (${PCT}%)
+新チャット待機中: $NEW_CHAT_ID"
+  curl -s -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage" \
+    -d "chat_id=$TELEGRAM_ALLOWED_USERS" -d "text=$MSG" > /dev/null 2>&1
+
+  echo "WARM_STANDBY_SAVED"
+  echo "NEW_URL: $NEW_URL"
+  exit 0
+fi
+
+# --- Full mode: update routing + navigate ---
+python3 "$CHAT_ROUTER" archive-url "$DOMAIN" 2>/dev/null
+python3 "$CHAT_ROUTER" set-url "$DOMAIN" "$NEW_URL" 2>/dev/null
+log "Routing updated: $DOMAIN -> $NEW_URL"
+
 echo "$WT" > "$RELAY_WT_FILE"
 osascript -e "tell application \"Google Chrome\" to set URL of tab $TIDX of window $WIDX to \"$NEW_URL\"" 2>/dev/null
 
-# Telegram notify
 source "$HOME/claude-telegram-bot/.env" 2>/dev/null
 MSG="🔄 $DOMAIN チャット世代交代 (${PCT}%)
 旧: $CURRENT_CHAT_ID
