@@ -123,6 +123,7 @@ resolve_worker_tab() {
   FORGE_DOMAIN="$forge_domain"
   export WORKER_WT FORGE_DOMAIN
   log "Worker resolved: WT=$WORKER_WT domain=$FORGE_DOMAIN"
+  ration_check "$FORGE_DOMAIN"
   return 0
 }
 
@@ -366,6 +367,49 @@ if [ "$STATUS" != "READY" ]; then
   notify "Nightly Forge ABORT: Worker Tab not READY ($STATUS)"
   exit 1
 fi
+
+
+# --- CAPACITY_RATION: Adjust MAX_STEPS based on domain chat capacity ---
+ration_check() {
+  local domain="$1"
+  local chat_url
+  chat_url=$(python3 "$CHAT_ROUTER" url "$domain" 2>/dev/null)
+  if [ -z "$chat_url" ] || [ "$chat_url" = "(未作成)" ]; then
+    return
+  fi
+  local chat_id
+  chat_id=$(echo "$chat_url" | sed 's|.*/chat/||')
+
+  # Find ChatLog file size via chatlog state
+  local file_size
+  file_size=$(python3 -c "
+import json, os
+state = json.load(open(os.path.expanduser('~/.claude-chatlog-state.json')))
+chats = state.get('known_chats', state)
+info = chats.get('$chat_id', {})
+fp = info.get('filepath', '')
+print(os.path.getsize(fp) if fp and os.path.exists(fp) else 0)
+" 2>/dev/null)
+
+  if [ -z "$file_size" ] || [ "$file_size" = "0" ]; then
+    return
+  fi
+
+  local est_pct=$(( (file_size * 15 / 10 + 60000) * 100 / 200000 ))
+
+  if [ "$est_pct" -ge 65 ]; then
+    MAX_STEPS=1
+    log "CAPACITY_RATION: $domain at ${est_pct}% → MAX_STEPS=1 (handoff after)"
+  elif [ "$est_pct" -ge 50 ]; then
+    MAX_STEPS=3
+    log "CAPACITY_RATION: $domain at ${est_pct}% → MAX_STEPS=3"
+  elif [ "$est_pct" -ge 30 ]; then
+    MAX_STEPS=6
+    log "CAPACITY_RATION: $domain at ${est_pct}% → MAX_STEPS=6"
+  else
+    log "CAPACITY_RATION: $domain at ${est_pct}% → MAX_STEPS=10 (full)"
+  fi
+}
 
 # Read nightly-tasks.md
 TASK_STATE=""
