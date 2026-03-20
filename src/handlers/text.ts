@@ -131,15 +131,20 @@ export async function handleText(ctx: Context): Promise<void> {
             orchestratorHandled = true;
           }
         } else if (routeResult.method === "no-route") {
-            // No domain match: try Claude Inbox fallback
-            const result = await orch.route({
-              text: message,
-              source: "telegram",
-              autoPost: true,
-              ctx,
-            });
-            if (result.forwarded) {
+            // No domain match, no M-number: route to INBOX specialist chat
+            console.log("[Text] No route match → relaying to INBOX domain");
+            try {
+              const { execSync } = await import("child_process");
+              const escaped = message.replace(/'/g, "'\''");
+              execSync(
+                `bash ${process.env.HOME}/claude-telegram-bot/scripts/domain-relay.sh inbox '${escaped}'`,
+                { timeout: 30000, stdio: "pipe" }
+              );
               orchestratorHandled = true;
+              console.log("[Text] INBOX relay done");
+            } catch (inboxErr: any) {
+              console.error("[Text] INBOX relay failed:", inboxErr?.message?.substring(0, 100));
+              // Fall through to Worker Tab as last resort
             }
           }
         }
