@@ -136,12 +136,18 @@ export async function handleText(ctx: Context): Promise<void> {
             try {
               const { execSync } = await import("child_process");
               const escaped = message.replace(/'/g, "'\''");
-              execSync(
+              const inboxOut = execSync(
                 `bash ${process.env.HOME}/claude-telegram-bot/scripts/domain-relay.sh --domain inbox '${escaped}'`,
-                { timeout: 120000, stdio: "pipe" }
+                { timeout: 120000, encoding: "utf-8" }
               );
+              const inboxResponse = inboxOut.match(/^RESPONSE: ([\s\S]+)$/m)?.[1]?.trim();
+              if (inboxResponse) {
+                await ctx.reply(inboxResponse, { reply_to_message_id: ctx.message?.message_id });
+                console.log(`[Text] INBOX relay replied ${inboxResponse.length} chars`);
+              } else {
+                console.log("[Text] INBOX relay done but no response");
+              }
               orchestratorHandled = true;
-              console.log("[Text] INBOX relay done");
             } catch (inboxErr: any) {
               console.error("[Text] INBOX relay failed:", inboxErr?.message?.substring(0, 100));
               // Fall through to Worker Tab as last resort
