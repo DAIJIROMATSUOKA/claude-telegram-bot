@@ -133,7 +133,7 @@ async function matchDomain(item: TriageItem): Promise<string | null> {
     );
     const domain = result.match(/^DOMAIN: (.+)$/m)?.[1]?.trim();
     const url = result.match(/^URL: (.+)$/m)?.[1]?.trim();
-    if (domain && domain !== "inbox" && url && !url.includes("未作成")) {
+    if (domain && url && !url.includes("未作成")) {
       return domain;
     }
     return null;
