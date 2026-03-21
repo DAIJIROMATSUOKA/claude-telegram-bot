@@ -134,6 +134,10 @@ export async function handleText(ctx: Context): Promise<void> {
             // No domain match, no M-number: route to INBOX specialist chat
             console.log("[Text] No route match → relaying to INBOX domain");
             try {
+              // 1. Show status + delete original message
+              const statusMsg = await ctx.reply("📥 INBOX に転送中...");
+              try { await ctx.api.deleteMessage(ctx.chat!.id, ctx.message!.message_id); } catch {}
+
               const { execSync } = await import("child_process");
               const escaped = message.replace(/'/g, "'\''");
               const inboxOut = execSync(
@@ -142,9 +146,13 @@ export async function handleText(ctx: Context): Promise<void> {
               );
               const inboxResponse = inboxOut.match(/^RESPONSE: ([\s\S]+)$/m)?.[1]?.trim();
               if (inboxResponse) {
-                await ctx.reply(inboxResponse, { reply_to_message_id: ctx.message?.message_id });
+                // 2. Edit status → response with domain label
+                await ctx.api.editMessageText(ctx.chat!.id, statusMsg.message_id, `📥 INBOX
+
+${inboxResponse}`);
                 console.log(`[Text] INBOX relay replied ${inboxResponse.length} chars`);
               } else {
+                await ctx.api.editMessageText(ctx.chat!.id, statusMsg.message_id, "📥 INBOX — 応答なし");
                 console.log("[Text] INBOX relay done but no response");
               }
               orchestratorHandled = true;
