@@ -146,11 +146,38 @@ export async function handleText(ctx: Context): Promise<void> {
               );
               const inboxResponse = inboxOut.match(/^RESPONSE: ([\s\S]+)$/m)?.[1]?.trim();
               if (inboxResponse) {
-                // 2. Edit status → response with domain label
-                await ctx.api.editMessageText(ctx.chat!.id, statusMsg.message_id, `📥 INBOX
+                // 2. Parse [ROUTE:domain] tag
+                const routeTag = inboxResponse.match(/\[ROUTE:(\w+)\]/)?.[1];
+                const cleanResponse = inboxResponse.replace(/\[ROUTE:\w+\]/, "").trim();
 
-${inboxResponse}`);
-                console.log(`[Text] INBOX relay replied ${inboxResponse.length} chars`);
+                if (routeTag && routeTag !== "none") {
+                  // 3. Auto-forward to target domain
+                  console.log(`[Text] INBOX routed to ${routeTag}, forwarding...`);
+                  await ctx.api.editMessageText(ctx.chat!.id, statusMsg.message_id, `📥 → ${routeTag} に転送中...`);
+                  try {
+                    const fwdEscaped = message.replace(/'/g, "'\\''");
+                    const fwdOut = execSync(
+                      `bash ${process.env.HOME}/claude-telegram-bot/scripts/domain-relay.sh --domain "${routeTag}" '${fwdEscaped}'`,
+                      { timeout: 120000, encoding: "utf-8" }
+                    );
+                    const fwdResponse = fwdOut.match(/^RESPONSE: ([\s\S]+)$/m)?.[1]?.trim();
+                    if (fwdResponse) {
+                      await ctx.api.editMessageText(ctx.chat!.id, statusMsg.message_id, `📌 ${routeTag}\n\n${fwdResponse}`);
+                      console.log(`[Text] ${routeTag} replied ${fwdResponse.length} chars`);
+                    } else {
+                      await ctx.api.editMessageText(ctx.chat!.id, statusMsg.message_id, `📌 ${routeTag}\n\n${cleanResponse}`);
+                      console.log(`[Text] ${routeTag} no response, showing INBOX answer`);
+                    }
+                  } catch (fwdErr: any) {
+                    // Forward failed, show INBOX response as fallback
+                    await ctx.api.editMessageText(ctx.chat!.id, statusMsg.message_id, `📥 INBOX (${routeTag}転送失敗)\n\n${cleanResponse}`);
+                    console.error(`[Text] Forward to ${routeTag} failed:`, fwdErr?.message?.substring(0, 100));
+                  }
+                } else {
+                  // No route / ROUTE:none -> show INBOX response directly
+                  await ctx.api.editMessageText(ctx.chat!.id, statusMsg.message_id, `📥 INBOX\n\n${cleanResponse}`);
+                  console.log(`[Text] INBOX replied ${cleanResponse.length} chars (no route)`);
+                }
               } else {
                 await ctx.api.editMessageText(ctx.chat!.id, statusMsg.message_id, "📥 INBOX — 応答なし");
                 console.log("[Text] INBOX relay done but no response");
