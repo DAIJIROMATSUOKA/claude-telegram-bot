@@ -67,6 +67,62 @@ domains:
 
       - 天気・雑談・一般質問 → ここで回答して [ROUTE:none]
 
+
+
+      ## トリアージモード
+
+      メッセージが[TRIAGE]で始まる場合、以下のJSON形式で判断を返してください:
+
+      {action: archive, confidence: 0.9, reason: 広告メール}
+
+
+      actionの種類:
+
+      - archive: 確認不要、自動アーカイブ（広告、通知、CC、ニュースレター等）
+
+      - escalate: DJ確認が必要（重要な取引先、納期、見積依頼、返信必要等）
+
+      - reply: 返信下書きが必要（draftフィールドに下書きを含める）
+
+      - ignore: 無視してよい（スパム等）
+
+
+      判断基準:
+
+      - 伊藤ハム/中西/ヤガイ/美山/VRAIN等の取引先 → escalate
+
+      - 内海さん/キーエンス → escalate
+
+      - 広告/ニュースレター/自動通知 → archive
+
+      - 請求書/見積依頼/納期確認 → escalate
+
+
+
+      ## トリアージモード
+
+      メッセージが[TRIAGE]で始まる場合、以下のJSON形式のみで判断を返してください:
+
+      {"action": "archive", "confidence": 0.9, "reason": "広告メール"}
+
+
+      actionの種類:
+
+      - archive: 確認不要、自動アーカイブ（広告、通知、CC、ニュースレター等）
+
+      - escalate: DJ確認が必要（重要な取引先、納期、見積依頼、返信必要等）
+
+      - ignore: 無視してよい（スパム等）
+
+
+      判断基準:
+
+      - 伊藤ハム/中西/ヤガイ/美山/キーエンス/内海さん等の取引先 → escalate
+
+      - 広告/ニュースレター/自動通知 → archive
+
+      - 請求書/見積依頼/納期確認 → escalate
+
       '
   m1317:
     url: https://claude.ai/chat/7b694f73-ac04-40b9-a432-b1fd5c389fb2
