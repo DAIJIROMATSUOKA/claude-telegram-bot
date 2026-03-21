@@ -36,12 +36,7 @@ domains:
       '
   m1317:
     url: https://claude.ai/chat/7b694f73-ac04-40b9-a432-b1fd5c389fb2
-    keywords:
-    - M1317
-    - 美山
-    - 成田
-    - カット白菜
-    - 白菜検査
+    keywords: []
     title_template: '{date}_M1317_美山成田_カット白菜検査'
     bootstrap: 'あなたはM1317案件（美山成田カット白菜検査）の専門チャットです。
 
@@ -60,11 +55,7 @@ domains:
       title: 2026-03-20_1214_M1317_美山成田_カット白菜検査
   m1319:
     url: https://claude.ai/chat/4c922353-8316-4b6f-ba63-4c246607c809
-    keywords:
-    - M1319
-    - 中西
-    - 煮炊き釜
-    - 中西製作所
+    keywords: []
     title_template: '{date}_M1319_中西製作所_煮炊き釜試作機'
     bootstrap: 'あなたはM1319案件（中西製作所 煮炊き釜試作機）の専門チャットです。
 
@@ -75,11 +66,7 @@ domains:
       '
   m1311:
     url: https://claude.ai/chat/7df5e498-b3f5-4f14-90c6-c777ffd7f506
-    keywords:
-    - M1311
-    - ヤガイ
-    - カルパス
-    - おやつカルパス
+    keywords: []
     title_template: '{date}_M1311_ヤガイ_おやつカルパスライン'
     bootstrap: 'あなたはM1311案件（ヤガイ おやつカルパスライン）の専門チャットです。
 
@@ -90,12 +77,7 @@ domains:
       '
   m1300:
     url: https://claude.ai/chat/0db5cd6e-c317-48f7-afc1-e39da94bb972
-    keywords:
-    - M1300
-    - 伊藤ハム
-    - 米久
-    - ケンコー
-    - ロースライン
+    keywords: []
     title_template: '{date}_M1300_伊藤ハム米久ケンコー工場_ロースライン出口コンベヤ等1号'
     bootstrap: 'あなたはM1300案件（伊藤ハム米久 ケンコー工場 ロースライン出口コンベヤ等1号）の専門チャットです。
 
@@ -106,14 +88,7 @@ domains:
       '
   icad:
     url: https://claude.ai/chat/9e8c40dd-80d7-4249-8e76-512a0fd99e17
-    keywords:
-    - iCAD
-    - 3DCAD
-    - 部品図
-    - アセンブリ
-    - モデリング
-    - 図面
-    - CAD
+    keywords: []
     title_template: '{date}_iCAD_機械設計'
     bootstrap: 'あなたはiCAD SX機械設計の専門チャットです。
 
@@ -128,15 +103,7 @@ domains:
       '
   access:
     url: https://claude.ai/chat/274e3ae0-ab2b-47ae-8fab-f472c20f68fe
-    keywords:
-    - Access
-    - 見積
-    - accdb
-    - 品番
-    - 受注
-    - 納品
-    - 販売先
-    - プロジェクト管理
+    keywords: []
     title_template: '{date}_AccessDB_業務データ'
     bootstrap: 'あなたはAccess DB業務データの専門チャットです。
 
@@ -151,16 +118,7 @@ domains:
       '
   fa:
     url: https://claude.ai/chat/847c5dda-ca1b-4f9d-a79f-7103c0d5f8f2
-    keywords:
-    - PLC
-    - ラダー
-    - タッチパネル
-    - KV-8000
-    - KV STUDIO
-    - シーケンス
-    - インバータ
-    - FR-E820
-    - EtherNet/IP
+    keywords: []
     title_template: '{date}_FA_制御設計'
     bootstrap: 'あなたはFA（ファクトリーオートメーション）制御設計の専門チャットです。
 
@@ -175,17 +133,7 @@ domains:
       '
   vision:
     url: https://claude.ai/chat/121a73cb-948c-4c8d-90f4-448be36e2b49
-    keywords:
-    - 検査
-    - カメラ
-    - KamiCheck
-    - 噛み込み
-    - XG
-    - CV-X
-    - IV
-    - 照明
-    - 画像処理
-    - ビジョン
+    keywords: []
     title_template: '{date}_Vision_画像検査'
     bootstrap: 'あなたは画像検査・ビジョンシステムの専門チャットです。
 
@@ -198,16 +146,7 @@ domains:
       '
   pc:
     url: https://claude.ai/chat/e13ef89c-6e90-4ae9-a28f-bc050474d962
-    keywords:
-    - Parallels
-    - LaunchAgent
-    - Hammerspoon
-    - Tailscale
-    - homebrew
-    - conda
-    - miniforge
-    - Mac設定
-    - 移行
+    keywords: []
     bootstrap: 'あなたはPC操作・Mac設定の専門チャットです。
 
       M1 MAX: username daijiromatsuokam1（引退予定、現母艦）
