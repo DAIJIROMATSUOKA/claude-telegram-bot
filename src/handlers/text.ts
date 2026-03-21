@@ -138,7 +138,7 @@ export async function handleText(ctx: Context): Promise<void> {
               const escaped = message.replace(/'/g, "'\''");
               execSync(
                 `bash ${process.env.HOME}/claude-telegram-bot/scripts/domain-relay.sh --domain inbox '${escaped}'`,
-                { timeout: 30000, stdio: "pipe" }
+                { timeout: 120000, stdio: "pipe" }
               );
               orchestratorHandled = true;
               console.log("[Text] INBOX relay done");
