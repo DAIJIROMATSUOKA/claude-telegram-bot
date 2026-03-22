@@ -433,30 +433,18 @@ async function triageCycle(): Promise<void> {
     for (const item of items) {
       if (existsSync(STOP_FLAG)) break;
 
-      // Try domain routing first (route to specialized chat)
-      const domain = await matchDomain(item);
+      // Always route triage to INBOX domain (has JSON judgment bootstrap)
       let response: string | null = null;
+      console.log(`[Triage] Routing ${item.id} to inbox domain`);
+      response = await domainTriageInject('inbox', item, learningContext);
 
-      if (domain) {
-        console.log(`[Triage] Domain match: ${domain} for ${item.id}`);
-        response = await domainTriageInject(domain, item, learningContext);
-      }
-
-      // Fallback: generic worker if no domain or domain relay failed
+      // Fallback: try specific domain if inbox fails
       if (!response) {
-        const wt = await findReadyWorker();
-        if (!wt) {
-          console.log('[Triage] No workers available, deferring');
-          break;
+        const domain = await matchDomain(item);
+        if (domain && domain !== 'inbox') {
+          console.log(`[Triage] Fallback to domain: ${domain}`);
+          response = await domainTriageInject(domain, item, learningContext);
         }
-
-        const injected = await injectTriage(wt, item, learningContext);
-        if (!injected) {
-          console.error(`[Triage] Inject failed for ${item.id}`);
-          continue;
-        }
-
-        response = await waitForResponse(wt);
       }
       if (!response) {
         console.error(`[Triage] No response for ${item.id}`);
