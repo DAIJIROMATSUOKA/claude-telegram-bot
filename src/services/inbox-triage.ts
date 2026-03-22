@@ -372,6 +372,7 @@ async function executeAction(item: TriageItem, judgment: TriageJudgment): Promis
       confirmMsg = await botApi.sendMessage(chatId, confirmText, {
         reply_markup: {
           inline_keyboard: [[
+            { text: '✅OK', callback_data: `triage:ok:${item.id}` },
             { text: '❌取消', callback_data: `triage:undo:${item.id}` },
           ]],
         },
@@ -566,6 +567,14 @@ export async function handleTriageCallback(callbackQuery: any): Promise<boolean>
         await botApi.editMessageText(chatId, msgId, '❌ 却下').catch(() => {});
       }
       break;
+
+    case 'ok': {
+      await reportFeedback(itemId, 'approved');
+      if (botApi && chatId && msgId) {
+        await botApi.deleteMessage(chatId, msgId).catch(() => {});
+      }
+      break;
+    }
 
     case 'undo': {
       // Show reason selection keyboard
