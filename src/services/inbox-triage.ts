@@ -272,36 +272,56 @@ function buildTriagePrompt(item: TriageItem, learningContext: string = ''): stri
 // ============================================================
 
 function parseTriageResponse(raw: string): TriageJudgment | null {
-  // Try to extract JSON from response (🦞 might add text around it)
+  // 1. Try JSON first
   const jsonMatch = raw.match(/\{[\s\S]*?"action"\s*:\s*"[^"]+"/);
-  if (!jsonMatch) return null;
-
-  // Find the complete JSON object
-  let depth = 0;
-  let start = raw.indexOf(jsonMatch[0]);
-  let end = start;
-  for (let i = start; i < raw.length; i++) {
-    if (raw[i] === '{') depth++;
-    else if (raw[i] === '}') {
-      depth--;
-      if (depth === 0) { end = i + 1; break; }
+  if (jsonMatch) {
+    let depth = 0;
+    let start = raw.indexOf(jsonMatch[0]);
+    let end = start;
+    for (let i = start; i < raw.length; i++) {
+      if (raw[i] === '{') depth++;
+      else if (raw[i] === '}') {
+        depth--;
+        if (depth === 0) { end = i + 1; break; }
+      }
     }
+    try {
+      const parsed = JSON.parse(raw.substring(start, end));
+      if (parsed.action) {
+        return {
+          action: parsed.action,
+          confidence: parsed.confidence || 80,
+          reason: parsed.reason || '',
+          draft: parsed.draft || undefined,
+          obsidian_summary: parsed.obsidian_summary || undefined,
+        };
+      }
+    } catch { /* fall through to text parsing */ }
   }
 
-  try {
-    const json = raw.substring(start, end);
-    const parsed = JSON.parse(json);
-    if (!parsed.action) return null;
-    return {
-      action: parsed.action,
-      confidence: parsed.confidence || 0,
-      reason: parsed.reason || '',
-      draft: parsed.draft || undefined,
-      obsidian_summary: parsed.obsidian_summary || undefined,
-    };
-  } catch {
-    return null;
+  // 2. Text format: "**判断:** archive" or "判断: delete"
+  const textMatch = raw.match(/(?:\*\*)?判断(?:\*\*)?\s*[:：]\s*(archive|delete|escalate|reply|ignore)/i);
+  if (textMatch) {
+    const action = textMatch[1].toLowerCase() as TriageJudgment['action'];
+    // Extract reason from rest of response
+    const reasonLines = raw.split('\n').filter(l =>
+      !l.includes('判断') && l.trim().length > 0 && !l.startsWith('[TRIAGE]')
+    );
+    const reason = reasonLines.slice(0, 2).join(' ').substring(0, 200).trim() || 'Auto-parsed from text response';
+    return { action, confidence: 70, reason };
   }
+
+  // 3. Simple keyword match as last resort
+  const lower = raw.toLowerCase();
+  if (lower.includes('アーカイブ') || lower.includes('archive')) {
+    return { action: 'archive', confidence: 50, reason: 'Keyword match: archive' };
+  }
+  if (lower.includes('削除') || lower.includes('delete')) {
+    return { action: 'delete', confidence: 50, reason: 'Keyword match: delete' };
+  }
+
+  console.error('[Triage] Parse failed, raw:', raw.substring(0, 300));
+  return null;
 }
 
 // ============================================================
