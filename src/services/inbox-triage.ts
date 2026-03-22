@@ -330,7 +330,11 @@ function parseTriageResponse(raw: string): TriageJudgment | null {
 
 async function executeAction(item: TriageItem, judgment: TriageJudgment): Promise<void> {
   const chatId = item.telegram_chat_id || djChatId;
-  if (!botApi || !chatId) return;
+  console.log(`[Triage] executeAction: action=${judgment.action}, chatId=${chatId}, botApi=${!!botApi}, djChatId=${djChatId}`);
+  if (!botApi || !chatId) {
+    console.error('[Triage] ABORT: botApi or chatId missing');
+    return;
+  }
 
   switch (judgment.action) {
     case 'archive':
@@ -357,13 +361,20 @@ async function executeAction(item: TriageItem, judgment: TriageJudgment): Promis
       // Confirm to DJ
       const icon = judgment.action === 'archive' ? '📦' : '🗑';
       const confirmText = `🦞 ${icon}${judgment.action === 'archive' ? 'アーカイブ' : '削除'}済み\n${item.sender_name}: ${item.subject || item.body.substring(0, 50)}\n理由: ${judgment.reason}`;
-      const confirmMsg = await botApi.sendMessage(chatId, confirmText, {
-        reply_markup: JSON.stringify({
+      console.log('[Triage] Sending confirm to chatId:', chatId, 'text:', confirmText.substring(0, 80));
+      let confirmMsg: any;
+      try {
+      confirmMsg = await botApi.sendMessage(chatId, confirmText, {
+        reply_markup: {
           inline_keyboard: [[
             { text: '❌取消', callback_data: `triage:undo:${item.id}` },
           ]],
-        }),
+        },
       });
+      } catch (sendErr: any) {
+        console.error('[Triage] sendMessage FAILED:', sendErr?.message || sendErr);
+      }
+      console.log('[Triage] Confirm sent, msgId:', confirmMsg?.message_id);
       // Auto-approve + delete after 30s if DJ didn't undo
       const _itemId = item.id;
       setTimeout(async () => {
@@ -378,12 +389,12 @@ async function executeAction(item: TriageItem, judgment: TriageJudgment): Promis
     case 'reply': {
       const draftText = `🦞 ✏️返信下書き\n宛先: ${item.sender_name} (${item.source})\n---\n${judgment.draft || '(下書きなし)'}\n---\n理由: ${judgment.reason}`;
       await botApi.sendMessage(chatId, draftText, {
-        reply_markup: JSON.stringify({
+        reply_markup: {
           inline_keyboard: [[
             { text: '📤送信', callback_data: `triage:send:${item.id}` },
             { text: '❌却下', callback_data: `triage:reject:${item.id}` },
           ]],
-        }),
+        },
       });
       break;
     }
@@ -393,12 +404,12 @@ async function executeAction(item: TriageItem, judgment: TriageJudgment): Promis
       // For now, just notify DJ
       const obsText = `🦞 📒Obsidian記録候補\n${item.sender_name}: ${item.subject || ''}\n内容: ${judgment.obsidian_summary || judgment.reason}`;
       await botApi.sendMessage(chatId, obsText, {
-        reply_markup: JSON.stringify({
+        reply_markup: {
           inline_keyboard: [[
             { text: '✅OK', callback_data: `triage:approve:${item.id}` },
             { text: '❌却下', callback_data: `triage:reject:${item.id}` },
           ]],
-        }),
+        },
       });
       break;
     }
@@ -563,7 +574,7 @@ export async function handleTriageCallback(callbackQuery: any): Promise<boolean>
       // Show reason selection keyboard
       if (botApi && chatId && msgId) {
         await botApi.editMessageText(chatId, msgId, '❓ \u306a\u305c\u53d6\u6d88\uff1f', {
-          reply_markup: JSON.stringify({
+          reply_markup: {
             inline_keyboard: [
               [
                 { text: '📨\u91cd\u8981', callback_data: `triage:reason:${itemId}:important` },
@@ -571,7 +582,7 @@ export async function handleTriageCallback(callbackQuery: any): Promise<boolean>
                 { text: '⚠️\u8aa4\u5206\u985e', callback_data: `triage:reason:${itemId}:misclass` },
               ],
             ],
-          }),
+          },
         }).catch(() => {});
       }
       break;
