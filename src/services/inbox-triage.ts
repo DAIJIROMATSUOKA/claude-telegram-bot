@@ -380,14 +380,6 @@ async function executeAction(item: TriageItem, judgment: TriageJudgment): Promis
         console.error('[Triage] sendMessage FAILED:', sendErr?.message || sendErr);
       }
       console.log('[Triage] Confirm sent, msgId:', confirmMsg?.message_id);
-      // Auto-approve + delete after 30s if DJ didn't undo
-      const _itemId = item.id;
-      setTimeout(async () => {
-        try {
-          await reportFeedback(_itemId, 'approved');
-          await botApi.deleteMessage(chatId, confirmMsg.message_id);
-        } catch { /* already deleted */ }
-      }, 30_000);
       break;
     }
 
