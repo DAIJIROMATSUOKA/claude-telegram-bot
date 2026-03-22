@@ -98,12 +98,12 @@ async function reportResult(id: string, action: string, confidence: number, reas
   }
 }
 
-async function reportFeedback(id: string, feedback: string): Promise<void> {
+async function reportFeedback(id: string, feedback: string, reason?: string): Promise<void> {
   try {
     await fetch(`${GATEWAY_URL}/v1/inbox/feedback`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id, feedback }),
+      body: JSON.stringify({ id, feedback, reason: reason || undefined }),
     });
   } catch (e) {
     console.error('[Triage] Feedback error:', e);
@@ -146,9 +146,9 @@ async function matchDomain(item: TriageItem): Promise<string | null> {
  * Route triage item to domain-specific chat via domain-relay.sh.
  * Returns Claude response if successful, null otherwise.
  */
-async function domainTriageInject(domain: string, item: TriageItem): Promise<string | null> {
+async function domainTriageInject(domain: string, item: TriageItem, learningContext: string = ''): Promise<string | null> {
   try {
-    const prompt = buildTriagePrompt(item);
+    const prompt = buildTriagePrompt(item, learningContext);
     const tmpFile = `/tmp/triage-domain-${Date.now()}.txt`;
     await runLocal(`cat > ${tmpFile} << 'DTEOF'\n${prompt}\nDTEOF`);
     const result = await runLocal(
@@ -164,8 +164,8 @@ async function domainTriageInject(domain: string, item: TriageItem): Promise<str
   }
 }
 
-async function injectTriage(wt: string, item: TriageItem): Promise<boolean> {
-  const prompt = buildTriagePrompt(item);
+async function injectTriage(wt: string, item: TriageItem, learningContext: string = ''): Promise<boolean> {
+  const prompt = buildTriagePrompt(item, learningContext);
   const tmpFile = `/tmp/triage-inject-${Date.now()}.txt`;
   await runLocal(`cat > ${tmpFile} << 'TRIAGEEOF'\n${prompt}\nTRIAGEEOF`);
 
@@ -203,16 +203,67 @@ async function waitForResponse(wt: string): Promise<string | null> {
   return null;
 }
 
+
+// ============================================================
+// Learning loop: corrections from past triage
+// ============================================================
+
+interface CorrectionItem {
+  sender_name: string;
+  subject: string | null;
+  source: string;
+  triage_action: string;
+  feedback: string;
+  feedback_reason: string | null;
+}
+
+async function fetchCorrections(limit = 20): Promise<CorrectionItem[]> {
+  try {
+    const res = await fetch(`${GATEWAY_URL}/v1/inbox/corrections?limit=${limit}`);
+    const data: any = await res.json();
+    return data.ok ? (data.corrections || []) : [];
+  } catch (e) {
+    console.error('[Triage] Corrections fetch error:', e);
+    return [];
+  }
+}
+
+function buildLearningContext(corrections: CorrectionItem[]): string {
+  if (corrections.length === 0) return '';
+
+  const lines: string[] = ['\n## Past triage history (learn from these)'];
+  for (const c of corrections) {
+    const sender = (c.sender_name || 'unknown').replace(/"/g, '');
+    const subj = c.subject || '(no subject)';
+    const reason = c.feedback_reason ? ` (${c.feedback_reason})` : '';
+    if (c.feedback === 'rejected') {
+      lines.push(`WRONG: ${sender} "${subj}" -> ${c.triage_action} -> DJ undid${reason}`);
+    } else {
+      lines.push(`OK: ${sender} "${subj}" -> ${c.triage_action}`);
+    }
+  }
+  return lines.join('\n');
+}
+
 // ============================================================
 // Prompt building
 // ============================================================
 
-function buildTriagePrompt(item: TriageItem): string {
+function buildTriagePrompt(item: TriageItem, learningContext: string = ''): string {
   const parts = [`[TRIAGE]`];
   parts.push(`Source: ${item.source}`);
   if (item.sender_name) parts.push(`From: ${item.sender_name}`);
   if (item.subject) parts.push(`Subject: ${item.subject}`);
-  parts.push(`Body: ${item.body}`);
+  parts.push(`Body: ${item.body.substring(0, 2000)}`);
+  if (learningContext) parts.push(learningContext);
+  parts.push('');
+  parts.push('## Judgment rules');
+  parts.push('- Trading partners (Keyence, Nakanishi, Yagai, ItoHam, Miyakokiko, 28Bring, MISUMI with action needed) = escalate');
+  parts.push('- Auto-notifications, ads, receipts, newsletters = archive or delete');
+  parts.push('- When unsure, escalate (false-escalate safer than false-archive)');
+  parts.push('');
+  parts.push('Respond with ONLY a JSON object, no other text:');
+  parts.push('{"action":"archive|delete|escalate","confidence":0-100,"reason":"one line"}');
   return parts.join('\n');
 }
 
@@ -293,9 +344,13 @@ async function executeAction(item: TriageItem, judgment: TriageJudgment): Promis
           ]],
         }),
       });
-      // Auto-delete confirm after 30s if no interaction
-      setTimeout(() => {
-        botApi.deleteMessage(chatId, confirmMsg.message_id).catch(() => {});
+      // Auto-approve + delete after 30s if DJ didn't undo
+      const _itemId = item.id;
+      setTimeout(async () => {
+        try {
+          await reportFeedback(_itemId, 'approved');
+          await botApi.deleteMessage(chatId, confirmMsg.message_id);
+        } catch { /* already deleted */ }
       }, 30_000);
       break;
     }
@@ -367,6 +422,14 @@ async function triageCycle(): Promise<void> {
 
     console.log(`[Triage] Processing ${items.length} items`);
 
+    // Fetch learning context once per cycle
+    const corrections = await fetchCorrections(20);
+    const learningContext = buildLearningContext(corrections);
+    if (corrections.length > 0) {
+      const rejected = corrections.filter(c => c.feedback === 'rejected').length;
+      console.log(`[Triage] Learning: ${corrections.length} items (${rejected} rejected)`);
+    }
+
     for (const item of items) {
       if (existsSync(STOP_FLAG)) break;
 
@@ -376,7 +439,7 @@ async function triageCycle(): Promise<void> {
 
       if (domain) {
         console.log(`[Triage] Domain match: ${domain} for ${item.id}`);
-        response = await domainTriageInject(domain, item);
+        response = await domainTriageInject(domain, item, learningContext);
       }
 
       // Fallback: generic worker if no domain or domain relay failed
@@ -387,7 +450,7 @@ async function triageCycle(): Promise<void> {
           break;
         }
 
-        const injected = await injectTriage(wt, item);
+        const injected = await injectTriage(wt, item, learningContext);
         if (!injected) {
           console.error(`[Triage] Inject failed for ${item.id}`);
           continue;
@@ -488,12 +551,65 @@ export async function handleTriageCallback(callbackQuery: any): Promise<boolean>
       }
       break;
 
-    case 'undo':
-      await reportFeedback(itemId, 'rejected');
+    case 'undo': {
+      // Show reason selection keyboard
       if (botApi && chatId && msgId) {
-        await botApi.editMessageText(chatId, msgId, '⏪ 取消済み（手動対応してください）').catch(() => {});
+        await botApi.editMessageText(chatId, msgId, '❓ \u306a\u305c\u53d6\u6d88\uff1f', {
+          reply_markup: JSON.stringify({
+            inline_keyboard: [
+              [
+                { text: '📨\u91cd\u8981', callback_data: `triage:reason:${itemId}:important` },
+                { text: '⏰\u5f8c\u3067', callback_data: `triage:reason:${itemId}:later` },
+                { text: '⚠️\u8aa4\u5206\u985e', callback_data: `triage:reason:${itemId}:misclass` },
+              ],
+            ],
+          }),
+        }).catch(() => {});
       }
       break;
+    }
+
+    case 'reason': {
+      // DJ selected undo reason
+      const reasonParts = data.split(':');
+      const reasonItemId = reasonParts[2];
+      const reasonCode = reasonParts[3] || 'unknown';
+      const reasonLabels: Record<string, string> = {
+        important: '\u91cd\u8981\u30e1\u30fc\u30eb',
+        later: '\u5f8c\u3067\u898b\u308b',
+        misclass: '\u8aa4\u5206\u985e',
+      };
+      const reasonText = reasonLabels[reasonCode] || reasonCode;
+
+      // Un-archive via GAS
+      if (GAS_GMAIL_URL) {
+        try {
+          const lookupRes = await fetch(`${GATEWAY_URL}/v1/db/query`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              sql: `SELECT source_id, source FROM inbox_triage_queue WHERE id = ?`,
+              params: [reasonItemId],
+            }),
+          });
+          const lookupData: any = await lookupRes.json();
+          const row = lookupData?.results?.[0];
+          if (row?.source === 'gmail' && row?.source_id) {
+            const unarchiveUrl = `${GAS_GMAIL_URL}?action=unarchive&gmail_id=${row.source_id}&key=${GAS_GMAIL_KEY}`;
+            await fetch(unarchiveUrl, { redirect: 'follow' }).catch(() => {});
+          }
+        } catch (e) {
+          console.error('[Triage] Un-archive error:', e);
+        }
+      }
+
+      await reportFeedback(reasonItemId, 'rejected', reasonText);
+      if (botApi && chatId && msgId) {
+        await botApi.editMessageText(chatId, msgId, `⏪ \u53d6\u6d88\u6e08\u307f (${reasonText})`).catch(() => {});
+        setTimeout(() => botApi.deleteMessage(chatId, msgId).catch(() => {}), 5000);
+      }
+      break;
+    }
 
     case 'send':
       // TODO: Actually send the reply via LINE/Gmail
