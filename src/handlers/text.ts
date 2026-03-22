@@ -106,6 +106,47 @@ export async function handleText(ctx: Context): Promise<void> {
       }
     }
 
+
+    // === F4.5: Direct domain send (/domainname message) ===
+    if (message.startsWith("/")) {
+      const directMatch = message.match(/^\/([a-zA-Z0-9_]+)\s+(.+)/s);
+      if (directMatch) {
+        const [, maybeDomain, domainMsg] = directMatch;
+        const domainLower = maybeDomain.toLowerCase();
+        // Check if this domain exists in chat-routing.yaml
+        try {
+          const { execSync } = await import("child_process");
+          const urlCheck = execSync(
+            `python3 ${process.env.HOME}/claude-telegram-bot/scripts/chat-router.py url "${domainLower}" 2>/dev/null`,
+            { timeout: 5000, encoding: "utf-8" }
+          ).trim();
+          if (urlCheck && !urlCheck.includes("未作成") && !urlCheck.includes("ERROR") && urlCheck.startsWith("http")) {
+            console.log(`[Text] Direct send: /${domainLower} → ${urlCheck.substring(0, 50)}`);
+            // Delete DJ's message
+            try { await ctx.api.deleteMessage(ctx.chat!.id, ctx.message!.message_id); } catch {}
+            const statusMsg = await ctx.reply(`📌 ${domainLower} に送信中...`);
+            try {
+              const escaped = domainMsg.replace(/'/g, "'\\''");
+              const relayOut = execSync(
+                `bash ${process.env.HOME}/claude-telegram-bot/scripts/domain-relay.sh --domain "${domainLower}" '${escaped}'`,
+                { timeout: 120000, encoding: "utf-8" }
+              );
+              const response = relayOut.match(/^RESPONSE: ([\s\S]+)$/m)?.[1]?.trim();
+              if (response) {
+                await ctx.api.editMessageText(ctx.chat!.id, statusMsg.message_id, `📌 ${domainLower}\n\n${response}`);
+              } else {
+                await ctx.api.editMessageText(ctx.chat!.id, statusMsg.message_id, `📌 ${domainLower} — 応答なし`);
+              }
+            } catch (relayErr: any) {
+              await ctx.api.editMessageText(ctx.chat!.id, statusMsg.message_id, `📌 ${domainLower} — エラー`);
+              console.error("[Text] Direct send error:", relayErr?.message?.substring(0, 100));
+            }
+            return;
+          }
+        } catch { /* not a domain command, continue normal flow */ }
+      }
+    }
+
     // === F5: Domain routing (chat-routing.yaml) → specialized chats (PRIORITY over Orchestrator) ===
     let orchestratorHandled = false;
     if (!message.startsWith("/") && !message.startsWith("。") && !message.startsWith("、")) try {
