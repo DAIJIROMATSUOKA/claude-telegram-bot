@@ -9,6 +9,9 @@ import { Context } from 'grammy';
 
 const GATEWAY_URL = process.env.GATEWAY_URL || 'https://jarvis-memory-gateway.jarvis-matsuoka.workers.dev';
 
+// Track last task list message per chat for cleanup
+const lastListMsg: Record<number, number> = {};
+
 // ============================================================
 // API helpers
 // ============================================================
@@ -141,10 +144,21 @@ async function showTaskList(ctx: Context, filter: string | null, header?: string
       keyboard.push(buttons.slice(i, i + 4));
     }
 
-    await ctx.reply(lines.join('\n'), {
+    // Delete previous task list message
+    const chatId = ctx.chat?.id;
+    if (chatId && lastListMsg[chatId]) {
+      await ctx.api.deleteMessage(chatId, lastListMsg[chatId]).catch(() => {});
+    }
+
+    const sent = await ctx.reply(lines.join('\n'), {
       parse_mode: 'HTML',
       reply_markup: { inline_keyboard: keyboard },
     });
+
+    // Remember this message for next cleanup
+    if (chatId && sent.message_id) {
+      lastListMsg[chatId] = sent.message_id;
+    }
   } catch (e: any) {
     await ctx.reply('\u274c \u30a8\u30e9\u30fc: ' + (e.message || e));
   }
