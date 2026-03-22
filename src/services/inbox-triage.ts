@@ -251,22 +251,20 @@ function buildLearningContext(corrections: CorrectionItem[]): string {
 // ============================================================
 
 function buildTriagePrompt(item: TriageItem, learningContext: string = ''): string {
-  const parts = [`[TRIAGE]`];
+  const parts: string[] = [];
+  parts.push('YOU ARE IN TRIAGE MODE. Your ONLY job is to return a single JSON line. NO explanation, NO routing tags, NO text.');
+  parts.push('');
   parts.push(`Source: ${item.source}`);
   if (item.sender_name) parts.push(`From: ${item.sender_name}`);
   if (item.subject) parts.push(`Subject: ${item.subject}`);
   parts.push(`Body: ${item.body.substring(0, 2000)}`);
   if (learningContext) parts.push(learningContext);
   parts.push('');
-  parts.push('## Judgment rules');
-  parts.push('- Trading partners (Keyence, Nakanishi, Yagai, ItoHam, Miyakokiko, 28Bring, MISUMI with action needed) = escalate');
-  parts.push('- Auto-notifications, ads, receipts, newsletters = archive or delete');
-  parts.push('- When unsure, escalate (false-escalate safer than false-archive)');
+  parts.push('Rules: Keyence/Nakanishi/Yagai/ItoHam/Miyakokiko/28Bring/Uchiumi = escalate. Ads/newsletters/receipts/shipping = archive or delete. Unsure = escalate.');
+  parts.push('If email has action item for DJ (request/deadline/question), add task_title.');
   parts.push('');
-  parts.push('');
-  parts.push('If the email contains an action item for DJ (request, order, deadline, question needing reply), add task_title field.');
-  parts.push('Respond with ONLY a JSON object, no other text:');
-  parts.push('{"action":"archive|delete|escalate","confidence":0-100,"reason":"one line","task_title":"optional: short task description or omit"}');
+  parts.push('Return ONLY this JSON (nothing else before or after):');
+  parts.push('{"action":"archive","confidence":85,"reason":"promotional email","task_title":"optional"}');
   return parts.join('\n');
 }
 
@@ -322,6 +320,9 @@ function parseTriageResponse(raw: string): TriageJudgment | null {
   }
   if (lower.includes('削除') || lower.includes('delete')) {
     return { action: 'delete', confidence: 50, reason: 'Keyword match: delete' };
+  }
+  if (lower.includes('エスカレーション') || lower.includes('escalat') || lower.includes('確認') || lower.includes('要対応')) {
+    return { action: 'escalate', confidence: 50, reason: 'Keyword match: escalate' };
   }
 
   console.error('[Triage] Parse failed, raw:', raw.substring(0, 300));
