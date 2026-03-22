@@ -200,6 +200,10 @@ domains:
 
       {"action":"archive","confidence":85,"reason":"広告メール"}
 
+      DJへのアクションアイテム（依頼・質問・納期確認・手配指示等）が含まれていれば、task_titleフィールドを追加:
+
+      {"action":"escalate","confidence":90,"reason":"納期確認依頼","task_title":"M1300 CPU納期回答"}
+
 
       actionの種類: archive / delete / escalate / ignore
 

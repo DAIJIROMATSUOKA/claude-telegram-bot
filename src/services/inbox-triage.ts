@@ -49,6 +49,7 @@ interface TriageJudgment {
   reason: string;
   draft?: string;
   obsidian_summary?: string;
+  task_title?: string;
 }
 
 // ============================================================
@@ -262,8 +263,10 @@ function buildTriagePrompt(item: TriageItem, learningContext: string = ''): stri
   parts.push('- Auto-notifications, ads, receipts, newsletters = archive or delete');
   parts.push('- When unsure, escalate (false-escalate safer than false-archive)');
   parts.push('');
+  parts.push('');
+  parts.push('If the email contains an action item for DJ (request, order, deadline, question needing reply), add task_title field.');
   parts.push('Respond with ONLY a JSON object, no other text:');
-  parts.push('{"action":"archive|delete|escalate","confidence":0-100,"reason":"one line"}');
+  parts.push('{"action":"archive|delete|escalate","confidence":0-100,"reason":"one line","task_title":"optional: short task description or omit"}');
   return parts.join('\n');
 }
 
@@ -294,6 +297,7 @@ function parseTriageResponse(raw: string): TriageJudgment | null {
           reason: parsed.reason || '',
           draft: parsed.draft || undefined,
           obsidian_summary: parsed.obsidian_summary || undefined,
+          task_title: parsed.task_title || undefined,
         };
       }
     } catch { /* fall through to text parsing */ }
