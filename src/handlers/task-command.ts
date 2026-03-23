@@ -37,7 +37,20 @@ async function apiGet(path: string): Promise<any> {
 export async function handleTaskAdd(ctx: Context): Promise<void> {
   const text = (ctx.message?.text || '').replace(/^\/todo\s*/, '').trim();
   if (!text) {
-    await ctx.reply('使い方: /task タスク名 [due:2026-03-25] [p:high]');
+    await ctx.reply([
+      "/todo \u30bf\u30b9\u30af\u540d",
+      "/todo \u30bf\u30b9\u30af\u540d due:2026-04-01",
+      "/todo \u30bf\u30b9\u30af\u540d p:high",
+      "",
+      "\u4f8b:",
+      "  /todo M1300 \u90e8\u54c1\u767a\u6ce8",
+      "  /todo \u7f8e\u5c71\u898b\u7a4d\u308a due:2026-04-05",
+      "  /todo \u30ad\u30fc\u30a8\u30f3\u30b9\u96fb\u8a71 p:high",
+      "",
+      "\u512a\u5148\u5ea6: p:high(\u8d64) p:mid(\u9ec4) p:low(\u7dd1)",
+      "\u671f\u9650: due:YYYY-MM-DD\uff082\u65e5\u4ee5\u5185\u3067\u81ea\u52d5high\uff09",
+      "\u4e00\u89a7: /todos",
+    ].join("\n"));
     return;
   }
 
@@ -106,15 +119,6 @@ async function showTaskList(ctx: Context, filter: string | null, header?: string
     if (filter) url += '&category=' + encodeURIComponent(filter);
 
     const result: any = await apiGet(url);
-    if (!result.ok || !result.tasks || result.tasks.length === 0) {
-      const msg = header ? header + '\n' : '';
-      const noTask = filter ? `\ud83d\udcad ${filter} \u306e\u30bf\u30b9\u30af\u306a\u3057` : '\ud83d\udcad \u30bf\u30b9\u30af\u306a\u3057';
-      const sent = await ctx.reply(msg + noTask);
-      // Auto-delete "no tasks" message after 5s
-      setTimeout(() => ctx.api.deleteMessage(ctx.chat!.id, sent.message_id).catch(() => {}), 5000);
-      return;
-    }
-
     const chatId = ctx.chat?.id;
     if (!chatId) return;
 
@@ -126,10 +130,18 @@ async function showTaskList(ctx: Context, filter: string | null, header?: string
     }
     lastTaskMsgs[chatId] = [];
 
-    // Optional header message
+    if (!result.ok || !result.tasks || result.tasks.length === 0) {
+      const msg = header ? header + '\n' : '';
+      const noTask = filter ? `\ud83d\udcad ${filter} \u306e\u30bf\u30b9\u30af\u306a\u3057` : '\ud83d\udcad \u30bf\u30b9\u30af\u306a\u3057';
+      const sent = await ctx.reply(msg + noTask);
+      lastTaskMsgs[chatId].push(sent.message_id);
+      setTimeout(() => ctx.api.deleteMessage(chatId, sent.message_id).catch(() => {}), 5000);
+      return;
+    }
+
+    // Optional header (auto-delete after 3s)
     if (header) {
       const headerMsg = await ctx.reply(header);
-      lastTaskMsgs[chatId].push(headerMsg.message_id);
       setTimeout(() => ctx.api.deleteMessage(chatId, headerMsg.message_id).catch(() => {}), 3000);
     }
 
@@ -141,32 +153,29 @@ async function showTaskList(ctx: Context, filter: string | null, header?: string
       groups[cat].push(t);
     }
 
-    // Send 1 message per task: button = task name, click = complete
+    // 1 category = 1 message with task buttons
     for (const [cat, tasks] of Object.entries(groups)) {
-      // Category header as a minimal message
-      const catMsg = await ctx.reply(`\ud83c\udff7 ${cat}`, { parse_mode: 'HTML' });
-      lastTaskMsgs[chatId].push(catMsg.message_id);
-
+      const keyboard: any[][] = [];
       for (const t of tasks) {
         const priIcon = t.priority === 'high' ? '\ud83d\udd34' : t.priority === 'mid' ? '\ud83d\udfe1' : '\ud83d\udfe2';
         const due = t.due_date ? ` \u23f0${t.due_date.slice(5)}` : '';
-        const btnText = `\u2705 ${priIcon} ${t.title}${due}`;
-
-        const sent = await ctx.reply('\u200b', {  // Zero-width space as minimal body
-          reply_markup: {
-            inline_keyboard: [[
-              { text: btnText, callback_data: `task:done:${t.id}` },
-            ]],
-          },
-        });
-        lastTaskMsgs[chatId].push(sent.message_id);
+        keyboard.push([{
+          text: `\u2705 ${priIcon} ${t.title}${due}`,
+          callback_data: `task:done:${t.id}:${cat}`,
+        }]);
       }
+
+      const sent = await ctx.reply(`\ud83c\udff7 ${cat}`, {
+        reply_markup: { inline_keyboard: keyboard },
+      });
+      lastTaskMsgs[chatId].push(sent.message_id);
     }
   } catch (e: any) {
     await ctx.reply('\u274c \u30a8\u30e9\u30fc: ' + (e.message || e));
   }
 }
 
+// ============================================================
 // Callback handler
 // ============================================================
 
@@ -177,20 +186,46 @@ export async function handleTaskCallback(ctx: Context): Promise<boolean> {
   const parts = data.split(':');
   if (parts.length < 3) return false;
 
-  const [, action, taskId] = parts;
+  const action = parts[1];
+  const taskId = parts[2];
+  const category = parts[3] || '';
 
   try {
     if (action === 'done') {
       await apiPost('/v1/tasks/done', { id: taskId });
       await ctx.answerCallbackQuery({ text: '\u2705 \u5b8c\u4e86!' });
-      // Just delete this task's message (no full list re-render)
-      await ctx.deleteMessage().catch(() => {});
+
+      // Re-render this category: remove completed task's button
+      const msg = ctx.callbackQuery?.message;
+      if (msg && ctx.chat?.id) {
+        const chatId = ctx.chat.id;
+        const msgId = msg.message_id;
+        const currentKb = (msg as any).reply_markup?.inline_keyboard || [];
+
+        // Filter out the completed task
+        const newKb = currentKb.filter((row: any[]) =>
+          !row.some((btn: any) => btn.callback_data === data)
+        );
+
+        if (newKb.length === 0) {
+          // No tasks left in this category -> delete the message
+          await ctx.api.deleteMessage(chatId, msgId).catch(() => {});
+          // Remove from tracked messages
+          if (lastTaskMsgs[chatId]) {
+            lastTaskMsgs[chatId] = lastTaskMsgs[chatId].filter(id => id !== msgId);
+          }
+        } else {
+          // Update message with remaining tasks
+          await ctx.api.editMessageReplyMarkup(chatId, msgId, {
+            reply_markup: { inline_keyboard: newKb },
+          }).catch(() => {});
+        }
+      }
     } else if (action === 'del') {
       await apiPost('/v1/tasks/delete', { id: taskId });
       await ctx.answerCallbackQuery({ text: '\ud83d\uddd1 \u524a\u9664' });
       await ctx.deleteMessage().catch(() => {});
     } else if (action === 'postpone') {
-      // Postpone by 1 day
       const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
       await apiPost('/v1/tasks/update', { id: taskId, due_date: tomorrow });
       await ctx.answerCallbackQuery({ text: '\u23f0 \u660e\u65e5\u306b\u5ef6\u671f' });

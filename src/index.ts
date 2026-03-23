@@ -167,6 +167,14 @@ bot.api.config.use((prev, method, payload, signal) => {
     const delBtn = { text: '🗑', callback_data: 'ib:del:sys' };
 
     if (markup?.inline_keyboard) {
+      // Skip 🗑 for task list messages (they have their own UX)
+      const isTaskMsg = markup.inline_keyboard.some((row: any[]) =>
+        row.some((btn: any) => btn.callback_data?.startsWith('task:'))
+      );
+      if (isTaskMsg) {
+        p.reply_markup = JSON.stringify(markup);
+        return prev(method, payload, signal);
+      }
       // Check if 🗑 already exists
       const hasDelBtn = markup.inline_keyboard.some((row: any[]) => 
         row.some((btn: any) => btn.callback_data?.startsWith('ib:del'))
