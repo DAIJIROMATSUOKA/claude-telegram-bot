@@ -463,8 +463,9 @@ $EXISTING_NOTES
 2. 各テーマ1-2回のWeb検索で効率よく情報収集
 3. DJ運用(FA設計/JARVIS/Nightly Forge/Claude Code)に直接適用可能なものだけ抽出
 4. 既にcroppy-notesにある内容は重複追記しない
-5. 発見があったらclaude.aiのBashツールでcroppy-notesファイルに直接追記:
-   パス: $CROPPY_NOTES
+5. 発見があったらObsidian NightlyForge/に記録（Bashツールで直接書き込み）:
+   パス: $HOME/Library/Mobile Documents/iCloud~md~obsidian/Documents/MyObsidian/90_System/NightlyForge/
+   ※croppy-notesには書かない（肥大化防止）
    形式: ## YYYY-MM-DD Nightly Research\n- [発見タイトル]: 概要（URL）
 6. 検索結果が既知の情報ばかりなら「NIGHTLY_DONE: 新規発見なし」と報告
 7. 最大3テーマ検索したら NIGHTLY_DONE と出力
