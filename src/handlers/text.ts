@@ -163,6 +163,7 @@ export async function handleText(ctx: Context): Promise<void> {
               );
               const response = relayOut.match(/^RESPONSE: ([\s\S]+)$/m)?.[1]?.trim();
               if (response) {
+                await ctx.api.editMessageText(ctx.chat!.id, statusMsg.message_id, `📌 ${domainLower} 応答中...`);
                 await ctx.api.editMessageText(ctx.chat!.id, statusMsg.message_id, `📌 ${domainLower}\n\n${response}`);
               } else {
                 await ctx.api.editMessageText(ctx.chat!.id, statusMsg.message_id, `📌 ${domainLower} — 応答なし`);
@@ -210,7 +211,7 @@ export async function handleText(ctx: Context): Promise<void> {
             console.log("[Text] No route match → relaying to INBOX domain");
             try {
               // 1. Show status + delete original message
-              const statusMsg = await ctx.reply("📥 INBOX に転送中...");
+              const statusMsg = await ctx.reply("📥 INBOX に送信中...");
               try { await ctx.api.deleteMessage(ctx.chat!.id, ctx.message!.message_id); } catch {}
 
               const { execSync } = await import("child_process");
@@ -221,14 +222,16 @@ export async function handleText(ctx: Context): Promise<void> {
               );
               const inboxResponse = inboxOut.match(/^RESPONSE: ([\s\S]+)$/m)?.[1]?.trim();
               if (inboxResponse) {
-                // 2. Parse [ROUTE:domain] tag
+                // 2. Update status: 応答中
+                await ctx.api.editMessageText(ctx.chat!.id, statusMsg.message_id, "📥 INBOX 応答中...");
+                // 3. Parse [ROUTE:domain] tag
                 const routeTag = inboxResponse.match(/\[ROUTE:(\w+)\]/)?.[1];
                 const cleanResponse = inboxResponse.replace(/\[ROUTE:\w+\]/, "").trim();
 
                 if (routeTag && routeTag !== "none") {
                   // 3. Auto-forward to target domain
                   console.log(`[Text] INBOX routed to ${routeTag}, forwarding...`);
-                  await ctx.api.editMessageText(ctx.chat!.id, statusMsg.message_id, `📥 → ${routeTag} に転送中...`);
+                  await ctx.api.editMessageText(ctx.chat!.id, statusMsg.message_id, `📥 → ${routeTag} 応答中...`);
                   try {
                     const fwdEscaped = message.replace(/'/g, "'\\''");
                     const fwdOut = execSync(
