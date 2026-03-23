@@ -132,7 +132,8 @@ export async function handleText(ctx: Context): Promise<void> {
           return;
         } catch (domReplyErr: any) {
           console.error(`[Text] Domain reply to ${replyDomain} failed:`, domReplyErr?.message?.substring(0, 100));
-          // Fall through to normal routing
+          await ctx.reply(`\u26a0\ufe0f ${replyDomain} \u30c1\u30e3\u30c3\u30c8\u63a5\u7d9a\u30a8\u30e9\u30fc\u3002/pc \u3067\u76f4\u63a5\u9001\u4fe1\u3057\u3066\u304f\u3060\u3055\u3044\u3002`);
+          return; // Do NOT fall through to INBOX
         }
       }
     }
