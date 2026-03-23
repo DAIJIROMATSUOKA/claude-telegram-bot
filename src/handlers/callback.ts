@@ -20,6 +20,17 @@ import { gatewayQuery } from "../services/gateway-db";
  * Handle callback queries from inline keyboards.
  */
 export async function handleCallback(ctx: Context): Promise<void> {
+  // === Global delete button handler ===
+  const cbData = ctx.callbackQuery?.data || '';
+  if (cbData.startsWith('ib:del')) {
+    try {
+      await ctx.deleteMessage();
+    } catch { /* already deleted */ }
+    try {
+      await ctx.answerCallbackQuery();
+    } catch {}
+    return;
+  }
   const userId = ctx.from?.id;
   const username = ctx.from?.username || "unknown";
   const chatId = ctx.chat?.id;

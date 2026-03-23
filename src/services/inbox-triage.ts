@@ -346,14 +346,14 @@ function buildOpenButton(item: TriageItem): { text: string; url: string } | null
       }
       return { text: '📧Gmail', url: 'https://mail.google.com/mail/u/0/#inbox' };
     case 'line':
-      return { text: '💬LINE', url: 'line://' };
+      return null; // line:// protocol not supported by Telegram inline buttons
     case 'phone': {
       const phoneMatch = (item.sender_name + ' ' + item.body).match(/(\+?\d[\d-]{8,})/);
       if (phoneMatch) {
         const num = phoneMatch[1].replace(/-/g, '');
         return { text: '📞折返し', url: `tel:${num}` };
       }
-      return { text: '📞電話', url: 'tel:' };
+      return null; // tel: without number is invalid for Telegram
     }
     default:
       return null;
@@ -466,6 +466,14 @@ async function executeAction(item: TriageItem, judgment: TriageJudgment): Promis
       if (escOpenBtn) {
         escOpts.reply_markup = { inline_keyboard: [[escOpenBtn]] };
       }
+      const escRows: any[][] = [
+        [
+          { text: '✅OK', callback_data: `triage:ok:${item.id}` },
+          { text: '❌取消', callback_data: `triage:undo:${item.id}` },
+        ],
+      ];
+      if (escOpenBtn) escRows.push([escOpenBtn]);
+      escOpts.reply_markup = { inline_keyboard: escRows };
       await botApi.sendMessage(chatId,
         `🦞 ⚠️DJ確認\n${item.sender_name}: ${item.subject || item.body.substring(0, 80)}\n理由: ${judgment.reason}${taskInfo}`,
         escOpts
