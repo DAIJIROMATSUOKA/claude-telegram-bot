@@ -1,249 +1,285 @@
 #!/bin/bash
-# domain-handoff.sh — Auto-handoff for specialized domain chats
-# When CONV_LIMIT approaches, create new generation + preserve old in chat_history
-#
+# domain-handoff.sh — Perfect handoff with buffer support
 # Usage:
-#   ./domain-handoff.sh <domain>              # full handoff (create + switch)
-#   ./domain-handoff.sh --warm <domain>        # warm standby (create only, no switch)
-#   ./domain-handoff.sh --activate <domain>    # activate standby (switch only, 0.5s)
-#
-# Flow:
-#   1. token-estimate on current domain chat
-#   2. If >=70%: create new chat, bootstrap, update URL, save old to chat_history
-#   3. Rename new chat with title_template
+#   ./domain-handoff.sh <domain>           # full handoff (auto-triggered at 70% token)
+#   ./domain-handoff.sh --warm <domain>    # warm standby (create only, no switch)
+#   ./domain-handoff.sh --flush <domain>   # flush buffer only (after external handoff)
+#   ./domain-handoff.sh --lock <domain>    # create handoff lock only
+#   ./domain-handoff.sh --unlock <domain>  # remove lock + flush buffer
 
-set -uo pipefail
-
+set -euo pipefail
 SCRIPTS_DIR="$(cd "$(dirname "$0")" && pwd)"
 TAB_MANAGER="$SCRIPTS_DIR/croppy-tab-manager.sh"
-CHAT_ROUTER="$SCRIPTS_DIR/chat-router.py"
-RELAY_WT_FILE="/tmp/domain-relay-wt"
-PROJECT_URL="https://claude.ai/project/019c15f4-3d2d-7263-a308-e7f6ccd6b3f8"
-LOG="/tmp/domain-handoff.log"
-DATE=$(date '+%Y-%m-%d_%H%M')
+CHAT_ROUTER="python3 $SCRIPTS_DIR/chat-router.py"
+RELAY="$SCRIPTS_DIR/domain-relay.sh"
+NOTIFY="$SCRIPTS_DIR/notify-dj.sh"
+source "$HOME/claude-telegram-bot/.env" 2>/dev/null
 
-log() { echo "[$(date '+%H:%M:%S')] $*" >> "$LOG"; }
+LOCK_DIR="/tmp"
 
-# --- Mode parsing ---
+# --- Parse args ---
 MODE="full"
-if [ "${1:-}" = "--warm" ]; then
-  MODE="warm"
-  shift
-elif [ "${1:-}" = "--activate" ]; then
-  MODE="activate"
-  shift
-fi
+if [ "${1:-}" = "--warm" ]; then MODE="warm"; shift; fi
+if [ "${1:-}" = "--flush" ]; then MODE="flush"; shift; fi
+if [ "${1:-}" = "--lock" ]; then MODE="lock"; shift; fi
+if [ "${1:-}" = "--unlock" ]; then MODE="unlock"; shift; fi
 
-DOMAIN="${1:-}"
-if [ -z "$DOMAIN" ]; then
-  echo "ERROR: usage: domain-handoff.sh [--warm|--activate] <domain>"
-  exit 1
-fi
+DOMAIN="${1:?Usage: domain-handoff.sh [--warm|--flush|--lock|--unlock] <domain>}"
+LOCK_FILE="$LOCK_DIR/domain-lock-${DOMAIN}.json"
+BUFFER_FILE="$LOCK_DIR/domain-buffer-${DOMAIN}.jsonl"
+STANDBY_FILE="$LOCK_DIR/domain-warm-standby-${DOMAIN}.json"
 
-STANDBY_FILE="/tmp/domain-warm-standby-${DOMAIN}.json"
+log() { echo "[$(date '+%H:%M:%S')] [Handoff/$DOMAIN] $1"; }
 
-# --- Mode: --activate (fast path, no Chrome needed) ---
-if [ "$MODE" = "activate" ]; then
-  if [ ! -f "$STANDBY_FILE" ]; then
-    log "No standby for $DOMAIN — falling back to full handoff"
-    MODE="full"
-  else
-    NEW_URL=$(python3 -c "import json; print(json.load(open('$STANDBY_FILE')).get('url',''))" 2>/dev/null)
-    NEW_CHAT_ID=$(echo "$NEW_URL" | sed 's|.*/chat/||')
-    CURRENT_URL=$(python3 "$CHAT_ROUTER" url "$DOMAIN" 2>/dev/null)
-    CURRENT_CHAT_ID=$(echo "$CURRENT_URL" | sed 's|.*/chat/||')
-
-    if [ -z "$NEW_URL" ]; then
-      log "Standby file corrupt for $DOMAIN — falling back to full handoff"
-      rm -f "$STANDBY_FILE"
-      MODE="full"
-    else
-      # Archive old + set new URL
-      python3 "$CHAT_ROUTER" archive-url "$DOMAIN" 2>/dev/null
-      python3 "$CHAT_ROUTER" set-url "$DOMAIN" "$NEW_URL" 2>/dev/null
-      log "ACTIVATED: $DOMAIN → $NEW_URL"
-
-      # Navigate relay tab
-      WT=""
-      if [ -f "$RELAY_WT_FILE" ]; then WT=$(cat "$RELAY_WT_FILE"); fi
-      if [ -n "$WT" ]; then
-        WIDX=$(echo "$WT" | cut -d: -f1)
-        TIDX=$(echo "$WT" | cut -d: -f2)
-        osascript -e "tell application \"Google Chrome\" to set URL of tab $TIDX of window $WIDX to \"$NEW_URL\"" 2>/dev/null
-      fi
-
-      # Telegram notify
-      source "$HOME/claude-telegram-bot/.env" 2>/dev/null
-      MSG="⚡ $DOMAIN ウォーム切替 (0.5s)
-旧: $CURRENT_CHAT_ID
-新: $NEW_CHAT_ID"
-      bash "$(dirname "$0")/notify-dj.sh" "$MSG"
-
-      rm -f "$STANDBY_FILE"
-      echo "ACTIVATE_COMPLETE"
-      echo "NEW_URL: $NEW_URL"
-      exit 0
-    fi
-  fi
-fi
-
-# Get current URL and title_template
-CURRENT_URL=$(python3 "$CHAT_ROUTER" url "$DOMAIN" 2>/dev/null)
-TITLE_TEMPLATE=$(python3 "$CHAT_ROUTER" get-field "$DOMAIN" title_template 2>/dev/null)
-
-if [ -z "$CURRENT_URL" ] || [ "$CURRENT_URL" = "(未作成)" ]; then
-  echo "ERROR: domain '$DOMAIN' has no URL"
-  exit 1
-fi
-
-CURRENT_CHAT_ID=$(echo "$CURRENT_URL" | sed 's|.*/chat/||')
-log "Handoff: $DOMAIN ($CURRENT_CHAT_ID)"
-
-# --- Get relay tab ---
-WT=""
-if [ -f "$RELAY_WT_FILE" ]; then
-  WT=$(cat "$RELAY_WT_FILE")
-fi
-if [ -z "$WT" ]; then
-  WT=$(bash "$TAB_MANAGER" list-all 2>/dev/null | head -1 | awk -F' \| ' '{print $1}' | tr -d ' ')
-fi
-
-# --- 1. Check token usage ---
-# Navigate to current domain chat
-WIDX=$(echo "$WT" | cut -d: -f1)
-TIDX=$(echo "$WT" | cut -d: -f2)
-CURRENT_TAB_URL=$(osascript -e "tell application \"Google Chrome\" to return URL of tab $TIDX of window $WIDX" 2>/dev/null)
-
-if ! echo "$CURRENT_TAB_URL" | grep -q "$CURRENT_CHAT_ID"; then
-  osascript -e "tell application \"Google Chrome\" to set URL of tab $TIDX of window $WIDX to \"$CURRENT_URL\"" 2>/dev/null
-  sleep 6
-fi
-
-TOKEN_JSON=$(bash "$TAB_MANAGER" token-estimate "$WT" 2>/dev/null)
-PCT=$(echo "$TOKEN_JSON" | grep -o '"pct":[0-9]*' | grep -o '[0-9]*')
-STATUS=$(echo "$TOKEN_JSON" | grep -o '"recommendation":"[^"]*"' | sed 's/"recommendation":"//;s/"//')
-
-log "Token: $PCT% ($STATUS)"
-echo "DOMAIN: $DOMAIN"
-echo "USAGE: ${PCT}%"
-echo "STATUS: $STATUS"
-
-if [ "${PCT:-0}" -lt 70 ] && [ "$MODE" = "full" ] && [ -n "$PCT" ]; then
-  echo "NO_HANDOFF_NEEDED"
+# --- Lock/Unlock only ---
+if [ "$MODE" = "lock" ]; then
+  echo "{\"type\":\"handoff\",\"pid\":$$,\"since\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"domain\":\"$DOMAIN\"}" > "$LOCK_FILE"
+  bash "$NOTIFY" "📌 $DOMAIN HANDOFF中"
+  log "Lock created"
   exit 0
 fi
 
-# --- 2. Create new chat ---
-BEFORE_COUNT=$(osascript 2>/dev/null -e "tell application \"Google Chrome\" to return (count of tabs of window $WIDX)")
-osascript 2>/dev/null -e "
-tell application \"Google Chrome\"
-  tell window $WIDX
-    set newTab to make new tab
-    set URL of newTab to \"$PROJECT_URL\"
-  end tell
-end tell"
-
-NEW_TIDX=$((BEFORE_COUNT + 1))
-NEW_WT="${WIDX}:${NEW_TIDX}"
-log "New tab: $NEW_WT"
-sleep 8
-
-# Wait READY
-READY_COUNT=0
-for i in $(seq 1 30); do
-  S=$(bash "$TAB_MANAGER" check-status "$NEW_WT" 2>/dev/null)
-  if [ "$S" = "READY" ]; then
-    READY_COUNT=$((READY_COUNT + 1))
-    [ "$READY_COUNT" -ge 3 ] && break
-  else
-    READY_COUNT=0
+if [ "$MODE" = "unlock" ]; then
+  rm -f "$LOCK_FILE"
+  bash "$NOTIFY" "✅ $DOMAIN HANDOFF完了"
+  log "Lock removed"
+  # Flush buffer if any
+  if [ -f "$BUFFER_FILE" ] && [ -s "$BUFFER_FILE" ]; then
+    log "Flushing buffer after unlock..."
+    # Buffer will be flushed by text.ts on next relay call
   fi
-  sleep 2
+  exit 0
+fi
+
+if [ "$MODE" = "flush" ]; then
+  if [ -f "$BUFFER_FILE" ] && [ -s "$BUFFER_FILE" ]; then
+    COUNT=$(wc -l < "$BUFFER_FILE" | tr -d ' ')
+    log "Flushing $COUNT buffered messages"
+    # Format buffer as single message
+    FLUSH_MSG=$(python3 -c "
+import json, sys
+entries = []
+for line in open('$BUFFER_FILE'):
+    try: entries.append(json.loads(line.strip()))
+    except: pass
+if not entries:
+    print('')
+    sys.exit(0)
+lines = []
+for i, e in enumerate(entries):
+    ts = e.get('ts','')
+    if 'T' in ts:
+        ts = ts.split('T')[1][:5]
+    lines.append(f'[{i+1}] {ts} — {e[\"text\"]}')
+print(f'📨 バッファ済みメッセージ ({len(entries)}件):\n' + '\n'.join(lines) + '\n\n以上を踏まえて対応してください。')
+")
+    if [ -n "$FLUSH_MSG" ]; then
+      bash "$RELAY" --domain "$DOMAIN" "$FLUSH_MSG" 2>&1 | tail -5
+    fi
+    rm -f "$BUFFER_FILE"
+    log "Buffer flushed"
+  else
+    log "No buffer to flush"
+  fi
+  exit 0
+fi
+
+# --- Full handoff / Warm standby ---
+
+# Get current URL
+CURRENT_URL=$($CHAT_ROUTER url "$DOMAIN" 2>/dev/null)
+if [ -z "$CURRENT_URL" ] || [[ "$CURRENT_URL" == *"未作成"* ]]; then
+  log "ERROR: no URL for domain $DOMAIN"
+  exit 1
+fi
+
+# Get project URL
+PROJ_URL=$($CHAT_ROUTER get-field "$DOMAIN" project_url 2>/dev/null || echo "")
+if [ -z "$PROJ_URL" ]; then
+  PROJ_URL="https://claude.ai/project/8730cb30-d97e-4764-92e2-a7b41e1a1bfa"
+fi
+
+# Get bootstrap
+BOOTSTRAP=$($CHAT_ROUTER bootstrap "$DOMAIN" 2>/dev/null || echo "")
+# Get compressed history
+HISTORY_FILE="$HOME/machinelab-knowledge/${DOMAIN}/history.compressed.md"
+HISTORY=""
+if [ -f "$HISTORY_FILE" ]; then
+  HISTORY=$(cat "$HISTORY_FILE")
+fi
+
+# === Step 1: Create handoff lock ===
+echo "{\"type\":\"handoff\",\"pid\":$$,\"since\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"domain\":\"$DOMAIN\"}" > "$LOCK_FILE"
+log "Handoff lock created"
+bash "$NOTIFY" "📌 $DOMAIN HANDOFF中"
+
+# === Step 2: Ask old chat for summary ===
+log "Requesting summary from old chat..."
+SUMMARY_PROMPT='セッション引き継ぎのため、完全な要約を出力して。以下の形式で:
+
+## SESSION SUMMARY
+**やったこと:** (箇条書き、具体的commit/修正内容を含む)
+**決定事項:** (【決定】マーク付き)
+**残課題:** (未完了・未確認事項)
+**次のアクション:** (新しい🦞が最初にすべきこと)
+
+## Compressed History
+(Legend: D:=decided Q:=open F:=fixed E:=error W:=done)
+(今世代の全作業を圧縮記法で)
+
+漏れなく書いて。要約ではなく完全な記録。'
+
+WT=$(cat /tmp/domain-relay-wt 2>/dev/null || echo "1:1")
+# Navigate to old chat
+bash "$TAB_MANAGER" navigate "$WT" "$CURRENT_URL" 2>/dev/null
+sleep 3
+
+# Inject summary request
+SUMMARY_FILE="/tmp/handoff-summary-request-$$.txt"
+echo "$SUMMARY_PROMPT" > "$SUMMARY_FILE"
+bash "$TAB_MANAGER" inject-file "$WT" "$SUMMARY_FILE" 2>/dev/null
+rm -f "$SUMMARY_FILE"
+
+# Wait for response
+log "Waiting for summary response..."
+sleep 5
+ELAPSED=0
+while [ "$ELAPSED" -lt 120 ]; do
+  STATUS=$(bash "$TAB_MANAGER" check-status "$WT" 2>/dev/null || echo "UNKNOWN")
+  if [ "$STATUS" = "READY" ]; then
+    break
+  fi
+  sleep 5
+  ELAPSED=$((ELAPSED + 5))
 done
 
-if [ "$READY_COUNT" -lt 3 ]; then
-  log "New chat not READY"
-  echo "ERROR: new chat not READY"
-  exit 2
+# Read summary response
+SUMMARY=$(bash "$TAB_MANAGER" read-response "$WT" 2>/dev/null || echo "")
+if [ -z "$SUMMARY" ]; then
+  log "WARNING: Could not get summary from old chat"
+  SUMMARY="(旧チャットからの要約取得失敗。conversation_searchで補完してください)"
 fi
+log "Got summary: ${#SUMMARY} chars"
 
-# --- 3. Bootstrap via unified generator ---
-BOOTSTRAP_SCRIPT="$HOME/scripts/generate-handoff-bootstrap.py"
-BOOT_FILE="/tmp/handoff-bootstrap-${DOMAIN}.txt"
+# === Step 3: Create new chat ===
+log "Creating new chat..."
+bash "$TAB_MANAGER" new-chat "$WT" "$PROJ_URL" 2>/dev/null
+sleep 8
 
-log "Generating bootstrap (compress + summarize)..."
-python3 "$BOOTSTRAP_SCRIPT" "$DOMAIN" "$CURRENT_CHAT_ID" 2>/dev/null
-
-if [ -s "$BOOT_FILE" ]; then
-  bash "$TAB_MANAGER" inject-file "$NEW_WT" "$BOOT_FILE" 2>/dev/null
-  log "Bootstrap injected ($(wc -c < "$BOOT_FILE")B)"
+# Get new URL
+NEW_URL=$(bash "$TAB_MANAGER" get-url "$WT" 2>/dev/null || echo "")
+if [ -z "$NEW_URL" ] || [[ "$NEW_URL" == *"project"* ]]; then
+  # Wait more for redirect
   sleep 5
-else
-  log "WARN: bootstrap generation failed, injecting domain-only fallback"
-  FALLBACK=$(python3 "$CHAT_ROUTER" get-field "$DOMAIN" bootstrap 2>/dev/null)
-  if [ -n "$FALLBACK" ]; then
-    printf '%s' "$FALLBACK" > "$BOOT_FILE"
-    bash "$TAB_MANAGER" inject-file "$NEW_WT" "$BOOT_FILE" 2>/dev/null
-    sleep 5
-  fi
+  NEW_URL=$(bash "$TAB_MANAGER" get-url "$WT" 2>/dev/null || echo "")
 fi
+
+if [ -z "$NEW_URL" ] || [[ "$NEW_URL" == *"project"* ]]; then
+  log "ERROR: Failed to create new chat"
+  rm -f "$LOCK_FILE"
+  bash "$NOTIFY" "❌ $DOMAIN HANDOFF失敗: 新チャット作成エラー"
+  exit 1
+fi
+log "New chat: $NEW_URL"
+
+# === Step 4: Inject bootstrap + summary ===
+BOOTSTRAP_FULL=""
+if [ -n "$BOOTSTRAP" ]; then
+  BOOTSTRAP_FULL="$BOOTSTRAP"$'\n\n'
+fi
+BOOTSTRAP_FULL="${BOOTSTRAP_FULL}## 前チャットの要約
+${SUMMARY}"
+
+if [ -n "$HISTORY" ]; then
+  BOOTSTRAP_FULL="${BOOTSTRAP_FULL}"$'\n\n'"## Compressed History
+${HISTORY}"
+fi
+
+BOOTSTRAP_FULL="${BOOTSTRAP_FULL}"$'\n\n'"## 前チャットURL
+${CURRENT_URL}"$'\n\n'"## 必須アクション
+conversation_searchで前チャットの最新内容を検索し、上記要約で欠落している詳細を補完せよ。
+以上の文脈を踏まえて、今後のメッセージに対応してください。"
+
+BOOT_FILE="/tmp/handoff-bootstrap-$$.txt"
+echo "$BOOTSTRAP_FULL" > "$BOOT_FILE"
+bash "$TAB_MANAGER" inject-file "$WT" "$BOOT_FILE" 2>/dev/null
 rm -f "$BOOT_FILE"
+log "Bootstrap injected"
 
-# --- 4. Get new chat URL ---
-sleep 3
-NEW_URL=$(osascript 2>/dev/null -e "tell application \"Google Chrome\" to return URL of tab $NEW_TIDX of window $WIDX")
-NEW_CHAT_ID=$(echo "$NEW_URL" | sed 's|.*/chat/||')
-log "New URL: $NEW_URL"
+# Wait for new chat to process bootstrap
+sleep 5
+ELAPSED=0
+while [ "$ELAPSED" -lt 120 ]; do
+  STATUS=$(bash "$TAB_MANAGER" check-status "$WT" 2>/dev/null || echo "UNKNOWN")
+  if [ "$STATUS" = "READY" ]; then
+    break
+  fi
+  sleep 5
+  ELAPSED=$((ELAPSED + 5))
+done
+log "New chat ready"
 
-# --- 5. Rename new chat ---
-if [ -n "$TITLE_TEMPLATE" ]; then
-  NEW_TITLE=$(echo "$TITLE_TEMPLATE" | sed "s/{date}/$DATE/g")
-  bash "$TAB_MANAGER" rename-conversation "$NEW_WT" "$NEW_TITLE" 2>/dev/null
-  log "Renamed: $NEW_TITLE"
-fi
-
-# --- 6. Close new tab ---
-osascript 2>/dev/null -e "tell application \"Google Chrome\" to close tab $NEW_TIDX of window $WIDX"
-log "Closed new tab"
-
-# --- Warm standby: save and exit (no URL switch) ---
+# === Step 5: Switch URL in chat-routing.yaml ===
 if [ "$MODE" = "warm" ]; then
-  python3 -c "
-import json
-info = {'domain': '$DOMAIN', 'url': '$NEW_URL', 'chat_id': '$NEW_CHAT_ID', 'created_at': '$(date -Iseconds)'}
-with open('$STANDBY_FILE', 'w') as f:
-    json.dump(info, f)
-print('SAVED')
-"
-  log "WARM STANDBY saved: $DOMAIN → $NEW_URL"
-
-  source "$HOME/claude-telegram-bot/.env" 2>/dev/null
-  MSG="🟡 $DOMAIN ウォームスタンバイ作成 (${PCT}%)
-新チャット待機中: $NEW_CHAT_ID"
-  curl -s -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage" \
-    -d "chat_id=$TELEGRAM_ALLOWED_USERS" -d "text=$MSG" > /dev/null 2>&1
-
-  echo "WARM_STANDBY_SAVED"
-  echo "NEW_URL: $NEW_URL"
+  # Warm standby: save URL but don't switch
+  echo "{\"url\":\"$NEW_URL\",\"created\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" > "$STANDBY_FILE"
+  log "Warm standby saved: $NEW_URL"
+  rm -f "$LOCK_FILE"
+  bash "$NOTIFY" "🟡 $DOMAIN ウォームスタンバイ作成完了"
   exit 0
 fi
 
-# --- Full mode: update routing + navigate ---
-python3 "$CHAT_ROUTER" archive-url "$DOMAIN" 2>/dev/null
-python3 "$CHAT_ROUTER" set-url "$DOMAIN" "$NEW_URL" 2>/dev/null
-log "Routing updated: $DOMAIN -> $NEW_URL"
+# Full handoff: switch URL
+$CHAT_ROUTER set-url "$DOMAIN" "$NEW_URL" 2>/dev/null
+$CHAT_ROUTER archive-url "$DOMAIN" "$CURRENT_URL" 2>/dev/null
+log "URL switched: $NEW_URL"
 
-echo "$WT" > "$RELAY_WT_FILE"
-osascript -e "tell application \"Google Chrome\" to set URL of tab $TIDX of window $WIDX to \"$NEW_URL\"" 2>/dev/null
+# === Step 6: Rename old chat ===
+OLD_CHAT_ID=$(echo "$CURRENT_URL" | grep -o '[0-9a-f-]\{36\}$')
+if [ -n "$OLD_CHAT_ID" ]; then
+  TODAY=$(date '+%Y-%m-%d')
+  TITLE_TEMPLATE=$($CHAT_ROUTER get-field "$DOMAIN" title_template 2>/dev/null || echo "")
+  if [ -n "$TITLE_TEMPLATE" ]; then
+    OLD_TITLE=$(echo "$TITLE_TEMPLATE" | sed "s/{date}/$TODAY/g")_archived
+  else
+    OLD_TITLE="${TODAY}_${DOMAIN}_archived"
+  fi
+  bash "$TAB_MANAGER" rename "$OLD_CHAT_ID" "$OLD_TITLE" 2>/dev/null || true
+  log "Old chat renamed: $OLD_TITLE"
+fi
 
-source "$HOME/claude-telegram-bot/.env" 2>/dev/null
-MSG="🔄 $DOMAIN チャット世代交代 (${PCT}%)
-旧: $CURRENT_CHAT_ID
-新: $NEW_CHAT_ID"
-curl -s -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage" \
-  -d "chat_id=$TELEGRAM_ALLOWED_USERS" -d "text=$MSG" > /dev/null 2>&1
+# === Step 7: Flush buffer ===
+if [ -f "$BUFFER_FILE" ] && [ -s "$BUFFER_FILE" ]; then
+  COUNT=$(wc -l < "$BUFFER_FILE" | tr -d ' ')
+  log "Flushing $COUNT buffered messages to new chat"
+  FLUSH_MSG=$(python3 -c "
+import json, sys
+entries = []
+for line in open('$BUFFER_FILE'):
+    try: entries.append(json.loads(line.strip()))
+    except: pass
+if not entries:
+    print('')
+    sys.exit(0)
+lines = []
+for i, e in enumerate(entries):
+    ts = e.get('ts','')
+    if 'T' in ts: ts = ts.split('T')[1][:5]
+    lines.append(f'[{i+1}] {ts} — {e[\"text\"]}')
+print(f'📨 HANDOFF中にDJから届いたメッセージ ({len(entries)}件):\n' + '\n'.join(lines) + '\n\n以上を踏まえて対応してください。')
+")
+  if [ -n "$FLUSH_MSG" ]; then
+    FLUSH_FILE="/tmp/handoff-flush-$$.txt"
+    echo "$FLUSH_MSG" > "$FLUSH_FILE"
+    bash "$TAB_MANAGER" inject-file "$WT" "$FLUSH_FILE" 2>/dev/null
+    rm -f "$FLUSH_FILE"
+  fi
+  rm -f "$BUFFER_FILE"
+  log "Buffer flushed"
+fi
 
-echo "HANDOFF_COMPLETE"
-echo "OLD_ID: $CURRENT_CHAT_ID"
-echo "NEW_URL: $NEW_URL"
-exit 0
+# === Step 8: Remove lock + notify ===
+rm -f "$LOCK_FILE"
+rm -f "$STANDBY_FILE"
+log "Handoff complete"
+bash "$NOTIFY" "✅ $DOMAIN HANDOFF完了 → 新チャット"

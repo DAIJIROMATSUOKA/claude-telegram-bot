@@ -1,42 +1,8 @@
 import { handleImsgSend } from "./imsg-send";
 import { handleMailSend } from "./mail-send";
 import { handleLinePost } from "./line-post";
-import { spawn } from "child_process";
 import { handleDeadlineInput } from "./deadline-input";
-
-// Async domain relay with progress callback
-function relayDomain(
-  domain: string,
-  message: string,
-  onResponding?: () => Promise<void>,
-  timeoutMs = 180000
-): Promise<string | null> {
-  return new Promise((resolve) => {
-    const scriptPath = `${process.env.HOME}/claude-telegram-bot/scripts/domain-relay.sh`;
-    const child = spawn("bash", [scriptPath, "--domain", domain, message], {
-      env: { ...process.env, PATH: `/opt/homebrew/bin:/usr/local/bin:${process.env.PATH}` },
-    });
-    let stdout = "";
-    let respondingFired = false;
-    child.stdout.on("data", (data: Buffer) => {
-      const chunk = data.toString();
-      stdout += chunk;
-      // Fire "responding" when we see URL resolved (= inject done, waiting for Claude)
-      if (!respondingFired && (stdout.includes("WT:") || stdout.includes("Injected"))) {
-        respondingFired = true;
-        onResponding?.().catch(() => {});
-      }
-    });
-    child.stderr.on("data", () => {});
-    const timer = setTimeout(() => { child.kill("SIGTERM"); resolve(null); }, timeoutMs);
-    child.on("close", () => {
-      clearTimeout(timer);
-      const match = stdout.match(/^RESPONSE: ([\s\S]+)$/m);
-      resolve(match ? match[1].trim() : null);
-    });
-    child.on("error", () => { clearTimeout(timer); resolve(null); });
-  });
-}
+import { relayDomain, getLock, getBufferCount, MAX_BUFFER } from "../services/domain-buffer";
 /**
  * Text message handler for Claude Telegram Bot.
  *
@@ -156,7 +122,12 @@ export async function handleText(ctx: Context): Promise<void> {
           const response = await relayDomain(replyDomain, userText, async () => {
             await ctx.api.editMessageText(ctx.chat!.id, statusMsg.message_id, `\u{1F4CC} ${replyDomain} \u5FDC\u7B54\u4E2D...`);
           });
-          if (response) {
+          if (response === "BUFFERED") {
+            const lock = getLock(replyDomain);
+            const count = getBufferCount(replyDomain);
+            const label = lock?.type === "handoff" ? "HANDOFF\u4e2d" : "\u5fdc\u7b54\u4e2d";
+            await ctx.api.editMessageText(ctx.chat!.id, statusMsg.message_id, `\u{1f4cc} ${replyDomain} ${label}\uff08\u30d0\u30c3\u30d5\u30a1 ${count}/${MAX_BUFFER}\uff09`);
+          } else if (response) {
             await ctx.api.editMessageText(ctx.chat!.id, statusMsg.message_id, `\u{1F4CB} [${replyDomain}]\n${response}`);
           } else {
             await ctx.api.editMessageText(ctx.chat!.id, statusMsg.message_id, `\u{1F4CB} [${replyDomain}] \u2014 \u5FDC\u7B54\u306A\u3057`);
@@ -192,7 +163,12 @@ export async function handleText(ctx: Context): Promise<void> {
               const response = await relayDomain(domainLower, domainMsg, async () => {
                 await ctx.api.editMessageText(ctx.chat!.id, statusMsg.message_id, `📌 ${domainLower} 応答中...`);
               });
-              if (response) {
+              if (response === "BUFFERED") {
+                const lock = getLock(domainLower);
+                const count = getBufferCount(domainLower);
+                const label = lock?.type === "handoff" ? "HANDOFF中" : "応答中";
+                await ctx.api.editMessageText(ctx.chat!.id, statusMsg.message_id, `📌 ${domainLower} ${label}（バッファ ${count}/${MAX_BUFFER}）`);
+              } else if (response) {
                 await ctx.api.editMessageText(ctx.chat!.id, statusMsg.message_id, `📌 ${domainLower}\n\n${response}`);
               } else {
                 await ctx.api.editMessageText(ctx.chat!.id, statusMsg.message_id, `📌 ${domainLower} — 応答なし`);
