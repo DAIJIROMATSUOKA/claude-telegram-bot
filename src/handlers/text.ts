@@ -121,7 +121,7 @@ export async function handleText(ctx: Context): Promise<void> {
           const statusMsg = await ctx.reply(`\u{1F4CC} ${replyDomain} \u306B\u9001\u4FE1\u4E2D...`);
           const relayOut = execSync(
             `bash ${process.env.HOME}/claude-telegram-bot/scripts/domain-relay.sh --domain "${replyDomain}" '${escaped}'`,
-            { timeout: 120000, encoding: "utf-8" }
+            { timeout: 180000, encoding: "utf-8" }
           );
           const response = relayOut.match(/^RESPONSE: ([\s\S]+)$/m)?.[1]?.trim();
           if (response) {
@@ -160,7 +160,7 @@ export async function handleText(ctx: Context): Promise<void> {
               const escaped = domainMsg.replace(/'/g, "'\\''");
               const relayOut = execSync(
                 `bash ${process.env.HOME}/claude-telegram-bot/scripts/domain-relay.sh --domain "${domainLower}" '${escaped}'`,
-                { timeout: 120000, encoding: "utf-8" }
+                { timeout: 180000, encoding: "utf-8" }
               );
               const response = relayOut.match(/^RESPONSE: ([\s\S]+)$/m)?.[1]?.trim();
               if (response) {
@@ -219,7 +219,7 @@ export async function handleText(ctx: Context): Promise<void> {
               const escaped = message.replace(/'/g, "'\''");
               const inboxOut = execSync(
                 `bash ${process.env.HOME}/claude-telegram-bot/scripts/domain-relay.sh --domain inbox '${escaped}'`,
-                { timeout: 120000, encoding: "utf-8" }
+                { timeout: 180000, encoding: "utf-8" }
               );
               const inboxResponse = inboxOut.match(/^RESPONSE: ([\s\S]+)$/m)?.[1]?.trim();
               if (inboxResponse) {
@@ -237,7 +237,7 @@ export async function handleText(ctx: Context): Promise<void> {
                     const fwdEscaped = message.replace(/'/g, "'\\''");
                     const fwdOut = execSync(
                       `bash ${process.env.HOME}/claude-telegram-bot/scripts/domain-relay.sh --domain "${routeTag}" '${fwdEscaped}'`,
-                      { timeout: 120000, encoding: "utf-8" }
+                      { timeout: 180000, encoding: "utf-8" }
                     );
                     const fwdResponse = fwdOut.match(/^RESPONSE: ([\s\S]+)$/m)?.[1]?.trim();
                     if (fwdResponse) {
