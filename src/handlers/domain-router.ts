@@ -6,7 +6,7 @@
  * text.tsから呼ばれ、Telegram→専門チャット→応答→Telegram返信を行う。
  */
 
-import { exec } from "child_process";
+import { exec, spawn } from "child_process";
 import { promisify } from "util";
 import type { Context } from "grammy";
 
@@ -28,6 +28,39 @@ interface DomainRouteResult {
  * Quick check: does the message match any domain keywords?
  * Synchronous — uses execSync for speed.
  */
+
+// Async domain relay with progress
+function relayDomain(
+  domain: string,
+  message: string,
+  onResponding?: () => Promise<void>,
+  timeoutMs = 120000
+): Promise<string | null> {
+  return new Promise((resolve) => {
+    const child = spawn("bash", [DOMAIN_RELAY, "--domain", domain, message], {
+      env: { ...process.env, PATH: `/opt/homebrew/bin:/usr/local/bin:${process.env.PATH}` },
+    });
+    let stdout = "";
+    let respondingFired = false;
+    child.stdout.on("data", (data: Buffer) => {
+      const chunk = data.toString();
+      stdout += chunk;
+      if (!respondingFired && stdout.includes("PHASE: responding")) {
+        respondingFired = true;
+        onResponding?.().catch(() => {});
+      }
+    });
+    child.stderr.on("data", () => {});
+    const timer = setTimeout(() => { child.kill("SIGTERM"); resolve(null); }, timeoutMs);
+    child.on("close", () => {
+      clearTimeout(timer);
+      const match = stdout.match(/^RESPONSE: ([\s\S]+)$/m);
+      resolve(match ? match[1].trim() : null);
+    });
+    child.on("error", () => { clearTimeout(timer); resolve(null); });
+  });
+}
+
 export function quickDomainRoute(text: string): { domain: string; url: string } | null {
   try {
     const { execSync } = require("child_process");
@@ -72,17 +105,14 @@ export async function handleDomainRelay(
   try {
     // Shell escape message for domain-relay.sh
     const escapedMsg = message.replace(/'/g, "'\\''");
-    const { stdout, stderr } = await execAsync(
-      `bash "${DOMAIN_RELAY}" --domain "${route.domain}" '${escapedMsg}'`,
-      {
-        timeout: 150_000, // 2.5min
-        maxBuffer: 1024 * 1024,
-        env: { ...process.env, PATH: `/opt/homebrew/bin:/usr/local/bin:${process.env.PATH}` },
-      }
+    const response = await relayDomain(
+      route.domain,
+      message,
+      async () => {
+        await ctx.api.editMessageText(chatId, statusMsg.message_id, `🔄 ${route.domain} 応答中...`);
+      },
+      150_000
     );
-
-    // Parse response
-    const response = stdout.match(/^RESPONSE: ([\s\S]+)$/m)?.[1]?.trim();
 
     if (!response) {
       console.error(`[DomainRouter] No response from ${route.domain}: ${stderr}`);

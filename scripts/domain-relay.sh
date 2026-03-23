@@ -145,6 +145,7 @@ if ! echo "$INJECT_OUT" | grep -q "INSERTED"; then
   exit 2
 fi
 log "Injected (${#MESSAGE} chars)"
+echo "PHASE: responding"
 
 # --- 6. Wait response ---
 sleep 5

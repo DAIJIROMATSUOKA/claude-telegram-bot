@@ -1,7 +1,56 @@
+import { spawn } from "child_process";
 import { handleImsgSend } from "./imsg-send";
 import { handleMailSend } from "./mail-send";
 import { handleLinePost } from "./line-post";
 import { handleDeadlineInput } from "./deadline-input";
+
+// ============================================================
+// Async domain relay with progress callback
+// ============================================================
+function relayDomain(
+  domain: string,
+  message: string,
+  onResponding?: () => Promise<void>,
+  timeoutMs = 120000
+): Promise<string | null> {
+  return new Promise((resolve) => {
+    const scriptPath = `${process.env.HOME}/claude-telegram-bot/scripts/domain-relay.sh`;
+    const child = spawn("bash", [scriptPath, "--domain", domain, message], {
+      env: { ...process.env, PATH: `/opt/homebrew/bin:/usr/local/bin:${process.env.PATH}` },
+    });
+
+    let stdout = "";
+    let respondingFired = false;
+
+    child.stdout.on("data", (data: Buffer) => {
+      const chunk = data.toString();
+      stdout += chunk;
+      if (!respondingFired && stdout.includes("PHASE: responding")) {
+        respondingFired = true;
+        onResponding?.().catch(() => {});
+      }
+    });
+
+    child.stderr.on("data", () => {}); // ignore
+
+    const timer = setTimeout(() => {
+      child.kill("SIGTERM");
+      resolve(null);
+    }, timeoutMs);
+
+    child.on("close", () => {
+      clearTimeout(timer);
+      const match = stdout.match(/^RESPONSE: ([\s\S]+)$/m);
+      resolve(match ? match[1].trim() : null);
+    });
+
+    child.on("error", () => {
+      clearTimeout(timer);
+      resolve(null);
+    });
+  });
+}
+
 /**
  * Text message handler for Claude Telegram Bot.
  *
@@ -115,15 +164,17 @@ export async function handleText(ctx: Context): Promise<void> {
       if (replyDomain) {
         console.log(`[Text] Reply to domain ${replyDomain} response -> routing back`);
         try {
-          const { execSync } = await import("child_process");
+          // Delete DJ's reply message
+          try { await ctx.api.deleteMessage(ctx.chat!.id, ctx.message!.message_id); } catch {}
           const userText = ctx.message?.text || "";
-          const escaped = userText.replace(/'/g, "'\\''" );
           const statusMsg = await ctx.reply(`\u{1F4CC} ${replyDomain} \u306B\u9001\u4FE1\u4E2D...`);
-          const relayOut = execSync(
-            `bash ${process.env.HOME}/claude-telegram-bot/scripts/domain-relay.sh --domain "${replyDomain}" '${escaped}'`,
-            { timeout: 120000, encoding: "utf-8" }
+          const response = await relayDomain(
+            replyDomain,
+            userText,
+            async () => {
+              await ctx.api.editMessageText(ctx.chat!.id, statusMsg.message_id, `\u{1F4CC} ${replyDomain} \u5FDC\u7B54\u4E2D...`);
+            }
           );
-          const response = relayOut.match(/^RESPONSE: ([\s\S]+)$/m)?.[1]?.trim();
           if (response) {
             await ctx.api.editMessageText(ctx.chat!.id, statusMsg.message_id, `\u{1F4CB} [${replyDomain}]\n${response}`);
           } else {
@@ -157,14 +208,14 @@ export async function handleText(ctx: Context): Promise<void> {
             try { await ctx.api.deleteMessage(ctx.chat!.id, ctx.message!.message_id); } catch {}
             const statusMsg = await ctx.reply(`📌 ${domainLower} に送信中...`);
             try {
-              const escaped = domainMsg.replace(/'/g, "'\\''");
-              const relayOut = execSync(
-                `bash ${process.env.HOME}/claude-telegram-bot/scripts/domain-relay.sh --domain "${domainLower}" '${escaped}'`,
-                { timeout: 120000, encoding: "utf-8" }
+              const response = await relayDomain(
+                domainLower,
+                domainMsg,
+                async () => {
+                  await ctx.api.editMessageText(ctx.chat!.id, statusMsg.message_id, `📌 ${domainLower} 応答中...`);
+                }
               );
-              const response = relayOut.match(/^RESPONSE: ([\s\S]+)$/m)?.[1]?.trim();
               if (response) {
-                await ctx.api.editMessageText(ctx.chat!.id, statusMsg.message_id, `📌 ${domainLower} 応答中...`);
                 await ctx.api.editMessageText(ctx.chat!.id, statusMsg.message_id, `📌 ${domainLower}\n\n${response}`);
               } else {
                 await ctx.api.editMessageText(ctx.chat!.id, statusMsg.message_id, `📌 ${domainLower} — 応答なし`);
@@ -215,16 +266,14 @@ export async function handleText(ctx: Context): Promise<void> {
               const statusMsg = await ctx.reply("📥 INBOX に送信中...");
               try { await ctx.api.deleteMessage(ctx.chat!.id, ctx.message!.message_id); } catch {}
 
-              const { execSync } = await import("child_process");
-              const escaped = message.replace(/'/g, "'\''");
-              const inboxOut = execSync(
-                `bash ${process.env.HOME}/claude-telegram-bot/scripts/domain-relay.sh --domain inbox '${escaped}'`,
-                { timeout: 120000, encoding: "utf-8" }
+              const inboxResponse = await relayDomain(
+                "inbox",
+                message,
+                async () => {
+                  await ctx.api.editMessageText(ctx.chat!.id, statusMsg.message_id, "📥 INBOX 応答中...");
+                }
               );
-              const inboxResponse = inboxOut.match(/^RESPONSE: ([\s\S]+)$/m)?.[1]?.trim();
               if (inboxResponse) {
-                // 2. Update status: 応答中
-                await ctx.api.editMessageText(ctx.chat!.id, statusMsg.message_id, "📥 INBOX 応答中...");
                 // 3. Parse [ROUTE:domain] tag
                 const routeTag = inboxResponse.match(/\[ROUTE:(\w+)\]/)?.[1];
                 const cleanResponse = inboxResponse.replace(/\[ROUTE:\w+\]/, "").trim();
@@ -232,14 +281,14 @@ export async function handleText(ctx: Context): Promise<void> {
                 if (routeTag && routeTag !== "none") {
                   // 3. Auto-forward to target domain
                   console.log(`[Text] INBOX routed to ${routeTag}, forwarding...`);
-                  await ctx.api.editMessageText(ctx.chat!.id, statusMsg.message_id, `📥 → ${routeTag} 応答中...`);
                   try {
-                    const fwdEscaped = message.replace(/'/g, "'\\''");
-                    const fwdOut = execSync(
-                      `bash ${process.env.HOME}/claude-telegram-bot/scripts/domain-relay.sh --domain "${routeTag}" '${fwdEscaped}'`,
-                      { timeout: 120000, encoding: "utf-8" }
+                    const fwdResponse = await relayDomain(
+                      routeTag,
+                      message,
+                      async () => {
+                        await ctx.api.editMessageText(ctx.chat!.id, statusMsg.message_id, `📥 → ${routeTag} 応答中...`);
+                      }
                     );
-                    const fwdResponse = fwdOut.match(/^RESPONSE: ([\s\S]+)$/m)?.[1]?.trim();
                     if (fwdResponse) {
                       await ctx.api.editMessageText(ctx.chat!.id, statusMsg.message_id, `📌 ${routeTag}\n\n${fwdResponse}`);
                       console.log(`[Text] ${routeTag} replied ${fwdResponse.length} chars`);
