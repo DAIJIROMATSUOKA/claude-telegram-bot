@@ -77,7 +77,7 @@ if [ "$MODE" = "activate" ]; then
       MSG="⚡ $DOMAIN ウォーム切替 (0.5s)
 旧: $CURRENT_CHAT_ID
 新: $NEW_CHAT_ID"
-      curl -s -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage"         -d "chat_id=$TELEGRAM_ALLOWED_USERS" -d "text=$MSG" > /dev/null 2>&1
+      bash "$(dirname "$0")/notify-dj.sh" "$MSG"
 
       rm -f "$STANDBY_FILE"
       echo "ACTIVATE_COMPLETE"

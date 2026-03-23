@@ -147,11 +147,13 @@ source "$HOME/claude-telegram-bot/.env" 2>/dev/null
 MSG="🦞 <b>${_NOTIFY_TITLE}</b>
 ${_NOTIFY_SUMMARY}
 <a href=\"${CONV_URL}\">チャットを開く</a>"
+MARKUP='{"inline_keyboard":[[{"text":"\U0001f5d1","callback_data":"ib:del:sys"}]]}'
 curl -s -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage" \
   -d "chat_id=$TELEGRAM_ALLOWED_USERS" \
   -d "text=$MSG" \
   -d "parse_mode=HTML" \
-  -d "disable_web_page_preview=true" > /dev/null 2>&1
+  -d "disable_web_page_preview=true" \
+  -d "reply_markup=$MARKUP" > /dev/null 2>&1
 
 # 緊急リマインダー: 無効化（Telegram通知で十分、溜まると一斉発火するため）
 # NOW_REMIND=$(date -v+1M '+%Y-%m-%d %H:%M')
