@@ -333,6 +333,33 @@ function parseTriageResponse(raw: string): TriageJudgment | null {
 // Action execution
 // ============================================================
 
+
+// ============================================================
+// Source-specific deep link button
+// ============================================================
+
+function buildOpenButton(item: TriageItem): { text: string; url: string } | null {
+  switch (item.source) {
+    case 'gmail':
+      if (item.source_id) {
+        return { text: '📧開く', url: `https://mail.google.com/mail/u/0/#inbox/${item.source_id}` };
+      }
+      return { text: '📧Gmail', url: 'https://mail.google.com/mail/u/0/#inbox' };
+    case 'line':
+      return { text: '💬LINE', url: 'line://' };
+    case 'phone': {
+      const phoneMatch = (item.sender_name + ' ' + item.body).match(/(\+?\d[\d-]{8,})/);
+      if (phoneMatch) {
+        const num = phoneMatch[1].replace(/-/g, '');
+        return { text: '📞折返し', url: `tel:${num}` };
+      }
+      return { text: '📞電話', url: 'tel:' };
+    }
+    default:
+      return null;
+  }
+}
+
 async function executeAction(item: TriageItem, judgment: TriageJudgment): Promise<void> {
   const chatId = item.telegram_chat_id || djChatId;
   console.log(`[Triage] executeAction: action=${judgment.action}, chatId=${chatId}, botApi=${!!botApi}, djChatId=${djChatId}`);
@@ -369,13 +396,16 @@ async function executeAction(item: TriageItem, judgment: TriageJudgment): Promis
       console.log('[Triage] Sending confirm to chatId:', chatId, 'text:', confirmText.substring(0, 80));
       let confirmMsg: any;
       try {
+      const openBtn = buildOpenButton(item);
+      const archiveRows: any[][] = [
+        [
+          { text: '✅OK', callback_data: `triage:ok:${item.id}` },
+          { text: '❌取消', callback_data: `triage:undo:${item.id}` },
+        ],
+      ];
+      if (openBtn) archiveRows.push([openBtn]);
       confirmMsg = await botApi.sendMessage(chatId, confirmText, {
-        reply_markup: {
-          inline_keyboard: [[
-            { text: '✅OK', callback_data: `triage:ok:${item.id}` },
-            { text: '❌取消', callback_data: `triage:undo:${item.id}` },
-          ]],
-        },
+        reply_markup: { inline_keyboard: archiveRows },
       });
       } catch (sendErr: any) {
         console.error('[Triage] sendMessage FAILED:', sendErr?.message || sendErr);
@@ -386,13 +416,16 @@ async function executeAction(item: TriageItem, judgment: TriageJudgment): Promis
 
     case 'reply': {
       const draftText = `🦞 ✏️返信下書き\n宛先: ${item.sender_name} (${item.source})\n---\n${judgment.draft || '(下書きなし)'}\n---\n理由: ${judgment.reason}`;
+      const replyOpenBtn = buildOpenButton(item);
+      const replyRows: any[][] = [
+        [
+          { text: '📤送信', callback_data: `triage:send:${item.id}` },
+          { text: '❌却下', callback_data: `triage:reject:${item.id}` },
+        ],
+      ];
+      if (replyOpenBtn) replyRows.push([replyOpenBtn]);
       await botApi.sendMessage(chatId, draftText, {
-        reply_markup: {
-          inline_keyboard: [[
-            { text: '📤送信', callback_data: `triage:send:${item.id}` },
-            { text: '❌却下', callback_data: `triage:reject:${item.id}` },
-          ]],
-        },
+        reply_markup: { inline_keyboard: replyRows },
       });
       break;
     }
@@ -427,8 +460,15 @@ async function executeAction(item: TriageItem, judgment: TriageJudgment): Promis
 
     case 'escalate':
     default: {
+      const escOpenBtn = buildOpenButton(item);
+      const taskInfo = judgment.task_title ? `\n📋 ${judgment.task_title}` : '';
+      const escOpts: any = {};
+      if (escOpenBtn) {
+        escOpts.reply_markup = { inline_keyboard: [[escOpenBtn]] };
+      }
       await botApi.sendMessage(chatId,
-        `🦞 ⚠️判断不能 → DJ確認\n${item.sender_name}: ${item.subject || item.body.substring(0, 80)}\n理由: ${judgment.reason}`
+        `🦞 ⚠️DJ確認\n${item.sender_name}: ${item.subject || item.body.substring(0, 80)}\n理由: ${judgment.reason}${taskInfo}`,
+        escOpts
       );
       break;
     }
