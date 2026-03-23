@@ -106,6 +106,36 @@ export async function handleText(ctx: Context): Promise<void> {
       }
     }
 
+    // === Domain reply: replies to domain chat responses go back to that domain ===
+    if (replyMsg?.from?.is_bot) {
+      const replyContent = ("text" in replyMsg ? replyMsg.text : "") || "";
+      // Match domain tags: "\xf0\x9f\x93\x8b [domain]" or "\xf0\x9f\x93\x8c domain"
+      const domainMatch = replyContent.match(/^(?:\u{1F4CB}\s*\[([\w-]+)\]|\u{1F4CC}\s*([\w-]+))/u);
+      const replyDomain = domainMatch?.[1] || domainMatch?.[2];
+      if (replyDomain) {
+        console.log(`[Text] Reply to domain ${replyDomain} response -> routing back`);
+        try {
+          const { execSync } = await import("child_process");
+          const userText = ctx.message?.text || "";
+          const escaped = userText.replace(/'/g, "'\\''" );
+          const statusMsg = await ctx.reply(`\u{1F4CC} ${replyDomain} \u306B\u9001\u4FE1\u4E2D...`);
+          const relayOut = execSync(
+            `bash ${process.env.HOME}/claude-telegram-bot/scripts/domain-relay.sh --domain "${replyDomain}" '${escaped}'`,
+            { timeout: 120000, encoding: "utf-8" }
+          );
+          const response = relayOut.match(/^RESPONSE: ([\s\S]+)$/m)?.[1]?.trim();
+          if (response) {
+            await ctx.api.editMessageText(ctx.chat!.id, statusMsg.message_id, `\u{1F4CB} [${replyDomain}]\n${response}`);
+          } else {
+            await ctx.api.editMessageText(ctx.chat!.id, statusMsg.message_id, `\u{1F4CB} [${replyDomain}] \u2014 \u5FDC\u7B54\u306A\u3057`);
+          }
+          return;
+        } catch (domReplyErr: any) {
+          console.error(`[Text] Domain reply to ${replyDomain} failed:`, domReplyErr?.message?.substring(0, 100));
+          // Fall through to normal routing
+        }
+      }
+    }
 
     // === F4.5: Direct domain send (/domainname message) ===
     if (message.startsWith("/")) {
@@ -172,6 +202,10 @@ export async function handleText(ctx: Context): Promise<void> {
             orchestratorHandled = true;
           }
         } else if (routeResult.method === "no-route") {
+            // Bot message replies without domain tag (triage, worker etc.) → skip INBOX, use Worker tab
+            if (replyMsg?.from?.is_bot) {
+              console.log("[Text] No route, reply to bot message → skip INBOX, fall through to Worker");
+            } else {
             // No domain match, no M-number: route to INBOX specialist chat
             console.log("[Text] No route match → relaying to INBOX domain");
             try {
@@ -228,6 +262,8 @@ export async function handleText(ctx: Context): Promise<void> {
               console.error("[Text] INBOX relay failed:", inboxErr?.message?.substring(0, 100));
               // Fall through to Worker Tab as last resort
             }
+            } // end: else (not bot reply)
+
           }
         }
       }
