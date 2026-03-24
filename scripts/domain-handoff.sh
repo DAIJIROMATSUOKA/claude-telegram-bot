@@ -7,13 +7,13 @@
 #   ./domain-handoff.sh --lock <domain>    # create handoff lock only
 #   ./domain-handoff.sh --unlock <domain>  # remove lock + flush buffer
 
-set -euo pipefail
+set -e
 SCRIPTS_DIR="$(cd "$(dirname "$0")" && pwd)"
 TAB_MANAGER="$SCRIPTS_DIR/croppy-tab-manager.sh"
 CHAT_ROUTER="python3 $SCRIPTS_DIR/chat-router.py"
 RELAY="$SCRIPTS_DIR/domain-relay.sh"
 NOTIFY="$SCRIPTS_DIR/notify-dj.sh"
-source "$HOME/claude-telegram-bot/.env" 2>/dev/null
+source "$HOME/claude-telegram-bot/.env" 2>/dev/null || true
 
 LOCK_DIR="/tmp"
 
@@ -163,15 +163,18 @@ log "Got summary: ${#SUMMARY} chars"
 
 # === Step 3: Create new chat ===
 log "Creating new chat..."
-bash "$TAB_MANAGER" new-chat "$WT" "$PROJ_URL" 2>/dev/null
+NEW_CHAT_OUT=$(bash "$TAB_MANAGER" new-chat "$WT" "$PROJ_URL" 2>/dev/null || echo "")
+log "new-chat output: $(echo "$NEW_CHAT_OUT" | head -3)"
 sleep 8
 
-# Get new URL
-NEW_URL=$(bash "$TAB_MANAGER" get-url "$WT" 2>/dev/null || echo "")
+# Get new URL from Chrome tab directly
+WIDX=$(echo "$WT" | cut -d: -f1)
+TIDX=$(echo "$WT" | cut -d: -f2)
+NEW_URL=$(osascript -e "tell application \"Google Chrome\" to return URL of tab $TIDX of window $WIDX" 2>/dev/null || echo "")
 if [ -z "$NEW_URL" ] || [[ "$NEW_URL" == *"project"* ]]; then
-  # Wait more for redirect
-  sleep 5
-  NEW_URL=$(bash "$TAB_MANAGER" get-url "$WT" 2>/dev/null || echo "")
+  # Wait more for project→chat redirect
+  sleep 8
+  NEW_URL=$(osascript -e "tell application \"Google Chrome\" to return URL of tab $TIDX of window $WIDX" 2>/dev/null || echo "")
 fi
 
 if [ -z "$NEW_URL" ] || [[ "$NEW_URL" == *"project"* ]]; then
@@ -282,4 +285,5 @@ fi
 rm -f "$LOCK_FILE"
 rm -f "$STANDBY_FILE"
 log "Handoff complete"
+echo "HANDOFF_COMPLETE"
 bash "$NOTIFY" "✅ $DOMAIN HANDOFF完了 → 新チャット"
