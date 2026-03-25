@@ -169,23 +169,45 @@ NEW_CHAT_OUT=$(bash "$TAB_MANAGER" new-chat "$WT" "$PROJ_URL" 2>/dev/null || ech
 log "new-chat output: $(echo "$NEW_CHAT_OUT" | head -3)"
 sleep 8
 
-# Get new URL from Chrome tab directly
-WIDX=$(echo "$WT" | cut -d: -f1)
-TIDX=$(echo "$WT" | cut -d: -f2)
-NEW_URL=$(osascript -e "tell application \"Google Chrome\" to return URL of tab $TIDX of window $WIDX" 2>/dev/null || echo "")
-if [ -z "$NEW_URL" ] || [[ "$NEW_URL" == *"project"* ]]; then
-  # Wait more for project→chat redirect
-  sleep 8
-  NEW_URL=$(osascript -e "tell application \"Google Chrome\" to return URL of tab $TIDX of window $WIDX" 2>/dev/null || echo "")
-fi
-
-if [ -z "$NEW_URL" ] || [[ "$NEW_URL" == *"project"* ]]; then
-  log "ERROR: Failed to create new chat"
+# Extract new tab WT from new-chat output (e.g. "WT: 1:15")
+NEW_WT=$(echo "$NEW_CHAT_OUT" | grep "^WT:" | awk '{print $2}' | tr -d ' ')
+if [ -z "$NEW_WT" ]; then
+  log "ERROR: Could not parse WT from new-chat output"
   rm -f "$LOCK_FILE"
-  bash "$NOTIFY" "❌ $DOMAIN HANDOFF失敗: 新チャット作成エラー"
+  bash "$NOTIFY" "â $DOMAIN HANDOFFå¤±æ: æ°ãã£ããWTåå¾ã¨ã©ã¼"
+  exit 1
+fi
+log "New tab: $NEW_WT"
+
+# Read URL from NEW tab (not relay tab)
+NEW_WIDX=$(echo "$NEW_WT" | cut -d: -f1)
+NEW_TIDX=$(echo "$NEW_WT" | cut -d: -f2)
+NEW_URL=""
+for _try in 1 2 3; do
+  NEW_URL=$(osascript -e "tell application \"Google Chrome\" to return URL of tab $NEW_TIDX of window $NEW_WIDX" 2>/dev/null || echo "")
+  if [ -n "$NEW_URL" ] && [[ "$NEW_URL" == *"/chat/"* ]] && [[ "$NEW_URL" != *"project"* ]]; then
+    break
+  fi
+  sleep 5
+done
+
+if [ -z "$NEW_URL" ] || [[ "$NEW_URL" != *"/chat/"* ]]; then
+  log "ERROR: Failed to get new chat URL from tab $NEW_WT"
+  rm -f "$LOCK_FILE"
+  bash "$NOTIFY" "â $DOMAIN HANDOFFå¤±æ: æ°ãã£ããURLåå¾ã¨ã©ã¼"
   exit 1
 fi
 log "New chat: $NEW_URL"
+
+# Navigate relay tab to new chat (so relay tab = new chat)
+_WIDX=$(echo "$WT" | cut -d: -f1)
+_TIDX=$(echo "$WT" | cut -d: -f2)
+osascript -e "tell application \"Google Chrome\" to set URL of tab $_TIDX of window $_WIDX to \"$NEW_URL\"" 2>/dev/null
+sleep 6
+
+# Close the extra tab from new-chat (prevent tab inflation)
+osascript -e "tell application \"Google Chrome\" to close tab $NEW_TIDX of window $NEW_WIDX" 2>/dev/null
+log "Closed extra tab $NEW_WT"
 
 # === Step 4: Inject bootstrap + summary ===
 BOOTSTRAP_FULL=""
