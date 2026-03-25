@@ -46,7 +46,11 @@ domains:
       '
     keywords: []
     title_template: '{date}_FA_制御設計'
-    url: https://claude.ai/chat/847c5dda-ca1b-4f9d-a79f-7103c0d5f8f2
+    url: https://claude.ai/chat/406caff8-1b34-43d2-b676-e3b09128f695
+    chat_history:
+    - id: 847c5dda-ca1b-4f9d-a79f-7103c0d5f8f2
+      created: '2026-03-25'
+      title: 2026-03-25_FA_制御設計_archived
   forge-code:
     bootstrap: 'あなたはNightly Forge Codeワーカーです。
 
@@ -313,9 +317,12 @@ domains:
     - created: '2026-03-22'
       id: be20e7ac-1426-4e9a-98b5-ba9fd0fa276e
       title: 2026-03-22_1216_PC操作_Mac設定
+    - id: 847c5dda-ca1b-4f9d-a79f-7103c0d5f8f2
+      created: '2026-03-24'
+      title: 2026-03-24_0845_PC操作_Mac設定
     keywords: []
     title_template: '{date}_PC操作_Mac設定'
-    url: https://claude.ai/chat/fc7913cb-1052-4a39-9bd8-78a55f550055
+    url: https://claude.ai/chat/1407dad8-ab25-4bc8-b6d0-01b1d296e719
   research:
     bootstrap: 'あなたはリサーチ・ニュース専門チャットです。
 
@@ -354,7 +361,8 @@ domains:
 
       4. **Planner** (c_r5odfqfca4p1elceldjc9fv12k@group.calendar.google.com) — 計画
 
-      5. **スケジューリング** (c_fe51f258e4e2c097745f3387f60c463b7f935df319ff20362e0dd4c7bf8e647f@group.calendar.google.com) — スケジュール調整
+      5. **スケジューリング** (c_fe51f258e4e2c097745f3387f60c463b7f935df319ff20362e0dd4c7bf8e647f@group.calendar.google.com)
+      — スケジュール調整
 
       6. **日本の祝日** (ja.japanese#holiday@group.v.calendar.google.com) — 祝日
 

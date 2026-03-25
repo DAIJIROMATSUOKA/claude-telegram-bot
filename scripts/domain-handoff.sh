@@ -7,7 +7,7 @@
 #   ./domain-handoff.sh --lock <domain>    # create handoff lock only
 #   ./domain-handoff.sh --unlock <domain>  # remove lock + flush buffer
 
-set -e
+# set -e removed: use explicit error checks
 SCRIPTS_DIR="$(cd "$(dirname "$0")" && pwd)"
 TAB_MANAGER="$SCRIPTS_DIR/croppy-tab-manager.sh"
 CHAT_ROUTER="python3 $SCRIPTS_DIR/chat-router.py"
@@ -257,8 +257,9 @@ if [ "$MODE" = "warm" ]; then
 fi
 
 # Full handoff: switch URL
+# Archive BEFORE set-url (archive_url reads current URL from yaml)
+$CHAT_ROUTER archive-url "$DOMAIN" 2>/dev/null
 $CHAT_ROUTER set-url "$DOMAIN" "$NEW_URL" 2>/dev/null
-$CHAT_ROUTER archive-url "$DOMAIN" "$CURRENT_URL" 2>/dev/null
 log "URL switched: $NEW_URL"
 
 # === Step 6: Rename old chat ===
@@ -271,7 +272,7 @@ if [ -n "$OLD_CHAT_ID" ]; then
   else
     OLD_TITLE="${TODAY}_${DOMAIN}_archived"
   fi
-  bash "$TAB_MANAGER" rename "$OLD_CHAT_ID" "$OLD_TITLE" 2>/dev/null || true
+  bash "$TAB_MANAGER" rename-conversation "$OLD_CHAT_ID" "$OLD_TITLE" 2>/dev/null || true
   log "Old chat renamed: $OLD_TITLE"
 fi
 
