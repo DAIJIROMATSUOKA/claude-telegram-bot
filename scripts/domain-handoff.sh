@@ -165,7 +165,7 @@ log "Got summary: ${#SUMMARY} chars"
 
 # === Step 3: Create new chat ===
 log "Creating new chat..."
-NEW_CHAT_OUT=$(bash "$TAB_MANAGER" new-chat "$WT" "$PROJ_URL" 2>/dev/null || echo "")
+NEW_CHAT_OUT=$(bash "$TAB_MANAGER" new-chat "セッション引継ぎ: bootstrapを待機してください" 2>/dev/null || echo "")
 log "new-chat output: $(echo "$NEW_CHAT_OUT" | head -3)"
 sleep 8
 
