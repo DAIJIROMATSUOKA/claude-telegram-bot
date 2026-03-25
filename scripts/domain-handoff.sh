@@ -142,18 +142,26 @@ echo "$SUMMARY_PROMPT" > "$SUMMARY_FILE"
 bash "$TAB_MANAGER" inject-file "$WT" "$SUMMARY_FILE" 2>/dev/null
 rm -f "$SUMMARY_FILE"
 
-# Wait for response
+# Wait for summary response (double-READY like domain-relay.sh)
 log "Waiting for summary response..."
-sleep 5
+sleep 8
+READY_COUNT=0
 ELAPSED=0
-while [ "$ELAPSED" -lt 120 ]; do
+while [ "$ELAPSED" -lt 180 ]; do
   STATUS=$(bash "$TAB_MANAGER" check-status "$WT" 2>/dev/null || echo "UNKNOWN")
   if [ "$STATUS" = "READY" ]; then
-    break
+    READY_COUNT=$((READY_COUNT + 1))
+    if [ "$READY_COUNT" -ge 3 ]; then
+      break
+    fi
+  else
+    READY_COUNT=0
   fi
   sleep 5
   ELAPSED=$((ELAPSED + 5))
 done
+# Settle delay to let DOM fully render
+sleep 3
 
 # Read summary response
 SUMMARY=$(bash "$TAB_MANAGER" read-response "$WT" 2>/dev/null || echo "")
