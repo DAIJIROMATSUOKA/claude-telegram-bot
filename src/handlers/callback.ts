@@ -67,6 +67,22 @@ export async function handleCallback(ctx: Context): Promise<void> {
       await ctx.answerCallbackQuery();
       return;
     }
+
+  // Morning Triage callbacks
+  if (callbackData.startsWith("mt:restore:")) {
+    const date = callbackData.split(":")[2];
+    if (date) {
+      const { execSync } = require("child_process");
+      try {
+        execSync(`python3 ~/scripts/morning-triage.py --restore ${date}`, { timeout: 15000 });
+        await ctx.answerCallbackQuery({ text: "📋 復元しました" });
+      } catch {
+        await ctx.answerCallbackQuery({ text: "❌ 復元失敗" });
+      }
+    }
+    try { await ctx.deleteMessage(); } catch {}
+    return;
+  }
   }
 
   // 2.5 Inbox Zero callback routing
