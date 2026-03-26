@@ -187,6 +187,8 @@ async function pollTabUntilReady(maxMs = 300_000): Promise<string | null> {
   let readyCount = 0;
   while (Date.now() - start < maxMs) {
     await new Promise(r => setTimeout(r, 5000));
+    // Keep relay lock fresh during polling
+    try { writeFileSync(GLOBAL_RELAY_LOCK, JSON.stringify({ pid: process.pid, since: new Date().toISOString(), domain: "poll" })); } catch(e) {}
     try {
       const status = execSync(`bash ${TAB_MANAGER} check-status ${wt} 2>/dev/null`, { encoding: "utf-8", timeout: 5000 }).trim();
       if (status === "TOOL_LIMIT") {
