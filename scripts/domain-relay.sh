@@ -29,6 +29,7 @@ while [ $# -gt 0 ]; do
     --domain) DOMAIN="$2"; shift 2 ;;
     --url) URL="$2"; shift 2 ;;
     --timeout) RESPONSE_TIMEOUT="$2"; shift 2 ;;
+    --wt-file) RELAY_WT_FILE="$2"; shift 2 ;;
     *) break ;;
   esac
 done
