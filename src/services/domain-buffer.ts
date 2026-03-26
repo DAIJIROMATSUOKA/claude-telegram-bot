@@ -47,10 +47,22 @@ function getGlobalRelayLock(): GlobalRelayLock | null {
     if (!existsSync(GLOBAL_RELAY_LOCK)) return null;
     const data = JSON.parse(readFileSync(GLOBAL_RELAY_LOCK, "utf-8"));
     const age = Date.now() - new Date(data.since).getTime();
-    if (age > 120_000) {
-      console.log(`[Buffer] Stale global relay lock (${Math.round(age / 1000)}s), removing`);
+    if (age > 600_000) {
+      // Absolute max 10min - always stale
+      console.log(`[Buffer] Stale global relay lock (${Math.round(age / 1000)}s, absolute max), removing`);
       try { unlinkSync(GLOBAL_RELAY_LOCK); } catch (e) {}
       return null;
+    }
+    if (age > 120_000) {
+      // Check if lock holder is still alive
+      let pidAlive = false;
+      try { process.kill(data.pid, 0); pidAlive = true; } catch (e) {}
+      if (!pidAlive) {
+        console.log(`[Buffer] Stale global relay lock (${Math.round(age / 1000)}s, PID ${data.pid} dead), removing`);
+        try { unlinkSync(GLOBAL_RELAY_LOCK); } catch (e) {}
+        return null;
+      }
+      // PID alive - relay or poll still running, respect the lock
     }
     return data;
   } catch (e) { return null; }
