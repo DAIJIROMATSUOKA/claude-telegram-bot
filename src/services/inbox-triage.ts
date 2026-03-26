@@ -138,7 +138,7 @@ async function matchDomain(item: TriageItem): Promise<string | null> {
       return domain;
     }
     return null;
-  } catch {
+  } catch (e) {
     return null;
   }
 }
@@ -298,7 +298,7 @@ function parseTriageResponse(raw: string): TriageJudgment | null {
           task_title: parsed.task_title || undefined,
         };
       }
-    } catch { /* fall through to text parsing */ }
+    } catch (e) { /* fall through to text parsing */ }
   }
 
   // 2. Text format: "**判断:** archive" or "判断: delete"
@@ -368,6 +368,12 @@ async function executeAction(item: TriageItem, judgment: TriageJudgment): Promis
     return;
   }
 
+
+  // Always delete GAS notification first (triage replaces it)
+  if (item.telegram_msg_id) {
+    try { await botApi.deleteMessage(chatId, item.telegram_msg_id); } catch (e) { /* expired */ }
+  }
+
   switch (judgment.action) {
     case 'archive':
     case 'delete': {
@@ -384,15 +390,10 @@ async function executeAction(item: TriageItem, judgment: TriageJudgment): Promis
           console.error(`[Triage] Gmail ${action} error:`, e);
         }
       }
-      // Delete Telegram notification message
-      if (item.telegram_msg_id) {
-        try {
-          await botApi.deleteMessage(chatId, item.telegram_msg_id);
-        } catch { /* already deleted or expired */ }
-      }
       // Confirm to DJ
       const icon = judgment.action === 'archive' ? '📦' : '🗑';
-      const confirmText = `🦞 ${icon}${judgment.action === 'archive' ? 'アーカイブ' : '削除'}済み\n${item.sender_name}: ${item.subject || item.body.substring(0, 50)}\n理由: ${judgment.reason}`;
+      const bodyExcerpt = item.body.substring(0, 150).replace(/\n/g, " ").trim();
+      const confirmText = `🦞 ${icon}${judgment.action === 'archive' ? 'アーカイブ' : '削除'}済み\n📧 ${item.sender_name}: ${item.subject || '(件名なし)'}\n📝 ${bodyExcerpt}\n\n💭 ${judgment.reason}`;
       console.log('[Triage] Sending confirm to chatId:', chatId, 'text:', confirmText.substring(0, 80));
       let confirmMsg: any;
       try {
@@ -472,10 +473,14 @@ async function executeAction(item: TriageItem, judgment: TriageJudgment): Promis
           { text: '❌取消', callback_data: `triage:undo:${item.id}` },
         ],
       ];
+      // Gmail action buttons
+      if (item.source === 'gmail' && item.source_id) {
+        escRows.push([{ text: '📦', callback_data: `ib:archive:${item.source_id}` }, { text: '🗑', callback_data: `ib:trash:${item.source_id}` }]);
+      }
       if (escOpenBtn) escRows.push([escOpenBtn]);
       escOpts.reply_markup = { inline_keyboard: escRows };
       await botApi.sendMessage(chatId,
-        `🦞 ⚠️DJ確認\n${item.sender_name}: ${item.subject || item.body.substring(0, 80)}\n理由: ${judgment.reason}${taskInfo}`,
+        `🦞 ⚠️DJ確認\n📧 ${item.sender_name}: ${item.subject || '(件名なし)'}\n📝 ${item.body.substring(0, 300).replace(/\n/g, ' ')}\n\n💭 ${judgment.reason}${taskInfo}`,
         escOpts
       );
       break;
