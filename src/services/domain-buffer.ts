@@ -173,6 +173,43 @@ function execRelay(
   });
 }
 
+
+/**
+ * Poll Chrome tab directly after relay timeout.
+ * Claude may still be generating — wait up to maxMs for READY.
+ */
+async function pollTabUntilReady(maxMs = 300_000): Promise<string | null> {
+  const { execSync } = await import("child_process");
+  const TAB_MANAGER = `${process.env.HOME}/claude-telegram-bot/scripts/croppy-tab-manager.sh`;
+  const wt = (() => { try { return readFileSync("/tmp/domain-relay-wt", "utf-8").trim(); } catch(e) { return "1:1"; } })();
+
+  const start = Date.now();
+  let readyCount = 0;
+  while (Date.now() - start < maxMs) {
+    await new Promise(r => setTimeout(r, 5000));
+    try {
+      const status = execSync(`bash ${TAB_MANAGER} check-status ${wt} 2>/dev/null`, { encoding: "utf-8", timeout: 5000 }).trim();
+      if (status === "READY") {
+        readyCount++;
+        if (readyCount >= 2) {
+          await new Promise(r => setTimeout(r, 2000)); // settle
+          const response = execSync(`bash ${TAB_MANAGER} read-response ${wt} 2>/dev/null`, { encoding: "utf-8", timeout: 10000 }).trim();
+          if (response && !response.includes("NO_RESPONSE") && !response.includes("ERROR") && response.length > 20) {
+            console.log(`[Buffer] Late response: ${response.length} chars after ${Math.round((Date.now() - start) / 1000)}s`);
+            return response;
+          }
+          return null;
+        }
+      } else {
+        readyCount = 0;
+      }
+    } catch(e) { /* check-status failed, continue */ }
+  }
+  console.log("[Buffer] Late response: gave up after " + Math.round(maxMs / 1000) + "s");
+  return null;
+}
+
+
 export async function relayDomain(
   domain: string,
   message: string,
@@ -202,6 +239,24 @@ export async function relayDomain(
   // 3. We own the relay tab
   try {
     const response = await execRelay(domain, message, onResponding, timeoutMs);
+
+    // If relay timed out, poll tab directly (Claude may still be generating)
+    if (response === null) {
+      console.log(`[Buffer] Relay timeout for ${domain}, polling tab for late response...`);
+      const lateResponse = await pollTabUntilReady(300_000);
+      if (lateResponse) {
+        // Got late response — proceed as normal
+        let combinedResponse: string | null = lateResponse;
+        const buffered = drainBuffer(domain);
+        if (buffered.length > 0) {
+          console.log(`[Buffer] Flushing ${buffered.length} buffered messages to ${domain}`);
+          const flushMsg = formatBufferFlush(buffered);
+          const flushResponse = await execRelay(domain, flushMsg, undefined, timeoutMs);
+          if (flushResponse) combinedResponse += "\n\n─── バッファ分応答 ───\n" + flushResponse;
+        }
+        return combinedResponse;
+      }
+    }
 
     // 4. Drain THIS domain's buffer
     let combinedResponse = response;
