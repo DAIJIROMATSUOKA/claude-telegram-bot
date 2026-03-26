@@ -22,7 +22,7 @@ import { gatewayQuery } from "../services/gateway-db";
 export async function handleCallback(ctx: Context): Promise<void> {
   // === Global delete button handler ===
   const cbData = ctx.callbackQuery?.data || '';
-  if (cbData.startsWith('ib:del')) {
+  if (cbData === 'ib:del:sys') {
     try {
       await ctx.deleteMessage();
     } catch { /* already deleted */ }
