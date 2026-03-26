@@ -49,11 +49,11 @@ function getGlobalRelayLock(): GlobalRelayLock | null {
     const age = Date.now() - new Date(data.since).getTime();
     if (age > 120_000) {
       console.log(`[Buffer] Stale global relay lock (${Math.round(age / 1000)}s), removing`);
-      try { unlinkSync(GLOBAL_RELAY_LOCK); } catch {}
+      try { unlinkSync(GLOBAL_RELAY_LOCK); } catch (e) {}
       return null;
     }
     return data;
-  } catch { return null; }
+  } catch (e) { return null; }
 }
 
 function acquireGlobalRelayLock(domain: string): boolean {
@@ -66,7 +66,7 @@ function acquireGlobalRelayLock(domain: string): boolean {
 }
 
 function releaseGlobalRelayLock(): void {
-  try { unlinkSync(GLOBAL_RELAY_LOCK); } catch {}
+  try { unlinkSync(GLOBAL_RELAY_LOCK); } catch (e) {}
 }
 
 // --- Per-domain handoff lock (separate from relay) ---
@@ -80,11 +80,11 @@ export function getLock(domain: string): DomainLock | null {
     const maxAge = data.type === "handoff" ? 600_000 : 120_000;
     if (age > maxAge) {
       console.log(`[Buffer] Stale ${data.type} lock for ${domain} (${Math.round(age / 1000)}s), removing`);
-      try { unlinkSync(p); } catch {}
+      try { unlinkSync(p); } catch (e) {}
       return null;
     }
     return data;
-  } catch { return null; }
+  } catch (e) { return null; }
 }
 
 export function createHandoffLock(domain: string): void {
@@ -94,7 +94,7 @@ export function createHandoffLock(domain: string): void {
 }
 
 export function removeHandoffLock(domain: string): void {
-  try { unlinkSync(lockPath(domain)); } catch {}
+  try { unlinkSync(lockPath(domain)); } catch (e) {}
 }
 
 function addToBuffer(domain: string, text: string, telegramMsgId?: number): number {
@@ -107,7 +107,7 @@ export function getBufferCount(domain: string): number {
   try {
     const content = readFileSync(bufferPath(domain), "utf-8").trim();
     return content ? content.split("\n").length : 0;
-  } catch { return 0; }
+  } catch (e) { return 0; }
 }
 
 function drainBuffer(domain: string): BufferEntry[] {
@@ -117,11 +117,11 @@ function drainBuffer(domain: string): BufferEntry[] {
     const content = readFileSync(p, "utf-8").trim();
     if (!content) return [];
     const entries = content.split("\n").map(line => {
-      try { return JSON.parse(line); } catch { return null; }
+      try { return JSON.parse(line); } catch (e) { return null; }
     }).filter(Boolean) as BufferEntry[];
     unlinkSync(p);
     return entries;
-  } catch { return []; }
+  } catch (e) { return []; }
 }
 
 function findBufferedDomains(): string[] {
@@ -130,7 +130,7 @@ function findBufferedDomains(): string[] {
       .filter(f => f.startsWith("domain-buffer-") && f.endsWith(".jsonl"))
       .map(f => f.replace("domain-buffer-", "").replace(".jsonl", ""))
       .filter(d => getBufferCount(d) > 0);
-  } catch { return []; }
+  } catch (e) { return []; }
 }
 
 function formatBufferFlush(entries: BufferEntry[]): string {
@@ -189,6 +189,11 @@ async function pollTabUntilReady(maxMs = 300_000): Promise<string | null> {
     await new Promise(r => setTimeout(r, 5000));
     try {
       const status = execSync(`bash ${TAB_MANAGER} check-status ${wt} 2>/dev/null`, { encoding: "utf-8", timeout: 5000 }).trim();
+      if (status === "TOOL_LIMIT") {
+        try { execSync(`bash ${TAB_MANAGER} auto-continue ${wt} 2>/dev/null`, { encoding: "utf-8", timeout: 5000 }); } catch(e) {}
+        readyCount = 0;
+        continue;
+      }
       if (status === "READY") {
         readyCount++;
         if (readyCount >= 2) {

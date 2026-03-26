@@ -154,7 +154,7 @@ while [ "$ELAPSED" -lt "$RESPONSE_TIMEOUT" ]; do
   STATUS=$(bash "$TAB_MANAGER" check-status "$WT" 2>/dev/null)
   if [ "$STATUS" = "TOOL_LIMIT" ]; then
     log "TOOL_LIMIT detected, auto-clicking Continue..."
-    bash "$TAB_MANAGER" click-continue "$WT" 2>/dev/null || true
+    bash "$TAB_MANAGER" auto-continue "$WT" 2>/dev/null || true
     SAW_BUSY=1
     sleep 3
     ELAPSED=$((ELAPSED + 3))

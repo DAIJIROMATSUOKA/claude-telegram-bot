@@ -1115,7 +1115,7 @@ auto-continue)
   cat > "$ASFILE" << ACEOF
 tell application "Google Chrome"
   set t to tab $TIDX of window $WIDX
-  set clickJs to "(() => { var btns = document.querySelectorAll('button'); for (var i = 0; i < btns.length; i++) { var txt = (btns[i].textContent || '').trim(); if (txt === '\u7d9a\u3051\u308b' || txt === 'Continue') { btns[i].click(); return 'CLICKED'; } } return 'NO_BUTTON'; })()"
+  set clickJs to "(() => { var btns = document.querySelectorAll('button'); for (var i = 0; i < btns.length; i++) { var txt = (btns[i].textContent || '').trim(); if (txt === '続ける' || txt === 'Continue') { btns[i].click(); return 'CLICKED'; } } return 'NO_BUTTON'; })()"
   return execute t javascript clickJs
 end tell
 ACEOF
