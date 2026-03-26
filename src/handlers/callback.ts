@@ -25,10 +25,10 @@ export async function handleCallback(ctx: Context): Promise<void> {
   if (cbData === 'ib:del:sys') {
     try {
       await ctx.deleteMessage();
-    } catch { /* already deleted */ }
+    } catch (e) { /* already deleted */ }
     try {
       await ctx.answerCallbackQuery();
-    } catch {}
+    } catch (e) {}
     return;
   }
   const userId = ctx.from?.id;
@@ -76,11 +76,11 @@ export async function handleCallback(ctx: Context): Promise<void> {
       try {
         execSync(`python3 ~/scripts/morning-triage.py --restore ${date}`, { timeout: 15000 });
         await ctx.answerCallbackQuery({ text: "📋 復元しました" });
-      } catch {
+      } catch (e) {
         await ctx.answerCallbackQuery({ text: "❌ 復元失敗" });
       }
     }
-    try { await ctx.deleteMessage(); } catch {}
+    try { await ctx.deleteMessage(); } catch (e) {}
     return;
   }
   }
@@ -100,8 +100,8 @@ export async function handleCallback(ctx: Context): Promise<void> {
         chat_id: ctx.chat!.id,
         message_id: ctx.callbackQuery!.message!.message_id,
       });
-    } catch {}
-    try { await ctx.deleteMessage(); } catch {}
+    } catch (e) {}
+    try { await ctx.deleteMessage(); } catch (e) {}
     await ctx.answerCallbackQuery({ text: "✅ Timer stopped" });
     return;
   }
@@ -110,7 +110,7 @@ export async function handleCallback(ctx: Context): Promise<void> {
   if (callbackData.startsWith("jn_done:")) {
     const notifId = callbackData.split(":")[1];
     await gatewayQuery("UPDATE jarvis_notifs SET done = 1 WHERE id = ?", [notifId]);
-    try { await ctx.deleteMessage(); } catch {}
+    try { await ctx.deleteMessage(); } catch (e) {}
     await ctx.answerCallbackQuery({ text: "✅ 完了" });
     return;
   }
@@ -122,7 +122,7 @@ export async function handleCallback(ctx: Context): Promise<void> {
     // Remove buttons, keep message text
     try {
       await ctx.editMessageReplyMarkup({ reply_markup: { inline_keyboard: [] } });
-    } catch {}
+    } catch (e) {}
     await ctx.answerCallbackQuery({ text: "⏸ スヌーズ停止" });
     return;
   }

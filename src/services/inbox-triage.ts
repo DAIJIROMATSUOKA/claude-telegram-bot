@@ -139,7 +139,7 @@ async function matchDomain(item: TriageItem): Promise<string | null> {
       return domain;
     }
     return null;
-  } catch {
+  } catch (e) {
     return null;
   }
 }
@@ -297,7 +297,7 @@ function parseTriageResponse(raw: string): TriageJudgment | null {
           task_title: parsed.task_title || undefined,
         };
       }
-    } catch { /* fall through to text parsing */ }
+    } catch (e) { /* fall through to text parsing */ }
   }
 
   // 2. Text format: "**判断:** archive" or "判断: delete"
@@ -371,7 +371,7 @@ async function executeAction(item: TriageItem, judgment: TriageJudgment): Promis
   if (item.telegram_msg_id) {
     try {
       await botApi.deleteMessage(chatId, item.telegram_msg_id);
-    } catch { /* already deleted or expired */ }
+    } catch (e) { /* already deleted or expired */ }
   }
 
   switch (judgment.action) {
@@ -390,7 +390,7 @@ async function executeAction(item: TriageItem, judgment: TriageJudgment): Promis
           console.error(`[Triage] Gmail ${action} error:`, e);
         }
       }
-        } catch { /* already deleted or expired */ }
+        } catch (e) { /* already deleted or expired */ }
       }
       // Confirm to DJ
       const icon = judgment.action === 'archive' ? '📦' : '🗑';
