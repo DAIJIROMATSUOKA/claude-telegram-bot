@@ -145,7 +145,7 @@ function execRelay(
   domain: string,
   message: string,
   onResponding?: () => Promise<void>,
-  timeoutMs = 180000
+  timeoutMs = 270000
 ): Promise<string | null> {
   return new Promise((resolve) => {
     const scriptPath = `${process.env.HOME}/claude-telegram-bot/scripts/domain-relay.sh`;
@@ -177,7 +177,7 @@ export async function relayDomain(
   domain: string,
   message: string,
   onResponding?: () => Promise<void>,
-  timeoutMs = 180000
+  timeoutMs = 270000
 ): Promise<string | "BUFFERED" | null> {
   // 1. Check per-domain handoff lock
   const handoffLock = getLock(domain);

@@ -75,7 +75,7 @@ export async function handleDomainRelay(
     const { stdout, stderr } = await execAsync(
       `bash "${DOMAIN_RELAY}" --domain "${route.domain}" '${escapedMsg}'`,
       {
-        timeout: 150_000, // 2.5min
+        timeout: 270_000, // 4.5min
         maxBuffer: 1024 * 1024,
         env: { ...process.env, PATH: `/opt/homebrew/bin:/usr/local/bin:${process.env.PATH}` },
       }
