@@ -230,36 +230,6 @@ async function pollTabUntilReady(maxMs = 300_000): Promise<string | null> {
 
 
 export async function relayDomain(
-
-const TRIAGE_WT_FILE = "/tmp/domain-triage-wt";
-
-/**
- * Triage-specific relay: uses dedicated tab (no global lock conflict).
- * Triage has its own tab (1:2) separate from domain relay (1:1).
- */
-export async function triageRelay(
-  domain: string,
-  message: string,
-  timeoutMs = 180000
-): Promise<string | null> {
-  const scriptPath = `${process.env.HOME}/claude-telegram-bot/scripts/domain-relay.sh`;
-  return new Promise((resolve) => {
-    const child = spawn("bash", [scriptPath, "--domain", domain, "--wt-file", TRIAGE_WT_FILE, message], {
-      env: { ...process.env, PATH: `/opt/homebrew/bin:/usr/local/bin:${process.env.PATH}` },
-    });
-    let stdout = "";
-    child.stdout.on("data", (data: Buffer) => { stdout += data.toString(); });
-    child.stderr.on("data", () => {});
-    const timer = setTimeout(() => { child.kill("SIGTERM"); resolve(null); }, timeoutMs);
-    child.on("close", () => {
-      clearTimeout(timer);
-      const match = stdout.match(/^RESPONSE: ([\s\S]+)$/m);
-      resolve(match ? match[1].trim() : null);
-    });
-    child.on("error", () => { clearTimeout(timer); resolve(null); });
-  });
-}
-
   domain: string,
   message: string,
   onResponding?: () => Promise<void>,
@@ -334,4 +304,33 @@ export async function triageRelay(
   } finally {
     releaseGlobalRelayLock();
   }
+}
+
+const TRIAGE_WT_FILE = "/tmp/domain-triage-wt";
+
+/**
+ * Triage-specific relay: uses dedicated tab (no global lock conflict).
+ * Triage has its own tab (1:2) separate from domain relay (1:1).
+ */
+export async function triageRelay(
+  domain: string,
+  message: string,
+  timeoutMs = 180000
+): Promise<string | null> {
+  const scriptPath = `${process.env.HOME}/claude-telegram-bot/scripts/domain-relay.sh`;
+  return new Promise((resolve) => {
+    const child = spawn("bash", [scriptPath, "--domain", domain, "--wt-file", TRIAGE_WT_FILE, message], {
+      env: { ...process.env, PATH: `/opt/homebrew/bin:/usr/local/bin:${process.env.PATH}` },
+    });
+    let stdout = "";
+    child.stdout.on("data", (data: Buffer) => { stdout += data.toString(); });
+    child.stderr.on("data", () => {});
+    const timer = setTimeout(() => { child.kill("SIGTERM"); resolve(null); }, timeoutMs);
+    child.on("close", () => {
+      clearTimeout(timer);
+      const match = stdout.match(/^RESPONSE: ([\s\S]+)$/m);
+      resolve(match ? match[1].trim() : null);
+    });
+    child.on("error", () => { clearTimeout(timer); resolve(null); });
+  });
 }
