@@ -165,7 +165,7 @@ while [ "$ELAPSED" -lt "$RESPONSE_TIMEOUT" ]; do
     sleep 2
     STATUS2=$(bash "$TAB_MANAGER" check-status "$WT" 2>/dev/null)
     [ "$STATUS2" = "READY" ] && break
-  elif [ "$STATUS" = "READY" ] && [ "$ELAPSED" -gt 20 ]; then
+  elif [ "$STATUS" = "READY" ] && [ "$ELAPSED" -gt 90 ]; then
     break
   fi
   sleep 3
@@ -182,7 +182,7 @@ if [ -z "$RESPONSE" ] || [ "$RESPONSE" = "NO_RESPONSE" ]; then
 fi
 
 log "Response (${#RESPONSE} chars)"
-echo "RESPONSE: $RESPONSE"
+printf "RESPONSE: %s\n" "$RESPONSE"
 
 # --- 8. Token usage check (async handoff trigger) ---
 if [ "$DOMAIN" != "inbox" ] && [ "$DOMAIN" != "direct" ]; then
