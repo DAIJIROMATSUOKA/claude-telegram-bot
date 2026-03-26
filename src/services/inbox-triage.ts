@@ -153,7 +153,7 @@ async function domainTriageInject(domain: string, item: TriageItem, learningCont
     const tmpFile = `/tmp/triage-domain-${Date.now()}.txt`;
     await runLocal(`cat > ${tmpFile} << 'DTEOF'\n${prompt}\nDTEOF`);
     const result = await runLocal(
-      `MSG=$(cat ${tmpFile}) && bash "${SCRIPTS_DIR}/domain-relay.sh" --domain "${domain}" "$MSG" && rm -f ${tmpFile}`,
+      `MSG=$(cat ${tmpFile}) && bash "${SCRIPTS_DIR}/domain-relay.sh" --domain "${domain}" --wt-file /tmp/domain-triage-wt "$MSG" && rm -f ${tmpFile}`,
       150000
     );
     await runLocal(`rm -f ${tmpFile}`);
