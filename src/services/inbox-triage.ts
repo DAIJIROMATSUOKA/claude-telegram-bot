@@ -390,8 +390,6 @@ async function executeAction(item: TriageItem, judgment: TriageJudgment): Promis
           console.error(`[Triage] Gmail ${action} error:`, e);
         }
       }
-        } catch (e) { /* already deleted or expired */ }
-      }
       // Confirm to DJ
       const icon = judgment.action === 'archive' ? '📦' : '🗑';
       const bodyExcerpt = item.body.substring(0, 150).replace(/\n/g, ' ');
