@@ -128,7 +128,15 @@ export async function handleText(ctx: Context): Promise<void> {
             const label = lock?.type === "handoff" ? "HANDOFF\u4e2d" : "\u5fdc\u7b54\u4e2d";
             await ctx.api.editMessageText(ctx.chat!.id, statusMsg.message_id, `\u{1f4cc} ${replyDomain} ${label}\uff08\u30d0\u30c3\u30d5\u30a1 ${count}/${MAX_BUFFER}\uff09`);
           } else if (response) {
-            await ctx.api.editMessageText(ctx.chat!.id, statusMsg.message_id, `\u{1F4CB} [${replyDomain}]\n${response}`);
+            // Split long responses to avoid Telegram 4096 char limit
+            const fullReply = `\u{1F4CB} [${replyDomain}]\n${response}`;
+            if (fullReply.length <= 4000) {
+              await ctx.api.editMessageText(ctx.chat!.id, statusMsg.message_id, fullReply);
+            } else {
+              try { await ctx.api.deleteMessage(ctx.chat!.id, statusMsg.message_id); } catch {}
+              const chunks = splitTelegramMessage(fullReply);
+              for (const chunk of chunks) { await ctx.reply(chunk); }
+            }
           } else {
             await ctx.api.editMessageText(ctx.chat!.id, statusMsg.message_id, `\u{1F4CB} [${replyDomain}] \u2014 \u5FDC\u7B54\u306A\u3057`);
           }
@@ -169,7 +177,15 @@ export async function handleText(ctx: Context): Promise<void> {
                 const label = lock?.type === "handoff" ? "HANDOFF中" : "応答中";
                 await ctx.api.editMessageText(ctx.chat!.id, statusMsg.message_id, `📌 ${domainLower} ${label}（バッファ ${count}/${MAX_BUFFER}）`);
               } else if (response) {
-                await ctx.api.editMessageText(ctx.chat!.id, statusMsg.message_id, `📌 ${domainLower}\n\n${response}`);
+                // Split long responses to avoid Telegram 4096 char limit
+                const fullDirect = `📌 ${domainLower}\n\n${response}`;
+                if (fullDirect.length <= 4000) {
+                  await ctx.api.editMessageText(ctx.chat!.id, statusMsg.message_id, fullDirect);
+                } else {
+                  try { await ctx.api.deleteMessage(ctx.chat!.id, statusMsg.message_id); } catch {}
+                  const chunks = splitTelegramMessage(fullDirect);
+                  for (const chunk of chunks) { await ctx.reply(chunk); }
+                }
               } else {
                 await ctx.api.editMessageText(ctx.chat!.id, statusMsg.message_id, `📌 ${domainLower} — 応答なし`);
               }

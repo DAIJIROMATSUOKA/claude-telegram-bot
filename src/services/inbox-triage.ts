@@ -8,7 +8,6 @@
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { existsSync } from 'fs';
-import { relayDomain } from './domain-buffer';
 
 const execAsync = promisify(exec);
 
@@ -139,7 +138,7 @@ async function matchDomain(item: TriageItem): Promise<string | null> {
       return domain;
     }
     return null;
-  } catch (e) {
+  } catch {
     return null;
   }
 }
@@ -151,13 +150,15 @@ async function matchDomain(item: TriageItem): Promise<string | null> {
 async function domainTriageInject(domain: string, item: TriageItem, learningContext: string = ''): Promise<string | null> {
   try {
     const prompt = buildTriagePrompt(item, learningContext);
-    console.log(`[Triage] Relaying to ${domain} via relayDomain (global lock)`);
-    const response = await relayDomain(domain, prompt, undefined, 150000);
-    if (response === 'BUFFERED') {
-      console.log(`[Triage] ${domain} buffered (relay tab busy)`);
-      return null;
-    }
-    return response;
+    const tmpFile = `/tmp/triage-domain-${Date.now()}.txt`;
+    await runLocal(`cat > ${tmpFile} << 'DTEOF'\n${prompt}\nDTEOF`);
+    const result = await runLocal(
+      `MSG=$(cat ${tmpFile}) && bash "${SCRIPTS_DIR}/domain-relay.sh" --domain "${domain}" "$MSG" && rm -f ${tmpFile}`,
+      150000
+    );
+    await runLocal(`rm -f ${tmpFile}`);
+    const response = result.match(/^RESPONSE: ([\s\S]+)$/m)?.[1]?.trim();
+    return response || null;
   } catch (e: any) {
     console.error(`[Triage] Domain relay error (${domain}):`, e?.message);
     return null;
@@ -297,7 +298,7 @@ function parseTriageResponse(raw: string): TriageJudgment | null {
           task_title: parsed.task_title || undefined,
         };
       }
-    } catch (e) { /* fall through to text parsing */ }
+    } catch { /* fall through to text parsing */ }
   }
 
   // 2. Text format: "**判断:** archive" or "判断: delete"
@@ -367,13 +368,6 @@ async function executeAction(item: TriageItem, judgment: TriageJudgment): Promis
     return;
   }
 
-  // Always delete GAS notification first (triage replaces it)
-  if (item.telegram_msg_id) {
-    try {
-      await botApi.deleteMessage(chatId, item.telegram_msg_id);
-    } catch (e) { /* already deleted or expired */ }
-  }
-
   switch (judgment.action) {
     case 'archive':
     case 'delete': {
@@ -390,10 +384,15 @@ async function executeAction(item: TriageItem, judgment: TriageJudgment): Promis
           console.error(`[Triage] Gmail ${action} error:`, e);
         }
       }
+      // Delete Telegram notification message
+      if (item.telegram_msg_id) {
+        try {
+          await botApi.deleteMessage(chatId, item.telegram_msg_id);
+        } catch { /* already deleted or expired */ }
+      }
       // Confirm to DJ
       const icon = judgment.action === 'archive' ? '📦' : '🗑';
-      const bodyExcerpt = item.body.substring(0, 150).replace(/\n/g, ' ');
-      const confirmText = `🦞 ${icon}${judgment.action === 'archive' ? 'アーカイブ' : '削除'}済み\n📧 ${item.sender_name}: ${item.subject || '(件名なし)'}\n📝 ${bodyExcerpt}...\n\n💭 ${judgment.reason}`;
+      const confirmText = `🦞 ${icon}${judgment.action === 'archive' ? 'アーカイブ' : '削除'}済み\n${item.sender_name}: ${item.subject || item.body.substring(0, 50)}\n理由: ${judgment.reason}`;
       console.log('[Triage] Sending confirm to chatId:', chatId, 'text:', confirmText.substring(0, 80));
       let confirmMsg: any;
       try {
@@ -467,26 +466,16 @@ async function executeAction(item: TriageItem, judgment: TriageJudgment): Promis
       if (escOpenBtn) {
         escOpts.reply_markup = { inline_keyboard: [[escOpenBtn]] };
       }
-      const escRows: any[][] = [];
-      if (item.source === 'gmail' && item.source_id) {
-        escRows.push([
-          { text: '📦', callback_data: `ib:archive:${item.source_id}` },
-          { text: '🗑', callback_data: `ib:trash:${item.source_id}` },
-        ]);
-      }
-      escRows.push([
-        { text: '✅OK', callback_data: `triage:ok:${item.id}` },
-        { text: '❌取消', callback_data: `triage:undo:${item.id}` },
-      ]);
+      const escRows: any[][] = [
+        [
+          { text: '✅OK', callback_data: `triage:ok:${item.id}` },
+          { text: '❌取消', callback_data: `triage:undo:${item.id}` },
+        ],
+      ];
       if (escOpenBtn) escRows.push([escOpenBtn]);
       escOpts.reply_markup = { inline_keyboard: escRows };
       await botApi.sendMessage(chatId,
-      const escBody = item.body.substring(0, 300).replace(/\n/g, ' ');
-      const sourceIcon = item.source === 'gmail' ? '📧' : item.source === 'line' ? '💬' : '📱';
-      await botApi.sendMessage(chatId,
-        `🦞 ⚠️DJ確認\n${sourceIcon} ${item.sender_name}: ${item.subject || '(件名なし)'}\n📝 ${escBody}\n\n💭 ${judgment.reason}${taskInfo}`,
-        escOpts
-      );
+        `🦞 ⚠️DJ確認\n${item.sender_name}: ${item.subject || item.body.substring(0, 80)}\n理由: ${judgment.reason}${taskInfo}`,
         escOpts
       );
       break;
