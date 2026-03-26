@@ -1,12 +1,17 @@
 /**
  * Domain relay buffer system
  * Handles: relay-in-progress buffering + handoff buffering
+ * 
+ * DESIGN: All domain relays share ONE physical Chrome tab (relay tab 1:1).
+ * A global relay-tab lock serializes all relay operations across domains.
+ * Per-domain handoff locks are separate (handoff uses different mechanism).
  */
 import { spawn } from "child_process";
-import { readFileSync, writeFileSync, appendFileSync, unlinkSync, existsSync } from "fs";
+import { readFileSync, writeFileSync, appendFileSync, unlinkSync, existsSync, readdirSync } from "fs";
 
 export const MAX_BUFFER = 10;
 const LOCK_DIR = "/tmp";
+const GLOBAL_RELAY_LOCK = `${LOCK_DIR}/domain-relay-tab.lock`;
 
 interface DomainLock {
   type: "relay" | "handoff";
@@ -21,6 +26,12 @@ interface BufferEntry {
   telegram_msg_id?: number;
 }
 
+interface GlobalRelayLock {
+  pid: number;
+  since: string;
+  domain: string;
+}
+
 function lockPath(domain: string): string {
   return `${LOCK_DIR}/domain-lock-${domain}.json`;
 }
@@ -29,13 +40,44 @@ function bufferPath(domain: string): string {
   return `${LOCK_DIR}/domain-buffer-${domain}.jsonl`;
 }
 
+// --- Global relay tab lock (serializes ALL domain relays) ---
+
+function getGlobalRelayLock(): GlobalRelayLock | null {
+  try {
+    if (!existsSync(GLOBAL_RELAY_LOCK)) return null;
+    const data = JSON.parse(readFileSync(GLOBAL_RELAY_LOCK, "utf-8"));
+    const age = Date.now() - new Date(data.since).getTime();
+    if (age > 120_000) {
+      console.log(`[Buffer] Stale global relay lock (${Math.round(age / 1000)}s), removing`);
+      try { unlinkSync(GLOBAL_RELAY_LOCK); } catch {}
+      return null;
+    }
+    return data;
+  } catch { return null; }
+}
+
+function acquireGlobalRelayLock(domain: string): boolean {
+  const existing = getGlobalRelayLock();
+  if (existing) return false;
+  writeFileSync(GLOBAL_RELAY_LOCK, JSON.stringify({
+    pid: process.pid, since: new Date().toISOString(), domain,
+  }));
+  return true;
+}
+
+function releaseGlobalRelayLock(): void {
+  try { unlinkSync(GLOBAL_RELAY_LOCK); } catch {}
+}
+
+// --- Per-domain handoff lock (separate from relay) ---
+
 export function getLock(domain: string): DomainLock | null {
   try {
     const p = lockPath(domain);
     if (!existsSync(p)) return null;
     const data = JSON.parse(readFileSync(p, "utf-8"));
     const age = Date.now() - new Date(data.since).getTime();
-    const maxAge = data.type === "handoff" ? 600_000 : 300_000;
+    const maxAge = data.type === "handoff" ? 600_000 : 120_000;
     if (age > maxAge) {
       console.log(`[Buffer] Stale ${data.type} lock for ${domain} (${Math.round(age / 1000)}s), removing`);
       try { unlinkSync(p); } catch {}
@@ -45,22 +87,18 @@ export function getLock(domain: string): DomainLock | null {
   } catch { return null; }
 }
 
-function createLock(domain: string, type: "relay" | "handoff"): void {
+export function createHandoffLock(domain: string): void {
   writeFileSync(lockPath(domain), JSON.stringify({
-    type, pid: process.pid, since: new Date().toISOString(), domain,
+    type: "handoff", pid: process.pid, since: new Date().toISOString(), domain,
   }));
 }
 
-function removeLock(domain: string): void {
+export function removeHandoffLock(domain: string): void {
   try { unlinkSync(lockPath(domain)); } catch {}
 }
 
 function addToBuffer(domain: string, text: string, telegramMsgId?: number): number {
-  const entry: BufferEntry = {
-    ts: new Date().toISOString(),
-    text,
-    telegram_msg_id: telegramMsgId,
-  };
+  const entry: BufferEntry = { ts: new Date().toISOString(), text, telegram_msg_id: telegramMsgId };
   appendFileSync(bufferPath(domain), JSON.stringify(entry) + "\n");
   return getBufferCount(domain);
 }
@@ -86,15 +124,23 @@ function drainBuffer(domain: string): BufferEntry[] {
   } catch { return []; }
 }
 
+function findBufferedDomains(): string[] {
+  try {
+    return readdirSync(LOCK_DIR)
+      .filter(f => f.startsWith("domain-buffer-") && f.endsWith(".jsonl"))
+      .map(f => f.replace("domain-buffer-", "").replace(".jsonl", ""))
+      .filter(d => getBufferCount(d) > 0);
+  } catch { return []; }
+}
+
 function formatBufferFlush(entries: BufferEntry[]): string {
   const lines = entries.map((e, i) => {
     const time = new Date(e.ts).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
-    return `[${i + 1}] ${time} \u2014 ${e.text}`;
+    return `[${i + 1}] ${time} —  ${e.text}`;
   });
-  return `\u{1f4e8} \u30d0\u30c3\u30d5\u30a1\u6e08\u307f\u30e1\u30c3\u30bb\u30fc\u30b8 (${entries.length}\u4ef6):\n${lines.join("\n")}\n\n\u4ee5\u4e0a\u3092\u8e0f\u307e\u3048\u3066\u5bfe\u5fdc\u3057\u3066\u304f\u3060\u3055\u3044\u3002`;
+  return `📨 バッファ済みメッセージ (${entries.length}件):\n${lines.join("\n")}\n\n以上を踏まえて対応してください。`;
 }
 
-// Raw relay execution (no lock management)
 function execRelay(
   domain: string,
   message: string,
@@ -127,49 +173,61 @@ function execRelay(
   });
 }
 
-/**
- * Main relay function with lock + buffer + flush
- * Returns "BUFFERED" if message was buffered, response string, or null
- */
 export async function relayDomain(
   domain: string,
   message: string,
   onResponding?: () => Promise<void>,
   timeoutMs = 180000
 ): Promise<string | "BUFFERED" | null> {
-  // Check lock
-  const lock = getLock(domain);
-  if (lock) {
+  // 1. Check per-domain handoff lock
+  const handoffLock = getLock(domain);
+  if (handoffLock && handoffLock.type === "handoff") {
     const count = getBufferCount(domain);
-    if (count >= MAX_BUFFER) {
-      return null; // Buffer full
-    }
+    if (count >= MAX_BUFFER) return null;
     addToBuffer(domain, message);
-    const label = lock.type === "handoff" ? "HANDOFF\u4e2d" : "\u5fdc\u7b54\u4e2d";
-    console.log(`[Buffer] ${domain} ${label}, buffered (${count + 1}/${MAX_BUFFER})`);
+    console.log(`[Buffer] ${domain} HANDOFF中, buffered (${count + 1}/${MAX_BUFFER})`);
     return "BUFFERED";
   }
 
-  // Create lock
-  createLock(domain, "relay");
+  // 2. Try to acquire global relay tab lock
+  if (!acquireGlobalRelayLock(domain)) {
+    const lock = getGlobalRelayLock();
+    const count = getBufferCount(domain);
+    if (count >= MAX_BUFFER) return null;
+    addToBuffer(domain, message);
+    console.log(`[Buffer] Relay tab busy (${lock?.domain}), buffered ${domain} (${count + 1}/${MAX_BUFFER})`);
+    return "BUFFERED";
+  }
 
+  // 3. We own the relay tab
   try {
-    // Execute relay
     const response = await execRelay(domain, message, onResponding, timeoutMs);
 
-    // After relay completes, flush buffer
+    // 4. Drain THIS domain's buffer
+    let combinedResponse = response;
     const buffered = drainBuffer(domain);
     if (buffered.length > 0) {
       console.log(`[Buffer] Flushing ${buffered.length} buffered messages to ${domain}`);
       const flushMsg = formatBufferFlush(buffered);
       const flushResponse = await execRelay(domain, flushMsg, undefined, timeoutMs);
       if (flushResponse) {
-        return (response || "") + "\n\n\u2500\u2500\u2500 \u30d0\u30c3\u30d5\u30a1\u5206\u5fdc\u7b54 \u2500\u2500\u2500\n" + flushResponse;
+        combinedResponse = (response || "") + "\n\n─── バッファ分応答 ───\n" + flushResponse;
       }
     }
 
-    return response;
+    // 5. Process other domains' buffered messages
+    const otherDomains = findBufferedDomains();
+    for (const otherDomain of otherDomains) {
+      const otherBuffered = drainBuffer(otherDomain);
+      if (otherBuffered.length > 0) {
+        console.log(`[Buffer] Sequential flush: ${otherBuffered.length} messages to ${otherDomain}`);
+        const flushMsg = formatBufferFlush(otherBuffered);
+        await execRelay(otherDomain, flushMsg, undefined, timeoutMs);
+      }
+    }
+
+    return combinedResponse;
   } finally {
-    removeLock(domain);
+    releaseGlobalRelayLock();
   }
 }
