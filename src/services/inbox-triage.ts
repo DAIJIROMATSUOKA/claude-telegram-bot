@@ -31,6 +31,75 @@ let isProcessing = false;
 let botApi: any = null;
 let djChatId: number = 0;
 
+// ============================================================
+// Triage Batch Queue - 3s debounce for OK/Undo actions
+// ============================================================
+interface TriageBatchEntry {
+  action: 'ok' | 'undo';
+  itemId: string;
+  msgId: number;
+  chatId: number;
+}
+interface TriageBatchQueue {
+  entries: TriageBatchEntry[];
+  timer: ReturnType<typeof setTimeout>;
+}
+const triageBatchQueue = new Map<number, TriageBatchQueue>();
+const TRIAGE_BATCH_DELAY = 3000;
+
+function queueTriageBatchAction(chatId: number, entry: TriageBatchEntry): number {
+  let q = triageBatchQueue.get(chatId);
+  if (q) {
+    clearTimeout(q.timer);
+    q.entries.push(entry);
+  } else {
+    q = { entries: [entry], timer: null as any };
+    triageBatchQueue.set(chatId, q);
+  }
+  q.timer = setTimeout(() => executeTriageBatch(chatId), TRIAGE_BATCH_DELAY);
+  return q.entries.length;
+}
+
+async function executeTriageBatch(chatId: number): Promise<void> {
+  const q = triageBatchQueue.get(chatId);
+  if (!q || !botApi) return;
+  triageBatchQueue.delete(chatId);
+
+  const okEntries = q.entries.filter(e => e.action === 'ok');
+  const undoEntries = q.entries.filter(e => e.action === 'undo');
+
+  console.log(`[TriageBatch] Executing: ${okEntries.length} ok, ${undoEntries.length} undo in chat ${chatId}`);
+
+  // Process OK entries - report feedback + delete messages
+  for (const e of okEntries) {
+    try {
+      await reportFeedback(e.itemId, 'approved');
+      await botApi.deleteMessage(e.chatId, e.msgId).catch(() => {});
+    } catch (err) {
+      console.error('[TriageBatch] OK action error:', err);
+    }
+  }
+
+  // Process Undo entries - show reason selection for each
+  for (const e of undoEntries) {
+    try {
+      await botApi.editMessageText(e.chatId, e.msgId, '❓ なぜ取消？', {
+        reply_markup: {
+          inline_keyboard: [
+            [
+              { text: '📨重要', callback_data: `triage:reason:${e.itemId}:important` },
+              { text: '⏰後で', callback_data: `triage:reason:${e.itemId}:later` },
+              { text: '⚠️誤分類', callback_data: `triage:reason:${e.itemId}:misclass` },
+            ],
+          ],
+        },
+      }).catch(() => {});
+    } catch (err) {
+      console.error('[TriageBatch] Undo action error:', err);
+    }
+  }
+}
+
 interface TriageItem {
   id: string;
   source: string;
@@ -593,8 +662,13 @@ export function stopInboxTriage(): void {
 /**
  * Handle triage callback buttons (from inline keyboards)
  * callback_data format: triage:{action}:{item_id}
+ * @param callbackQuery - The callback query from Telegram
+ * @param answerCallback - Function to answer the callback query (from ctx.answerCallbackQuery)
  */
-export async function handleTriageCallback(callbackQuery: any): Promise<boolean> {
+export async function handleTriageCallback(
+  callbackQuery: any,
+  answerCallback?: (opts: { text: string; show_alert?: boolean }) => Promise<any>
+): Promise<boolean> {
   const data = callbackQuery.data;
   if (!data || !data.startsWith('triage:')) return false;
 
@@ -622,27 +696,23 @@ export async function handleTriageCallback(callbackQuery: any): Promise<boolean>
       break;
 
     case 'ok': {
-      await reportFeedback(itemId, 'approved');
-      if (botApi && chatId && msgId) {
-        await botApi.deleteMessage(chatId, msgId).catch(() => {});
+      if (chatId && msgId) {
+        const count = queueTriageBatchAction(chatId, { action: 'ok', itemId, msgId, chatId });
+        if (answerCallback) {
+          try { await answerCallback({ text: `✅ OK予約 (${count}件)`, show_alert: false }); } catch {}
+        }
+        return true;
       }
       break;
     }
 
     case 'undo': {
-      // Show reason selection keyboard
-      if (botApi && chatId && msgId) {
-        await botApi.editMessageText(chatId, msgId, '❓ \u306a\u305c\u53d6\u6d88\uff1f', {
-          reply_markup: {
-            inline_keyboard: [
-              [
-                { text: '📨\u91cd\u8981', callback_data: `triage:reason:${itemId}:important` },
-                { text: '⏰\u5f8c\u3067', callback_data: `triage:reason:${itemId}:later` },
-                { text: '⚠️\u8aa4\u5206\u985e', callback_data: `triage:reason:${itemId}:misclass` },
-              ],
-            ],
-          },
-        }).catch(() => {});
+      if (chatId && msgId) {
+        const count = queueTriageBatchAction(chatId, { action: 'undo', itemId, msgId, chatId });
+        if (answerCallback) {
+          try { await answerCallback({ text: `⏪ 取消予約 (${count}件)`, show_alert: false }); } catch {}
+        }
+        return true;
       }
       break;
     }

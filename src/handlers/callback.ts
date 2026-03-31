@@ -62,9 +62,14 @@ export async function handleCallback(ctx: Context): Promise<void> {
   }
 
   if (callbackData.startsWith("triage:")) {
-    const handled = await handleTriageCallback(ctx.callbackQuery);
+    const handled = await handleTriageCallback(
+      ctx.callbackQuery,
+      (opts) => ctx.answerCallbackQuery(opts)
+    );
     if (handled) {
-      await ctx.answerCallbackQuery();
+      // answerCallbackQuery already called in handleTriageCallback for batch actions
+      // For non-batch actions, call it here as fallback
+      await ctx.answerCallbackQuery().catch(() => {});
       return;
     }
   }
