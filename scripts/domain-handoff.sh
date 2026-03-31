@@ -140,20 +140,28 @@ if [ "$MODE" = "activate" ]; then
   sleep 8
   READY_COUNT=0
   ELAPSED=0
+  SKIP_SUMMARY=0
   while [ "$ELAPSED" -lt 180 ]; do
     STATUS=$(bash "$TAB_MANAGER" check-status "$WT" 2>/dev/null || echo "UNKNOWN")
     if [ "$STATUS" = "READY" ]; then
       READY_COUNT=$((READY_COUNT + 1))
       if [ "$READY_COUNT" -ge 3 ]; then break; fi
+    elif [ "$STATUS" = "RATE_LIMIT" ]; then
+      log "RATE_LIMIT detected — skipping summary"
+      SKIP_SUMMARY=1
+      break
     else
       READY_COUNT=0
     fi
     sleep 5
     ELAPSED=$((ELAPSED + 5))
   done
-  sleep 3
 
-  SUMMARY=$(bash "$TAB_MANAGER" read-response "$WT" 2>/dev/null || echo "")
+  SUMMARY=""
+  if [ "$SKIP_SUMMARY" = "0" ]; then
+    sleep 3
+    SUMMARY=$(bash "$TAB_MANAGER" read-response "$WT" 2>/dev/null || echo "")
+  fi
   if [ -z "$SUMMARY" ]; then
     SUMMARY="(旧チャットからの要約取得失敗。conversation_searchで補完してください)"
   fi
