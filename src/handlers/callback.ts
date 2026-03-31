@@ -74,7 +74,7 @@ export async function handleCallback(ctx: Context): Promise<void> {
     if (date) {
       const { execSync } = require("child_process");
       try {
-        execSync(`python3 ~/scripts/morning-triage.py --restore ${date}`, { timeout: 15000 });
+        execSync(`zsh ~/scripts/morning-triage-wrapper.sh --restore ${date}`, { timeout: 15000 });
         await ctx.answerCallbackQuery({ text: "📋 復元しました" });
       } catch (e) {
         await ctx.answerCallbackQuery({ text: "❌ 復元失敗" });
