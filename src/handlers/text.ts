@@ -3,6 +3,7 @@ import { handleMailSend } from "./mail-send";
 import { handleLinePost } from "./line-post";
 import { handleDeadlineInput } from "./deadline-input";
 import { relayDomain, getLock, getBufferCount, MAX_BUFFER } from "../services/domain-buffer";
+import { handleAgentTask } from "./agent-task";
 /**
  * Text message handler for Claude Telegram Bot.
  *
@@ -84,6 +85,19 @@ export async function handleText(ctx: Context): Promise<void> {
     return;
   }
 
+
+
+    // === Agent Task: [AGENT] prefix triggers Agent SDK execution ===
+    if (message.startsWith('[AGENT]')) {
+      const taskPrompt = message.replace(/^\[AGENT\]\s*/, '').trim();
+      if (taskPrompt) {
+        // Fire and forget - don't block other message handling
+        handleAgentTask(taskPrompt, chatId, ctx.api).catch((e: any) =>
+          console.error('[Agent Task] Unhandled error:', e)
+        );
+        return;
+      }
+    }
 
     // === Deadline input: M1300の納期3/31 ===
     if (await handleDeadlineInput(ctx)) return;

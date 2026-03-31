@@ -84,6 +84,7 @@ import { session } from './session';
 import { convertMarkdownToHtml } from './formatting';
 import { startSnoozeChecker } from "./services/snooze";
 import { startInboxTriage } from "./services/inbox-triage";
+import { handleAgentTask } from "./handlers/agent-task";
 
 // ============== Global Context ==============
 // Bot起動時にCLAUDE.mdを読み込んでグローバルに保持
@@ -416,6 +417,30 @@ const runner = run(bot);
     try { startInboxTriage(bot, ALLOWED_USERS[0] || 0); } catch(e) { console.error("[Triage] Init failed:", e); }
     try { initNotifTable(); } catch(e) { console.error("[Notif] Table init failed:", e); }
   }).catch((e) => console.error('[Memory] Init failed:', e));
+
+
+// === Agent Task HTTP endpoint (localhost only) ===
+const AGENT_PORT = 3847;
+const AGENT_CHAT_ID = ALLOWED_USERS[0] || 0;
+Bun.serve({
+  port: AGENT_PORT,
+  async fetch(req) {
+    if (req.method === 'POST' && new URL(req.url).pathname === '/agent-task') {
+      try {
+        const body = await req.json() as { prompt: string };
+        if (!body.prompt) return Response.json({ ok: false, error: 'missing prompt' }, { status: 400 });
+        handleAgentTask(body.prompt, AGENT_CHAT_ID, bot.api).catch(e =>
+          console.error('[Agent HTTP] Task error:', e)
+        );
+        return Response.json({ ok: true, status: 'started' });
+      } catch (e: any) {
+        return Response.json({ ok: false, error: e.message }, { status: 500 });
+      }
+    }
+    return new Response('Not found', { status: 404 });
+  },
+});
+console.log(`[JARVIS] Agent Task endpoint: http://localhost:${AGENT_PORT}/agent-task`);
 
 console.log('[JARVIS] Bot started successfully');
 await runner;
