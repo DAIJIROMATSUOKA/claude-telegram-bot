@@ -106,8 +106,11 @@ if [ "$MODE" = "activate" ]; then
   HISTORY=""
   if [ -f "$HISTORY_FILE" ]; then HISTORY=$(cat "$HISTORY_FILE"); fi
 
-  # Lock
+  # Lock (per-domain + global relay tab)
   echo "{\"type\":\"handoff\",\"pid\":$$,\"since\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"domain\":\"$DOMAIN\"}" > "$LOCK_FILE"
+  GLOBAL_RELAY_LOCK="$LOCK_DIR/domain-relay-tab.lock"
+  echo "{\"domain\":\"$DOMAIN\",\"pid\":$$,\"since\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"type\":\"handoff\"}" > "$GLOBAL_RELAY_LOCK"
+  trap 'rm -f "$GLOBAL_RELAY_LOCK"' EXIT
   bash "$NOTIFY" "📌 $DOMAIN HANDOFF中(activate)"
 
   # Ask old chat for summary
@@ -290,7 +293,10 @@ fi
 
 # === Step 1: Create handoff lock ===
 echo "{\"type\":\"handoff\",\"pid\":$$,\"since\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"domain\":\"$DOMAIN\"}" > "$LOCK_FILE"
-log "Handoff lock created"
+GLOBAL_RELAY_LOCK="$LOCK_DIR/domain-relay-tab.lock"
+echo "{\"domain\":\"$DOMAIN\",\"pid\":$$,\"since\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"type\":\"handoff\"}" > "$GLOBAL_RELAY_LOCK"
+trap 'rm -f "$GLOBAL_RELAY_LOCK"' EXIT
+log "Handoff lock created (+ global relay lock)"
 bash "$NOTIFY" "📌 $DOMAIN HANDOFF中"
 
 # === Step 2: Ask old chat for summary ===
