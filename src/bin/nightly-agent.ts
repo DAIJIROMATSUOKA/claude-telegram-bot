@@ -31,29 +31,31 @@ async function main() {
   const start = Date.now();
   console.log("[Nightly Agent] Starting...");
 
-  const prompt = `あなたはNightly Agent。深夜の自動コード分析・改善提案を行う。
-ファイルは絶対に変更するな（Read-Only）。
+  const prompt = `あなたはNightly Agent。DJは朝3時に起きてTelegramでこのレポートを読む。
+技術者ではない経営者にも分かる言葉で書け。ファイルは絶対に変更するな。
 
-以下を順番に実行し、最後にまとめて報告:
+以下を順番に実行:
+1. bun test 実行
+2. git status --short と git log --oneline -3
+3. src/handlers/ 内のTODO/FIXME検索
+4. コードベースを読んで改善提案を1つ考える（diffフォーマットで、適用はしない）
 
-1. テスト実行: bun test を実行し、pass/fail数を報告
-2. git状態: git status --short と git log --oneline -3 で未コミット・未push確認
-3. ドキュメント鮮度: docs/FEATURE-CATALOG.md と docs/DESIGN-RULES.md のgit log最終更新日
-4. コード品質: src/handlers/ 内のTODO/FIXME/HACK コメントを検索
-5. 改善提案: コードベースを読んで具体的な改善提案を1つ。diffフォーマットで提示（適用はしない）
+報告フォーマット（この通りに出力）:
 
-報告フォーマット:
-🌙 Nightly Agent Report
+🌙 おはよう DJ
 
-[テスト] ✅/❌ N passed, M failed
-[Git] 未コミット: N files / 未push: N commits
-[Docs] FEATURE-CATALOG: YYYY-MM-DD / DESIGN-RULES: YYYY-MM-DD
-[品質] TODO: N件, FIXME: N件
-[提案] タイトル
-  理由: ...
-  diff: ...
+【健康状態】✅ or ❌
+テスト結果とシステム状態を1行で。問題なければ「全部正常」。
 
-簡潔に。`;
+【DJアクション】
+DJが何かすべきことがあれば書く。なければ「なし」。
+
+【改善アイデア】
+何が問題で、直すと何が良くなるか、を2-3行で。
+技術的なdiffはその下に折りたたみ風に添える。
+DJが「やって」と返信すれば次のセッションで実装される。
+
+日本語で、短く、分かりやすく。`;
 
   try {
     const messages: any[] = [];
