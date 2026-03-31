@@ -429,10 +429,8 @@ Bun.serve({
       try {
         const body = await req.json() as { prompt: string };
         if (!body.prompt) return Response.json({ ok: false, error: 'missing prompt' }, { status: 400 });
-        handleAgentTask(body.prompt, AGENT_CHAT_ID, bot.api).catch(e =>
-          console.error('[Agent HTTP] Task error:', e)
-        );
-        return Response.json({ ok: true, status: 'started' });
+        const result = await handleAgentTask(body.prompt, AGENT_CHAT_ID, bot.api);
+        return Response.json({ ok: true, ...result });
       } catch (e: any) {
         return Response.json({ ok: false, error: e.message }, { status: 500 });
       }
