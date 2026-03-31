@@ -6,6 +6,7 @@
 #   ./domain-handoff.sh --flush <domain>   # flush buffer only (after external handoff)
 #   ./domain-handoff.sh --lock <domain>    # create handoff lock only
 #   ./domain-handoff.sh --unlock <domain>  # remove lock + flush buffer
+#   ./domain-handoff.sh --activate <domain> # activate warm standby (summary + switch)
 
 # set -e removed: use explicit error checks
 SCRIPTS_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -23,6 +24,7 @@ if [ "${1:-}" = "--warm" ]; then MODE="warm"; shift; fi
 if [ "${1:-}" = "--flush" ]; then MODE="flush"; shift; fi
 if [ "${1:-}" = "--lock" ]; then MODE="lock"; shift; fi
 if [ "${1:-}" = "--unlock" ]; then MODE="unlock"; shift; fi
+if [ "${1:-}" = "--activate" ]; then MODE="activate"; shift; fi
 
 DOMAIN="${1:?Usage: domain-handoff.sh [--warm|--flush|--lock|--unlock] <domain>}"
 LOCK_FILE="$LOCK_DIR/domain-lock-${DOMAIN}.json"
@@ -81,6 +83,176 @@ print(f'📨 バッファ済みメッセージ ({len(entries)}件):\n' + '\n'.jo
   else
     log "No buffer to flush"
   fi
+  exit 0
+fi
+
+# --- Activate warm standby ---
+if [ "$MODE" = "activate" ]; then
+  if [ ! -f "$STANDBY_FILE" ]; then
+    log "ERROR: no warm standby for $DOMAIN"
+    exit 1
+  fi
+  STANDBY_URL=$(python3 -c "import json; print(json.load(open('$STANDBY_FILE'))['url'])")
+  if [ -z "$STANDBY_URL" ]; then
+    log "ERROR: could not parse standby URL"
+    exit 1
+  fi
+  log "Activating warm standby: $STANDBY_URL"
+
+  # Get current URL for summary request
+  CURRENT_URL=$($CHAT_ROUTER url "$DOMAIN" 2>/dev/null)
+  BOOTSTRAP=$($CHAT_ROUTER bootstrap "$DOMAIN" 2>/dev/null || echo "")
+  HISTORY_FILE="$HOME/machinelab-knowledge/${DOMAIN}/history.compressed.md"
+  HISTORY=""
+  if [ -f "$HISTORY_FILE" ]; then HISTORY=$(cat "$HISTORY_FILE"); fi
+
+  # Lock
+  echo "{\"type\":\"handoff\",\"pid\":$$,\"since\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"domain\":\"$DOMAIN\"}" > "$LOCK_FILE"
+  bash "$NOTIFY" "📌 $DOMAIN HANDOFF中(activate)"
+
+  # Ask old chat for summary
+  WT=$(cat /tmp/domain-relay-wt 2>/dev/null || echo "1:1")
+  _WIDX=$(echo "$WT" | cut -d: -f1)
+  _TIDX=$(echo "$WT" | cut -d: -f2)
+  osascript -e "tell application \"Google Chrome\" to set URL of tab $_TIDX of window $_WIDX to \"$CURRENT_URL\"" 2>/dev/null
+  sleep 6
+
+  SUMMARY_PROMPT='セッション引き継ぎのため、完全な要約を出力して。以下の形式で:
+
+## SESSION SUMMARY
+**やったこと:** (箇条書き、具体的commit/修正内容を含む)
+**決定事項:** (【決定】マーク付き)
+**残課題:** (未完了・未確認事項)
+**次のアクション:** (新しい🦞が最初にすべきこと)
+
+## Compressed History
+(Legend: D:=decided Q:=open F:=fixed E:=error W:=done)
+(今世代の全作業を圧縮記法で)
+
+漏れなく書いて。要約ではなく完全な記録。'
+
+  SUMMARY_FILE="/tmp/handoff-summary-request-$$.txt"
+  echo "$SUMMARY_PROMPT" > "$SUMMARY_FILE"
+  bash "$TAB_MANAGER" inject-file "$WT" "$SUMMARY_FILE" 2>/dev/null
+  rm -f "$SUMMARY_FILE"
+
+  log "Waiting for summary response..."
+  sleep 8
+  READY_COUNT=0
+  ELAPSED=0
+  while [ "$ELAPSED" -lt 180 ]; do
+    STATUS=$(bash "$TAB_MANAGER" check-status "$WT" 2>/dev/null || echo "UNKNOWN")
+    if [ "$STATUS" = "READY" ]; then
+      READY_COUNT=$((READY_COUNT + 1))
+      if [ "$READY_COUNT" -ge 3 ]; then break; fi
+    else
+      READY_COUNT=0
+    fi
+    sleep 5
+    ELAPSED=$((ELAPSED + 5))
+  done
+  sleep 3
+
+  SUMMARY=$(bash "$TAB_MANAGER" read-response "$WT" 2>/dev/null || echo "")
+  if [ -z "$SUMMARY" ]; then
+    SUMMARY="(旧チャットからの要約取得失敗。conversation_searchで補完してください)"
+  fi
+  log "Got summary: ${#SUMMARY} chars"
+
+  # Navigate relay tab to warm standby
+  NEW_URL="$STANDBY_URL"
+  osascript -e "tell application \"Google Chrome\" to set URL of tab $_TIDX of window $_WIDX to \"$NEW_URL\"" 2>/dev/null
+  sleep 6
+
+  # Inject bootstrap + summary
+  BOOTSTRAP_FULL=""
+  if [ -n "$BOOTSTRAP" ]; then BOOTSTRAP_FULL="$BOOTSTRAP"$'\n\n'; fi
+  BOOTSTRAP_FULL="${BOOTSTRAP_FULL}## 前チャットの要約
+${SUMMARY}"
+  if [ -n "$HISTORY" ]; then
+    BOOTSTRAP_FULL="${BOOTSTRAP_FULL}"$'\n\n'"## Compressed History
+${HISTORY}"
+  fi
+  BOOTSTRAP_FULL="${BOOTSTRAP_FULL}"$'\n\n'"## 前チャットURL
+${CURRENT_URL}"$'\n\n'"## 必須アクション
+conversation_searchで前チャットの最新内容を検索し、上記要約で欠落している詳細を補完せよ。
+以上の文脈を踏まえて、今後のメッセージに対応してください。"
+
+  BOOT_FILE="/tmp/handoff-bootstrap-$$.txt"
+  echo "$BOOTSTRAP_FULL" > "$BOOT_FILE"
+  bash "$TAB_MANAGER" inject-file "$WT" "$BOOT_FILE" 2>/dev/null
+  rm -f "$BOOT_FILE"
+  log "Bootstrap injected to warm standby"
+
+  sleep 5
+  ELAPSED=0
+  while [ "$ELAPSED" -lt 120 ]; do
+    STATUS=$(bash "$TAB_MANAGER" check-status "$WT" 2>/dev/null || echo "UNKNOWN")
+    if [ "$STATUS" = "READY" ]; then break; fi
+    sleep 5
+    ELAPSED=$((ELAPSED + 5))
+  done
+  log "Warm standby ready"
+
+  # Switch URL
+  $CHAT_ROUTER archive-url "$DOMAIN" 2>/dev/null
+  $CHAT_ROUTER set-url "$DOMAIN" "$NEW_URL" 2>/dev/null
+  log "URL switched: $NEW_URL"
+
+  # Rename old chat
+  OLD_CHAT_ID=$(echo "$CURRENT_URL" | grep -o '[0-9a-f-]\{36\}$')
+  if [ -n "$OLD_CHAT_ID" ]; then
+    TODAY=$(date '+%Y-%m-%d')
+    TITLE_TEMPLATE=$($CHAT_ROUTER get-field "$DOMAIN" title_template 2>/dev/null || echo "")
+    if [ -n "$TITLE_TEMPLATE" ]; then
+      OLD_TITLE=$(echo "$TITLE_TEMPLATE" | sed "s/{date}/$TODAY/g")_archived
+    else
+      OLD_TITLE="${TODAY}_${DOMAIN}_archived"
+    fi
+    bash "$TAB_MANAGER" rename-conversation "$OLD_CHAT_ID" "$OLD_TITLE" 2>/dev/null || true
+    log "Old chat renamed: $OLD_TITLE"
+  fi
+
+  # Flush buffer
+  if [ -f "$BUFFER_FILE" ] && [ -s "$BUFFER_FILE" ]; then
+    COUNT=$(wc -l < "$BUFFER_FILE" | tr -d ' ')
+    log "Flushing $COUNT buffered messages"
+    FLUSH_MSG=$(python3 -c "
+import json, sys
+entries = []
+for line in open('$BUFFER_FILE'):
+    try: entries.append(json.loads(line.strip()))
+    except: pass
+if not entries:
+    print('')
+    sys.exit(0)
+lines = []
+for i, e in enumerate(entries):
+    ts = e.get('ts','')
+    if 'T' in ts: ts = ts.split('T')[1][:5]
+    lines.append(f'[{i+1}] {ts} — {e["text"]}')
+print(f'📨 HANDOFF中にDJから届いたメッセージ ({len(entries)}件):
+' + '
+'.join(lines) + '
+
+以上を踏まえて対応してください。')
+")
+    if [ -n "$FLUSH_MSG" ]; then
+      FLUSH_FILE="/tmp/handoff-flush-$$.txt"
+      echo "$FLUSH_MSG" > "$FLUSH_FILE"
+      bash "$TAB_MANAGER" inject-file "$WT" "$FLUSH_FILE" 2>/dev/null
+      rm -f "$FLUSH_FILE"
+    fi
+    rm -f "$BUFFER_FILE"
+    log "Buffer flushed"
+  fi
+
+  # Complete
+  rm -f "$LOCK_FILE"
+  rm -f "$STANDBY_FILE"
+  log "Handoff complete (activate)"
+  echo "HANDOFF_COMPLETE"
+  bash "$NOTIFY" "✅ $DOMAIN HANDOFF完了(activate) → 新チャット"
   exit 0
 fi
 
