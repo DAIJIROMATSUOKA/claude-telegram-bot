@@ -67,6 +67,7 @@ export async function handleCallback(ctx: Context): Promise<void> {
       await ctx.answerCallbackQuery();
       return;
     }
+  }
 
   // Morning Triage callbacks
   if (callbackData.startsWith("mt:restore:")) {
@@ -82,7 +83,6 @@ export async function handleCallback(ctx: Context): Promise<void> {
     }
     try { await ctx.deleteMessage(); } catch (e) {}
     return;
-  }
   }
 
   // 2.5 Inbox Zero callback routing
