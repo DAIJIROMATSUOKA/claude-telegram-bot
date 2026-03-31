@@ -62,7 +62,7 @@ async function main() {
       options: {
         cwd: CWD,
         allowedTools: ["Read", "Grep", "Glob", "Bash"],
-        permissionMode: "plan",
+        permissionMode: "bypassPermissions",
         maxTurns: 15,
         settingSources: ["user", "project"],
       },
