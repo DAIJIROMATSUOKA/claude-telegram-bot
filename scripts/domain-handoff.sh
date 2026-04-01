@@ -25,6 +25,7 @@ if [ "${1:-}" = "--flush" ]; then MODE="flush"; shift; fi
 if [ "${1:-}" = "--lock" ]; then MODE="lock"; shift; fi
 if [ "${1:-}" = "--unlock" ]; then MODE="unlock"; shift; fi
 if [ "${1:-}" = "--activate" ]; then MODE="activate"; shift; fi
+if [ "${1:-}" = "--stateless" ]; then MODE="stateless"; shift; fi
 
 DOMAIN="${1:?Usage: domain-handoff.sh [--warm|--flush|--lock|--unlock] <domain>}"
 LOCK_FILE="$LOCK_DIR/domain-lock-${DOMAIN}.json"
@@ -83,6 +84,26 @@ print(f'📨 バッファ済みメッセージ ({len(entries)}件):\n' + '\n'.jo
   else
     log "No buffer to flush"
   fi
+  exit 0
+fi
+
+# --- Stateless handoff (API only, no Chrome) ---
+if [ "$MODE" = "stateless" ]; then
+  PROJ_UUID=$($CHAT_ROUTER get-field "$DOMAIN" project_url 2>/dev/null | grep -oE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
+  if [ -z "$PROJ_UUID" ]; then
+    PROJ_UUID="019c15f4-3d2d-7263-a308-e7f6ccd6b3f8"
+  fi
+  log "Creating new chat via API (project=$PROJ_UUID)"
+  NEW_UUID=$(python3 "$SCRIPTS_DIR/stateless-handoff.py" "$PROJ_UUID" 2>/dev/null)
+  if [ -z "$NEW_UUID" ]; then
+    log "ERROR: failed to create chat"
+    bash "$NOTIFY" "stateless handoff fail: $DOMAIN"
+    exit 1
+  fi
+  NEW_URL="https://claude.ai/chat/$NEW_UUID"
+  $CHAT_ROUTER set-url "$DOMAIN" "$NEW_URL"
+  log "URL switched: $NEW_URL"
+  bash "$NOTIFY" "$DOMAIN stateless handoff OK"
   exit 0
 fi
 
