@@ -165,7 +165,11 @@ domains:
       \n【重要】[TRIAGE]メッセージへの応答はJSON1行のみ。説明文・判断理由の追記は禁止。"
     keywords: []
     title_template: '{date}_INBOX'
-    url: https://claude.ai/chat/ab82777d-3709-43dd-889f-29206b981a82
+    url: https://claude.ai/chat/58b6bc1e-3db8-4e5f-b8e3-872250ee1b5c
+    chat_history:
+    - id: ab82777d-3709-43dd-889f-29206b981a82
+      created: '2026-04-02'
+      title: 2026-04-02_0326_INBOX
   m1300:
     bootstrap: 'あなたはM1300案件（伊藤ハム米久 ケンコー工場 ロースライン出口コンベヤ等1号）の専門チャットです。
 
@@ -371,7 +375,7 @@ domains:
     - タスク追加
     - 製作指示
     title_template: '{date}_Notion_社内共有'
-    url: https://claude.ai/chat/a227e43b-8a41-4cfd-bda4-e713b95f9b19
+    url: https://claude.ai/chat/1f29344a-4c1c-4d9e-a431-caae067957c0
     chat_history:
     - id: c614a17e-dfd6-402b-84e2-c5ad04c9b277
       created: '2026-03-29'
@@ -379,4 +383,7 @@ domains:
     - id: c614a17e-dfd6-402b-84e2-c5ad04c9b277
       created: '2026-03-31'
       title: 2026-03-31_1143_Notion_社内共有
+    - id: a227e43b-8a41-4cfd-bda4-e713b95f9b19
+      created: '2026-04-02'
+      title: 2026-04-02_0319_Notion_社内共有
 obsidian_chat_list: ~/Library/Mobile Documents/iCloud~md~obsidian/Documents/MyObsidian/90_System/JARVIS/専門チャット一覧.md
