@@ -61,7 +61,7 @@ echo "$BOOTSTRAP" >> "$BOOTSTRAP_FILE"
 echo "[1/4] Bootstrap saved: $BOOTSTRAP_FILE"
 
 # Also save as latest (next session reads this)
-cp "$BOOTSTRAP_FILE" "$HANDOFF_DIR/croppy-latest.md"
+ln -sf "$(basename $BOOTSTRAP_FILE)" "$HANDOFF_DIR/croppy-latest.md"
 
 # Save current active tab WT (source chat) before opening new tab
 SOURCE_WT=$(bash "$TAB_MANAGER" list-all 2>/dev/null | head -1 | awk -F' \| ' '{print $1}' | tr -d ' ')
