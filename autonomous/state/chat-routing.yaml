@@ -102,11 +102,7 @@ domains:
       形式: ## YYYY-MM-DD Nightly Research\n- [発見タイトル]: 概要（URL）
 
       '
-    keywords:
-    - リサーチ
-    - research-topics
-    - X取得
-    - Web検索
+    keywords: []
     title_template: '{date}_Forge_Research'
     url: https://claude.ai/chat/090d5f4b-35e6-4a7a-bfa0-7897d74cbde3
     chat_history:
@@ -259,9 +255,12 @@ domains:
     - id: ba17886e-d5e1-4064-a69b-e986f1822564
       created: '2026-03-31'
       title: 2026-03-31_1205_PC操作_Mac設定
+    - id: 2037e532-c433-4b62-aadc-efad0e0c260b
+      created: '2026-04-02'
+      title: 2026-04-02_0432_PC操作_Mac設定
     keywords: []
     title_template: '{date}_PC操作_Mac設定'
-    url: https://claude.ai/chat/2037e532-c433-4b62-aadc-efad0e0c260b
+    url: https://claude.ai/chat/aff955c8-68cf-4a5d-93e3-e1ea8ab61192
   research:
     bootstrap: 'あなたはリサーチ・ニュース専門チャットです。
 
@@ -386,4 +385,44 @@ domains:
     - id: a227e43b-8a41-4cfd-bda4-e713b95f9b19
       created: '2026-04-02'
       title: 2026-04-02_0319_Notion_社内共有
+  m1322:
+    bootstrap: 'あなたはM1322案件（シルバーライフ ラベルレスプリンタ架台）の専門チャットです。
+
+      Dropbox: ~/Machinelab Dropbox/machinelab/プロジェクト/ 以下にM1322フォルダ。
+
+      過去の議論や設計決定を踏まえて回答してください。
+
+      '
+    keywords: []
+    title_template: '{date}_M1322_シルバーライフ ラベルレスプリンタ架台'
+    url: https://claude.ai/chat/375fb8a4-4941-4619-a10a-ff994c2f9ae3
+  m1314:
+    bootstrap: 'あなたはM1314案件（ハクゾウメディカル熊本工場 印字検査装置等）の専門チャットです。
+
+      Dropbox: ~/Machinelab Dropbox/machinelab/プロジェクト/ 以下にM1314フォルダ。
+
+      過去の議論や設計決定を踏まえて回答してください。
+
+      '
+    keywords: []
+    title_template: '{date}_M1314_ハクゾウメディカル熊本工場 印字検査装置等'
+    url: https://claude.ai/chat/5e5ed41b-cedf-4340-892c-c98c43d70d81
+  keiei:
+    bootstrap: "あなたはキカイラボ（株式会社キカイラボ）の経営相談専門チャットです。\nDJ（松岡大次郎、代表取締役）の経営判断を深くサポートしてください。\n\
+      \n## 会社基本情報\n- 社名: 株式会社キカイラボ（Machinelab Co., Ltd.）\n- 代表: 松岡大次郎（DJ）\n- 拠点: 千葉県柏市\n\
+      - 事業: FA設計エンジニアリング・食品機械（コンベヤ・搬送装置・検査装置）\n\n## 売上構造（2025年実績）\n- 年間売上: 約6億2,454万円\n\
+      - テラダトレーディング: 約3億5,829万（最大、約57%）← 直接取引\n- プロシード（的場氏経由）: 約1億6,554万（約26%）← 的場氏依存\n\
+      - 上位2社で売上の83%。集中リスク大\n- 月次変動激しい（最小774万〜最大1億9,043万）\n\n## 主要取引先・人間関係\n- 的場賢治氏:\
+      \ プロシード所属、キカイラボ顧問、営業面で不可欠\n  → 株式会社ヤマノ（大森機械工業代理店）取締役に就任\n  → これによりプロシードとNASCOの関係が悪化\n\
+      - テラダトレーディング: 直接取引、最大顧客、伊藤ハム米久ケンコー案件多数\n- NASCO: キカイラボとの直接取引を希望（的場氏のヤマノ就任でプロシード経由に摩擦）\n\
+      - 28bring: 取引見直し候補\n- キーエンス: 大越俊介（PLC/CPU）、西久保（カメラ）担当\n\n## 主要案件顧客\n伊藤ハム米久プラント、プリマハム、ヤガイ、中西製作所、東海漬物、美山成田\n\
+      \n## 戦略課題\n1. 大森機械工業との提携検討（4/6訪問予定）\n   - 担当: 佐藤直哉 取締役 上級執行役員 技術生産本部長\n   -\
+      \ 年間5億規模の売上見込みがあるか確認\n   - 実現すればNASCO・テラダ・28bringとの付き合い見直し可能\n2. KamiCheck開発（VS-G搭載、VRAIN\
+      \ Phoenix対抗の噛み込み検査システム）\n   - VRAINとは決別（技術流用・自社装置化を理由）\n   - キーエンスお抱え装置メーカー化が目標\n\
+      3. 売上の安定化（月次変動を減らす）\n4. 営業体制（DJに営業なし、的場氏が実質的な唯一の外部営業）\n\n## Access DB\n見積・受注・顧客データはMLDatabase.accdbに。exec\
+      \ bridge経由でリアルタイム照会可能。\n\n## 相談スコープ\n- 受注判断・見積戦略・価格設定\n- 取引先関係の整理・新規開拓\n- KamiCheck事業化・新規事業\n\
+      - 資金繰り・投資判断\n- 人員・外注体制\n- 大森機械工業などパートナー戦略\n"
+    keywords: []
+    title_template: '{date}_経営相談'
+    url: https://claude.ai/chat/64f306c2-3cf7-4fde-a1f9-a70496998af1
 obsidian_chat_list: ~/Library/Mobile Documents/iCloud~md~obsidian/Documents/MyObsidian/90_System/JARVIS/専門チャット一覧.md
