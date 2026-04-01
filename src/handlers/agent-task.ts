@@ -22,6 +22,7 @@ export async function handleAgentTask(
   taskPrompt: string,
   chatId: number,
   api: Api,
+  maxTurns?: number,
 ): Promise<AgentResult> {
   const preview = taskPrompt.substring(0, 100).replace(/\n/g, " ");
   const statusMsg = await api.sendMessage(chatId, `🤖 Agent Task 実行中...\n${preview}`);
@@ -36,7 +37,7 @@ export async function handleAgentTask(
         cwd: CWD,
         allowedTools: ["Read", "Write", "Edit", "Bash", "Glob", "Grep"],
         permissionMode: "acceptEdits",
-        maxTurns: MAX_TURNS,
+        maxTurns: maxTurns || MAX_TURNS,
         settingSources: ["user", "project"],
       },
     })) {
@@ -44,10 +45,21 @@ export async function handleAgentTask(
     }
 
     const resultMsg = messages.find((m: any) => m.type === "result");
+    // Fallback: extract last assistant text if no result message (maxTurns hit)
+    let resultText = resultMsg?.result || "";
+    if (!resultText) {
+      const assistantMsgs = messages.filter((m: any) => m.type === "assistant");
+      if (assistantMsgs.length > 0) {
+        const last = assistantMsgs[assistantMsgs.length - 1];
+        const textBlocks = (last.message?.content || []).filter((b: any) => b.type === "text");
+        resultText = textBlocks.map((b: any) => b.text).join("\n") || "(no text)";
+      }
+      if (!resultText) resultText = "(no result)";
+    }
     const elapsed = Date.now() - start;
     const result: AgentResult = {
       success: !resultMsg?.is_error,
-      result: resultMsg?.result || "(no result)",
+      result: resultText,
       turns: resultMsg?.num_turns || 0,
       cost: resultMsg?.total_cost_usd || 0,
       durationMs: elapsed,
