@@ -1,13 +1,38 @@
 /**
  * Agent Task Handler - Runs Claude Agent SDK inside Jarvis
- * Triggered by [AGENT] prefix in Telegram messages
- * croppy sends lightweight trigger → Jarvis runs heavy AI work in-process
+ * Two modes:
+ *   "read"    → Read/Glob/Grep only, no file writes or bash. For bootstrap, investigation, summaries.
+ *   "execute" → Full tool access. For implementation, fixes, deployments.
  */
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { Api } from "grammy";
 
-const MAX_TURNS = 15;
+export type AgentMode = "read" | "execute";
+
 const CWD = (process.env.HOME || "/Users/daijiromatsuokam1") + "/claude-telegram-bot";
+
+const MODE_PRESETS: Record<AgentMode, {
+  allowedTools: string[];
+  disallowedTools: string[];
+  systemPrompt: string;
+  maxTurns: number;
+  permissionMode: "acceptEdits" | "default" | "dontAsk";
+}> = {
+  read: {
+    allowedTools: ["Read", "Glob", "Grep"],
+    disallowedTools: ["Write", "Edit", "Bash"],
+    systemPrompt: "You are a read-only assistant. Read the requested files and return a concise summary. Do not attempt to modify anything.",
+    maxTurns: 10,
+    permissionMode: "dontAsk",
+  },
+  execute: {
+    allowedTools: ["Read", "Write", "Edit", "Bash", "Glob", "Grep"],
+    disallowedTools: [],
+    systemPrompt: "",
+    maxTurns: 15,
+    permissionMode: "acceptEdits",
+  },
+};
 
 interface AgentResult {
   success: boolean;
@@ -18,14 +43,64 @@ interface AgentResult {
   sessionId?: string;
 }
 
+/**
+ * Extract result text from SDK messages.
+ * SDKResultMessage has two variants:
+ *   subtype "success"         → result: string
+ *   subtype "error_max_turns" → errors: string[], no result field
+ * Fallback: last assistant message text blocks.
+ */
+function extractResult(messages: any[]): { text: string; success: boolean; turns: number; cost: number; sessionId?: string } {
+  const resultMsg = messages.find((m: any) => m.type === "result");
+
+  let text = "";
+  let success = true;
+
+  if (resultMsg) {
+    if (resultMsg.subtype === "success") {
+      text = resultMsg.result || "";
+    } else {
+      // error_max_turns, error_during_execution, error_max_budget_usd, etc.
+      success = false;
+      text = (resultMsg.errors || []).join("\n");
+    }
+  }
+
+  // Fallback: last assistant text blocks (common when maxTurns hit mid-response)
+  if (!text) {
+    const assistantMsgs = messages.filter((m: any) => m.type === "assistant");
+    for (let i = assistantMsgs.length - 1; i >= 0; i--) {
+      const content = assistantMsgs[i].message?.content || [];
+      const textBlocks = content.filter((b: any) => b.type === "text");
+      const combined = textBlocks.map((b: any) => b.text).join("\n").trim();
+      if (combined) {
+        text = combined;
+        break;
+      }
+    }
+  }
+
+  if (!text) text = "(no result)";
+
+  return {
+    text,
+    success,
+    turns: resultMsg?.num_turns || 0,
+    cost: resultMsg?.total_cost_usd || 0,
+    sessionId: resultMsg?.session_id,
+  };
+}
+
 export async function handleAgentTask(
   taskPrompt: string,
   chatId: number,
   api: Api,
-  maxTurns?: number,
+  mode: AgentMode = "execute",
 ): Promise<AgentResult> {
+  const preset = MODE_PRESETS[mode];
   const preview = taskPrompt.substring(0, 100).replace(/\n/g, " ");
-  const statusMsg = await api.sendMessage(chatId, `🤖 Agent Task 実行中...\n${preview}`);
+  const modeLabel = mode === "read" ? "📖" : "🤖";
+  const statusMsg = await api.sendMessage(chatId, `${modeLabel} Agent Task (${mode})...\n${preview}`);
 
   const start = Date.now();
 
@@ -35,41 +110,33 @@ export async function handleAgentTask(
       prompt: taskPrompt,
       options: {
         cwd: CWD,
-        allowedTools: ["Read", "Write", "Edit", "Bash", "Glob", "Grep"],
-        permissionMode: "acceptEdits",
-        maxTurns: maxTurns || MAX_TURNS,
+        allowedTools: preset.allowedTools,
+        disallowedTools: preset.disallowedTools,
+        ...(preset.systemPrompt ? { systemPrompt: preset.systemPrompt } : {}),
+        permissionMode: preset.permissionMode,
+        maxTurns: preset.maxTurns,
         settingSources: ["user", "project"],
       },
     })) {
       messages.push(msg);
     }
 
-    const resultMsg = messages.find((m: any) => m.type === "result");
-    // Fallback: extract last assistant text if no result message (maxTurns hit)
-    let resultText = resultMsg?.result || "";
-    if (!resultText) {
-      const assistantMsgs = messages.filter((m: any) => m.type === "assistant");
-      if (assistantMsgs.length > 0) {
-        const last = assistantMsgs[assistantMsgs.length - 1];
-        const textBlocks = (last.message?.content || []).filter((b: any) => b.type === "text");
-        resultText = textBlocks.map((b: any) => b.text).join("\n") || "(no text)";
-      }
-      if (!resultText) resultText = "(no result)";
-    }
+    const extracted = extractResult(messages);
     const elapsed = Date.now() - start;
+
     const result: AgentResult = {
-      success: !resultMsg?.is_error,
-      result: resultText,
-      turns: resultMsg?.num_turns || 0,
-      cost: resultMsg?.total_cost_usd || 0,
+      success: extracted.success,
+      result: extracted.text,
+      turns: extracted.turns,
+      cost: extracted.cost,
       durationMs: elapsed,
-      sessionId: resultMsg?.session_id,
+      sessionId: extracted.sessionId,
     };
 
     const status = result.success ? "✅" : "⚠️";
     const summary = result.result.substring(0, 3500);
     const text = [
-      `${status} Agent Task 完了`,
+      `${status} Agent (${mode}) 完了`,
       `Turns: ${result.turns} | Cost: $${result.cost.toFixed(3)} | Time: ${Math.round(elapsed / 1000)}s`,
       ``,
       summary,
@@ -82,7 +149,7 @@ export async function handleAgentTask(
     return result;
   } catch (error: any) {
     const elapsed = Date.now() - start;
-    const errText = `❌ Agent Task 失敗 (${Math.round(elapsed / 1000)}s)\n${error.message || error}`;
+    const errText = `❌ Agent (${mode}) 失敗 (${Math.round(elapsed / 1000)}s)\n${error.message || error}`;
     await api.editMessageText(chatId, statusMsg.message_id, errText).catch(() =>
       api.sendMessage(chatId, errText),
     );

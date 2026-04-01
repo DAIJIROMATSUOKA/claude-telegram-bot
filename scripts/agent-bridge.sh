@@ -1,16 +1,15 @@
 #!/bin/bash
 # Agent Bridge - calls Agent SDK (localhost:3847) via base64-encoded prompt
-# Usage: agent-bridge.sh <base64-encoded-prompt> [maxTurns] [timeout_seconds]
-# Returns: Agent SDK result text
+# Usage: agent-bridge.sh <base64-encoded-prompt> [mode:read|execute] [timeout_seconds]
 
 if [ -z "$1" ]; then
-  echo "ERROR: usage: agent-bridge.sh <base64-prompt> [maxTurns] [timeout]"
+  echo "ERROR: usage: agent-bridge.sh <base64-prompt> [read|execute] [timeout]"
   exit 1
 fi
 
 PROMPT=$(echo "$1" | base64 -d 2>/dev/null)
-MAX_TURNS="${2:-5}"
-TIMEOUT="${3:-120}"
+MODE="${2:-read}"
+TIMEOUT="${3:-180}"
 
 if [ -z "$PROMPT" ]; then
   echo "ERROR: failed to decode base64 prompt"
@@ -20,14 +19,10 @@ fi
 echo "$PROMPT" | python3 -c "
 import json,sys,urllib.request
 prompt=sys.stdin.read().strip()
-max_turns=int(sys.argv[1]) if len(sys.argv)>1 else 5
-timeout=int(sys.argv[2]) if len(sys.argv)>2 else 120
+mode=sys.argv[1] if len(sys.argv)>1 else 'read'
+timeout=int(sys.argv[2]) if len(sys.argv)>2 else 180
 
-# Force read-only guard for low maxTurns
-if max_turns <= 5:
-    prompt = 'IMPORTANT: READ ONLY mode. Do NOT run tests, modify files, build, or execute anything. Only read files and return text.\n\n' + prompt
-
-payload=json.dumps({'prompt':prompt,'maxTurns':max_turns}).encode()
+payload=json.dumps({'prompt':prompt,'mode':mode}).encode()
 req=urllib.request.Request('http://localhost:3847/agent-task',
     data=payload,
     headers={'Content-Type':'application/json'},
@@ -48,4 +43,4 @@ try:
 except Exception as e:
     print('ERROR:',str(e))
     sys.exit(1)
-" "$MAX_TURNS" "$TIMEOUT"
+" "$MODE" "$TIMEOUT"
