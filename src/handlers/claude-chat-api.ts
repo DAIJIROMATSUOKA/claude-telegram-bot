@@ -220,15 +220,20 @@ export async function handleAskUuid(ctx: Context): Promise<void> {
  */
 export async function handleNewDomain(ctx: any): Promise<void> {
   const text = ctx.message?.text || "";
-  const parts = text.replace(/^\/newdomain\s*/, "").trim().split(/\s+/);
+  const raw = text.replace(/^\/newdomain\s*/, "").trim();
+  // Support: /newdomain m1322 desc  OR  /newdomain M1322_desc_here
+  let domain = "";
+  let desc = "";
+  const m = raw.match(/^(m\d+)[_\s]+(.+)/i);
+  if (m) { domain = m[1].toLowerCase(); desc = m[2].replace(/_/g, " "); }
   
-  if (parts.length < 2) {
+  if (!domain || !desc) {
     await ctx.reply("Usage: /newdomain m1322 " + String.fromCharCode(37117,27231,24037));
     return;
   }
   
-  const domain = parts[0].toLowerCase();
-  const desc = parts.slice(1).join(" ");
+  // domain already set above
+  // desc already set above
   const statusMsg = await ctx.reply("Creating domain chat: " + domain + " (" + desc + ")...");
   
   try {
