@@ -131,16 +131,26 @@ if [ "$MODE" = "activate" ]; then
 
   # Step 1: Agent SDK generates summary from chatlog
   log "Generating summary via Agent SDK..."
-  CHATLOG_DIR="$HOME/Library/Mobile Documents/iCloud~md~obsidian/Documents/MyObsidian/90_System/ChatLogs"
   CHATLOG_FILE=""
   if [ -n "$OLD_CHAT_ID" ]; then
-    CHATLOG_FILE=$(find "$CHATLOG_DIR" -name "*${OLD_CHAT_ID}*" -type f 2>/dev/null | head -1)
+    CHATLOG_FILE=$(python3 -c "
+import json, os
+state = json.load(open(os.path.expanduser('~/.claude-chatlog-state.json')))
+entry = state.get('$OLD_CHAT_ID')
+if entry and os.path.exists(entry['filepath']):
+    print(entry['filepath'])
+" 2>/dev/null)
   fi
 
   SUMMARY=""
   SKIP_SUMMARY=0
   if [ -n "$CHATLOG_FILE" ]; then
-    SUMMARY_PROMPT="Read this chatlog file and create a session handoff summary. Format:
+    # Truncate chatlog to last 200 lines to fit Agent SDK timeout
+    CHATLOG_TAIL="/tmp/chatlog-tail-$$.md"
+    tail -200 "$CHATLOG_FILE" > "$CHATLOG_TAIL"
+    CHATLOG_FILE="$CHATLOG_TAIL"
+
+    SUMMARY_PROMPT="Read this chatlog file (last 200 lines of conversation) and create a session handoff summary. Format:
 ## SESSION SUMMARY
 **Done:** (bullet list with specific commits/changes)
 **Decisions:** (with【決定】marks)
@@ -156,11 +166,14 @@ File: $CHATLOG_FILE"
     if echo "$RESULT" | head -1 | grep -q "\[OK\]"; then
       SUMMARY=$(echo "$RESULT" | tail -n +2)
       log "Summary generated: ${#SUMMARY} chars"
+      rm -f "/tmp/chatlog-tail-$$.md"
     else
+      rm -f "/tmp/chatlog-tail-$$.md"
       log "Agent SDK summary failed: $(echo "$RESULT" | head -1)"
       SUMMARY="(Agent SDK要約取得失敗。conversation_searchで補完してください)"
     fi
   else
+    rm -f "/tmp/chatlog-tail-$$.md"
     log "No chatlog found for $OLD_CHAT_ID"
     SUMMARY="(ChatLog未検出。conversation_searchで補完してください)"
   fi
