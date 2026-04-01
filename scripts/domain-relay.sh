@@ -165,6 +165,7 @@ log "Injected (${#MESSAGE} chars)"
 # --- 6. Wait response ---
 sleep 5
 SAW_BUSY=0
+READY_STABLE=0
 ELAPSED=0
 while [ "$ELAPSED" -lt "$RESPONSE_TIMEOUT" ]; do
   STATUS=$(bash "$TAB_MANAGER" check-status "$WT" 2>/dev/null)
@@ -172,17 +173,24 @@ while [ "$ELAPSED" -lt "$RESPONSE_TIMEOUT" ]; do
     log "TOOL_LIMIT detected, auto-clicking Continue..."
     bash "$TAB_MANAGER" auto-continue "$WT" 2>/dev/null || true
     SAW_BUSY=1
-    sleep 3
-    ELAPSED=$((ELAPSED + 3))
+    READY_STABLE=0
+    sleep 5
+    ELAPSED=$((ELAPSED + 5))
     continue
   elif [ "$STATUS" = "BUSY" ]; then
     SAW_BUSY=1
+    READY_STABLE=0
   elif [ "$STATUS" = "READY" ] && [ "$SAW_BUSY" -eq 1 ]; then
-    sleep 2
-    STATUS2=$(bash "$TAB_MANAGER" check-status "$WT" 2>/dev/null)
-    [ "$STATUS2" = "READY" ] && break
+    # Require 3 consecutive READY checks (6s gap) to confirm tool execution finished
+    READY_STABLE=$((READY_STABLE + 1))
+    if [ "$READY_STABLE" -ge 3 ]; then
+      log "READY stable x3, reading response"
+      break
+    fi
   elif [ "$STATUS" = "READY" ] && [ "$ELAPSED" -gt 90 ]; then
     break
+  else
+    READY_STABLE=0
   fi
   sleep 3
   ELAPSED=$((ELAPSED + 3))
