@@ -42,6 +42,13 @@ ANTHROPIC_API_KEY / OPENAI_API_KEY / GEMINI_API_KEY を直接使わない。全A
 - 安易な結論を出さない — 前提を疑い、反論も含めて段階的に深く考える
 - 冪等性チェック必須 — パッチ・スクリプトは2回実行で壊れないように
 
+
+### プリフライトチェック（2026-04-01 DECIDED）
+- 新しいツール・API・SDKを使う実装の前に、必ず公式ドキュメントをWebで読め
+- 「たぶんこう動く」で書いたコードは100%手戻りになる。推測実装は絶対禁止
+- 手順: ①公式ドキュメント検索 → ②型定義・パラメータ・返り値を確認 → ③実装
+- 違反例: permissionMode推測→ハング、SDKResultMessage構造推測→空結果、disallowedTools未調査→プロンプトハック
+
 ### 実装方式（Croppy-Driven Architecture）
 - **🦞が設計+コード → DJコピペ → Jarvisはテスト/git/再起動のみ**
 - Jarvis単独実装は禁止（ハングループする）
