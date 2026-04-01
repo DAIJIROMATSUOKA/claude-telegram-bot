@@ -49,6 +49,15 @@ import { routeToProjectNotes } from "../services/obsidian-writer";
 import { getChromeOrchestrator } from "./orchestrator-chrome";
 import { handleDomainRelay } from "./domain-router";
 
+/** Quote DJ's original message at the top of a relay response (max 60 chars) */
+function djQuote(msg: string): string {
+  const clean = msg.replace(/\n/g, " ").trim();
+  const truncated = clean.length > 60 ? clean.substring(0, 60) + "…" : clean;
+  return `💬 ${truncated}\n`;
+}
+
+
+
 /**
  * Handle incoming text messages.
  */
@@ -192,7 +201,7 @@ export async function handleText(ctx: Context): Promise<void> {
                 await ctx.api.editMessageText(ctx.chat!.id, statusMsg.message_id, `📌 ${domainLower} ${label}（バッファ ${count}/${MAX_BUFFER}）`);
               } else if (response) {
                 // Split long responses to avoid Telegram 4096 char limit
-                const fullDirect = `📌 ${domainLower}\n\n${response}`;
+                const fullDirect = `${djQuote(domainMsg)}📌 ${domainLower}\n\n${response}`;
                 if (fullDirect.length <= 4000) {
                   await ctx.api.editMessageText(ctx.chat!.id, statusMsg.message_id, fullDirect);
                 } else {
@@ -265,10 +274,10 @@ export async function handleText(ctx: Context): Promise<void> {
                       await ctx.api.editMessageText(ctx.chat!.id, statusMsg.message_id, `📥 → ${routeTag} 応答中...`);
                     });
                     if (fwdResponse) {
-                      await ctx.api.editMessageText(ctx.chat!.id, statusMsg.message_id, `📌 ${routeTag}\n\n${fwdResponse}`);
+                      await ctx.api.editMessageText(ctx.chat!.id, statusMsg.message_id, `${djQuote(message)}📌 ${routeTag}\n\n${fwdResponse}`);
                       console.log(`[Text] ${routeTag} replied ${fwdResponse.length} chars`);
                     } else {
-                      await ctx.api.editMessageText(ctx.chat!.id, statusMsg.message_id, `📌 ${routeTag}\n\n${cleanResponse}`);
+                      await ctx.api.editMessageText(ctx.chat!.id, statusMsg.message_id, `${djQuote(message)}📌 ${routeTag}\n\n${cleanResponse}`);
                       console.log(`[Text] ${routeTag} no response, showing INBOX answer`);
                     }
                   } catch (fwdErr: any) {

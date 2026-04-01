@@ -10,6 +10,14 @@ import { exec } from "child_process";
 import { promisify } from "util";
 import type { Context } from "grammy";
 
+function djQuote(msg: string): string {
+  const clean = msg.replace(/\n/g, " ").trim();
+  const truncated = clean.length > 60 ? clean.substring(0, 60) + "…" : clean;
+  return `💬 ${truncated}\n`;
+}
+
+
+
 const execAsync = promisify(exec);
 
 const HOME = process.env.HOME || "/Users/daijiromatsuokam1";
@@ -102,7 +110,7 @@ export async function handleDomainRelay(
     // Send response (split if too long)
     const MAX_TG = 4000;
     if (response.length <= MAX_TG) {
-      await ctx.reply(`📋 [${route.domain}]\n${response}`, {
+      await ctx.reply(`${djQuote(message)}📋 [${route.domain}]\n${response}`, {
         reply_to_message_id: ctx.message?.message_id,
       });
     } else {
@@ -112,7 +120,7 @@ export async function handleDomainRelay(
         chunks.push(response.substring(i, i + MAX_TG));
       }
       for (let i = 0; i < chunks.length; i++) {
-        const prefix = i === 0 ? `📋 [${route.domain}] (${i + 1}/${chunks.length})\n` : "";
+        const prefix = i === 0 ? `${djQuote(message)}📋 [${route.domain}] (${i + 1}/${chunks.length})\n` : "";
         await ctx.reply(`${prefix}${chunks[i]}`, {
           reply_to_message_id: i === 0 ? ctx.message?.message_id : undefined,
         });
