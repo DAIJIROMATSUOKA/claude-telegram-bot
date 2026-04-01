@@ -162,42 +162,60 @@ if ! echo "$INJECT_OUT" | grep -q "INSERTED"; then
 fi
 log "Injected (${#MESSAGE} chars)"
 
-# --- 6. Wait response ---
+# --- 6. Wait response (response-length stability method) ---
+# Strategy: read response, wait 8s, read again. If same length -> streaming done.
+# This is the only truly reliable method - READY/BUSY state alone is insufficient
+# for multi-tool responses where BUSY->READY->BUSY cycles occur between tool calls.
 sleep 5
 SAW_BUSY=0
-READY_STABLE=0
 ELAPSED=0
+PREV_LEN=-1
+STABLE_COUNT=0
 while [ "$ELAPSED" -lt "$RESPONSE_TIMEOUT" ]; do
   STATUS=$(bash "$TAB_MANAGER" check-status "$WT" 2>/dev/null)
   if [ "$STATUS" = "TOOL_LIMIT" ]; then
     log "TOOL_LIMIT detected, auto-clicking Continue..."
     bash "$TAB_MANAGER" auto-continue "$WT" 2>/dev/null || true
     SAW_BUSY=1
-    READY_STABLE=0
+    PREV_LEN=-1
+    STABLE_COUNT=0
     sleep 5
     ELAPSED=$((ELAPSED + 5))
     continue
   elif [ "$STATUS" = "BUSY" ]; then
     SAW_BUSY=1
-    READY_STABLE=0
-  elif [ "$STATUS" = "READY" ] && [ "$SAW_BUSY" -eq 1 ]; then
-    # Require 3 consecutive READY checks (6s gap) to confirm tool execution finished
-    READY_STABLE=$((READY_STABLE + 1))
-    if [ "$READY_STABLE" -ge 3 ]; then
-      log "READY stable x3, reading response"
-      break
-    fi
-  elif [ "$STATUS" = "READY" ] && [ "$ELAPSED" -gt 90 ]; then
-    break
-  else
-    READY_STABLE=0
+    PREV_LEN=-1
+    STABLE_COUNT=0
+    sleep 5
+    ELAPSED=$((ELAPSED + 5))
+    continue
   fi
-  sleep 3
-  ELAPSED=$((ELAPSED + 3))
+  # STATUS = READY: check response length stability
+  if [ "$SAW_BUSY" -eq 1 ] || [ "$ELAPSED" -gt 15 ]; then
+    CURR_RESP=$(bash "$TAB_MANAGER" read-response "$WT" 2>/dev/null)
+    CURR_LEN=${#CURR_RESP}
+    if [ "$CURR_LEN" -gt 10 ] && [ "$CURR_LEN" -eq "$PREV_LEN" ]; then
+      STABLE_COUNT=$((STABLE_COUNT + 1))
+      if [ "$STABLE_COUNT" -ge 2 ]; then
+        log "Response stable: ${CURR_LEN} chars x${STABLE_COUNT}, done"
+        break
+      fi
+    else
+      STABLE_COUNT=0
+    fi
+    PREV_LEN=$CURR_LEN
+  fi
+  sleep 8
+  ELAPSED=$((ELAPSED + 8))
 done
 
-# --- 7. Read response ---
-RESPONSE=$(bash "$TAB_MANAGER" read-response "$WT" 2>/dev/null)
+# --- 7. Read response (reuse CURR_RESP from stability loop if available) ---
+if [ -n "$CURR_RESP" ] && [ "${#CURR_RESP}" -gt 10 ]; then
+  RESPONSE="$CURR_RESP"
+  log "Reusing stable response from loop (${#RESPONSE} chars)"
+else
+  RESPONSE=$(bash "$TAB_MANAGER" read-response "$WT" 2>/dev/null)
+fi
 
 if [ -z "$RESPONSE" ] || [ "$RESPONSE" = "NO_RESPONSE" ]; then
   log "No response"
