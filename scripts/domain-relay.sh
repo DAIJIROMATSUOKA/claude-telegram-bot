@@ -203,7 +203,7 @@ if [ "$DOMAIN" != "inbox" ] && [ "$DOMAIN" != "direct" ]; then
     log "Token warning: ${TOKEN_PCT}% -> triggering handoff for $DOMAIN"
     echo "TOKEN_WARNING: ${TOKEN_PCT}%"
     # Fire-and-forget handoff (don't block relay response)
-    nohup bash "$SCRIPTS_DIR/domain-handoff.sh" "$DOMAIN" > /tmp/domain-handoff-$DOMAIN.log 2>&1 &
+    nohup bash "$SCRIPTS_DIR/domain-handoff.sh" --activate "$DOMAIN" > /tmp/domain-handoff-$DOMAIN.log 2>&1 &
   fi
 fi
 
