@@ -119,7 +119,12 @@ echo "WT: $WT"
 READY_COUNT=0
 for i in $(seq 1 30); do
   STATUS=$(bash "$TAB_MANAGER" check-status "$WT" 2>/dev/null)
-  if [ "$STATUS" = "READY" ]; then
+  if [ "$STATUS" = "TOOL_LIMIT" ]; then
+    log "TOOL_LIMIT before inject, auto-clicking Continue..."
+    bash "$TAB_MANAGER" auto-continue "$WT" 2>/dev/null || true
+    READY_COUNT=0
+    sleep 5
+  elif [ "$STATUS" = "READY" ]; then
     READY_COUNT=$((READY_COUNT + 1))
     [ "$READY_COUNT" -ge 2 ] && break
   else
