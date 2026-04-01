@@ -213,3 +213,41 @@ export async function handleAskUuid(ctx: Context): Promise<void> {
     ).catch(() => {});
   }
 }
+
+/**
+ * /newdomain <m_number> <description>
+ * Create a new domain chat with Dropbox project folder injection
+ */
+export async function handleNewDomain(ctx: any): Promise<void> {
+  const text = ctx.message?.text || "";
+  const parts = text.replace(/^\/newdomain\s*/, "").trim().split(/\s+/);
+  
+  if (parts.length < 2) {
+    await ctx.reply("Usage: /newdomain m1322 " + String.fromCharCode(37117,27231,24037));
+    return;
+  }
+  
+  const domain = parts[0].toLowerCase();
+  const desc = parts.slice(1).join(" ");
+  const statusMsg = await ctx.reply("Creating domain chat: " + domain + " (" + desc + ")...");
+  
+  try {
+    const SCRIPTS = process.env.HOME + "/claude-telegram-bot/scripts";
+    const { stdout, stderr } = await execAsync(
+      "python3 " + SCRIPTS + "/chat-bulk-create.py --new " + domain + " " + JSON.stringify(desc),
+      { timeout: 30000, shell: "/bin/zsh", env: { ...process.env, PATH: "/opt/homebrew/bin:/usr/local/bin:" + process.env.PATH } }
+    );
+    const output = (stdout || "") + (stderr || "");
+    const urlMatch = output.match(/https:\/\/claude\.ai\/chat\/[a-f0-9-]+/);
+    if (urlMatch) {
+      await ctx.api.editMessageText(ctx.chat!.id, statusMsg.message_id,
+        domain + " created\n" + urlMatch[0]);
+    } else {
+      await ctx.api.editMessageText(ctx.chat!.id, statusMsg.message_id,
+        output.substring(0, 500));
+    }
+  } catch (e: any) {
+    await ctx.api.editMessageText(ctx.chat!.id, statusMsg.message_id,
+      "ERROR: " + (e.message || String(e)).substring(0, 300)).catch(() => {});
+  }
+}

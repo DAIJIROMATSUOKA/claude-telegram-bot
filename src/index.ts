@@ -51,7 +51,7 @@ import {
 import { handleAISession } from "./handlers/ai-session";
 import { handleBridgeCommand } from "./handlers/croppy-bridge";
 import { handleChatCommand, handlePostCommand, handleChatsCommand } from "./handlers/claude-chat";
-import { handleAsk, handleFindChat, handleAskUuid } from "./handlers/claude-chat-api";
+import { handleAsk, handleFindChat, handleAskUuid, handleNewDomain } from "./handlers/claude-chat-api";
 import { handleAsk as handleAskChrome } from "./handlers/ask-command";
 import { handleAudit } from "./handlers/audit-command";
 import { handleSpec, handleDecide, handleDecisions } from "./handlers/dj-spec-command";
@@ -310,6 +310,7 @@ bot.command("decisions", handleDecisions);
 bot.command("refresh", handleRefresh);
 bot.command("findchat", handleFindChat);
 bot.command("askuuid", handleAskUuid);
+bot.command("newdomain", handleNewDomain);
 bot.command("manual", handleManual);
 bot.command("search", handleSearch);
 bot.command("help", handleCroppyDispatch);
