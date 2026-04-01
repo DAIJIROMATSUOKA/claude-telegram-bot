@@ -43,10 +43,11 @@ def sync_obsidian_chat_list(cfg):
     """Auto-regenerate Obsidian link list from chat-routing.yaml"""
     try:
         groups = [
-            ("## 案件", ["m1317", "m1319", "m1311", "m1300"]),
+            ("## 案件", ["m1300", "m1311", "m1314", "m1317", "m1319", "m1322"]),
             ("## 技術", ["fa", "icad", "vision", "access"]),
-            ("## 環境", ["pc"]),
+            ("## 環境", ["pc", "notion"]),
             ("## Forge", ["forge-code", "forge-plc", "forge-vision", "forge-research"]),
+            ("## 経営", ["keiei", "secretary", "research"]),
             ("## その他", ["inbox", "debate"]),
         ]
         domains = cfg.get("domains", {})
