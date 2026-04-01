@@ -91,7 +91,9 @@ fi
 if [ "$MODE" = "stateless" ]; then
   PROJ_UUID=$($CHAT_ROUTER get-field "$DOMAIN" project_url 2>/dev/null | grep -oE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
   if [ -z "$PROJ_UUID" ]; then
-    PROJ_UUID="019c15f4-3d2d-7263-a308-e7f6ccd6b3f8"
+    PROJ_UUID=
+  if [ -z "" ]; then PROJ_UUID=
+  if [ -z "" ]; then PROJ_UUID="019c15f4-3d2d-7263-a308-e7f6ccd6b3f8"; fi; fi
   fi
   log "Creating new chat via API (project=$PROJ_UUID)"
   NEW_UUID=$(python3 "$SCRIPTS_DIR/stateless-handoff.py" "$PROJ_UUID" 2>/dev/null)
@@ -115,7 +117,8 @@ if [ "$MODE" = "activate" ]; then
   HISTORY_FILE="$HOME/machinelab-knowledge/${DOMAIN}/history.compressed.md"
   HISTORY=""
   if [ -f "$HISTORY_FILE" ]; then HISTORY=$(cat "$HISTORY_FILE"); fi
-  PROJ_UUID=$($CHAT_ROUTER get-field "$DOMAIN" project_uuid 2>/dev/null || echo "019c15f4-3d2d-7263-a308-e7f6ccd6b3f8")
+  PROJ_UUID=$($CHAT_ROUTER get-field "$DOMAIN" project_uuid 2>/dev/null)
+  if [ -z "$PROJ_UUID" ]; then PROJ_UUID="019c15f4-3d2d-7263-a308-e7f6ccd6b3f8"; fi
   OLD_CHAT_ID=$(echo "$CURRENT_URL" | grep -o '[0-9a-f-]\{36\}$')
   TODAY=$(date '+%Y-%m-%d')
 
