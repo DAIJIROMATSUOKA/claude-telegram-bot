@@ -96,11 +96,18 @@ export async function handleAgentTask(
   chatId: number,
   api: Api,
   mode: AgentMode = "execute",
+  silent = false,
 ): Promise<AgentResult> {
   const preset = MODE_PRESETS[mode];
-  const preview = taskPrompt.substring(0, 100).replace(/\n/g, " ");
   const modeLabel = mode === "read" ? "📖" : "🤖";
-  const statusMsg = await api.sendMessage(chatId, `${modeLabel} Agent Task (${mode})...\n${preview}`);
+
+  // silent=true: no Telegram notifications (used by HTTP endpoint / exec bridge)
+  let statusMsgId: number | null = null;
+  if (!silent) {
+    const preview = taskPrompt.substring(0, 100).replace(/\n/g, " ");
+    const statusMsg = await api.sendMessage(chatId, `${modeLabel} Agent Task (${mode})...\n${preview}`);
+    statusMsgId = statusMsg.message_id;
+  }
 
   const start = Date.now();
 
@@ -133,26 +140,29 @@ export async function handleAgentTask(
       sessionId: extracted.sessionId,
     };
 
-    const status = result.success ? "✅" : "⚠️";
-    const summary = result.result.substring(0, 3500);
-    const text = [
-      `${status} Agent (${mode}) 完了`,
-      `Turns: ${result.turns} | Cost: $${result.cost.toFixed(3)} | Time: ${Math.round(elapsed / 1000)}s`,
-      ``,
-      summary,
-    ].join("\n");
-
-    await api.editMessageText(chatId, statusMsg.message_id, text).catch(() =>
-      api.sendMessage(chatId, text),
-    );
+    if (!silent && statusMsgId !== null) {
+      const status = result.success ? "✅" : "⚠️";
+      const summary = result.result.substring(0, 3500);
+      const text = [
+        `${status} Agent (${mode}) 完了`,
+        `Turns: ${result.turns} | Cost: $${result.cost.toFixed(3)} | Time: ${Math.round(elapsed / 1000)}s`,
+        ``,
+        summary,
+      ].join("\n");
+      await api.editMessageText(chatId, statusMsgId, text).catch(() =>
+        api.sendMessage(chatId, text),
+      );
+    }
 
     return result;
   } catch (error: any) {
     const elapsed = Date.now() - start;
-    const errText = `❌ Agent (${mode}) 失敗 (${Math.round(elapsed / 1000)}s)\n${error.message || error}`;
-    await api.editMessageText(chatId, statusMsg.message_id, errText).catch(() =>
-      api.sendMessage(chatId, errText),
-    );
+    if (!silent && statusMsgId !== null) {
+      const errText = `❌ Agent (${mode}) 失敗 (${Math.round(elapsed / 1000)}s)\n${error.message || error}`;
+      await api.editMessageText(chatId, statusMsgId, errText).catch(() =>
+        api.sendMessage(chatId, errText),
+      );
+    }
     return { success: false, result: error.message, turns: 0, cost: 0, durationMs: elapsed };
   }
 }

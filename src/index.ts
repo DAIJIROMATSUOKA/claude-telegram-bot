@@ -430,7 +430,7 @@ Bun.serve({
       try {
         const body = await req.json() as { prompt: string; mode?: "read" | "execute" };
         if (!body.prompt) return Response.json({ ok: false, error: 'missing prompt' }, { status: 400 });
-        const result = await handleAgentTask(body.prompt, AGENT_CHAT_ID, bot.api, body.mode);
+        const result = await handleAgentTask(body.prompt, AGENT_CHAT_ID, bot.api, body.mode, true);
         return Response.json({ ok: true, ...result });
       } catch (e: any) {
         return Response.json({ ok: false, error: e.message }, { status: 500 });
