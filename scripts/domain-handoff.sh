@@ -7,6 +7,7 @@
 #   ./domain-handoff.sh --lock <domain>    # create handoff lock only
 #   ./domain-handoff.sh --unlock <domain>  # remove lock + flush buffer
 #   ./domain-handoff.sh --activate <domain> # activate warm standby (summary + switch)
+#   ./domain-handoff.sh --stateless <domain> # API-only: create chat + switch URL (no Chrome/summary/sleep)
 
 # set -e removed: use explicit error checks
 SCRIPTS_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -87,25 +88,31 @@ print(f'📨 バッファ済みメッセージ ({len(entries)}件):\n' + '\n'.jo
   exit 0
 fi
 
-# --- Stateless handoff (API only, no Chrome) ---
+# --- Stateless handoff (API only, no Chrome/summary/sleep) ---
 if [ "$MODE" = "stateless" ]; then
-  PROJ_UUID=$($CHAT_ROUTER get-field "$DOMAIN" project_url 2>/dev/null | grep -oE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
+  # Step 1: Get project UUID from chat-router.py
+  PROJ_URL=$($CHAT_ROUTER get-field "$DOMAIN" project_url 2>/dev/null || echo "")
+  PROJ_UUID=$(echo "$PROJ_URL" | grep -oE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' | head -1)
   if [ -z "$PROJ_UUID" ]; then
-    PROJ_UUID=
-  if [ -z "" ]; then PROJ_UUID=
-  if [ -z "" ]; then PROJ_UUID="019c15f4-3d2d-7263-a308-e7f6ccd6b3f8"; fi; fi
+    PROJ_UUID="019c15f4-3d2d-7263-a308-e7f6ccd6b3f8"  # fallback
   fi
   log "Creating new chat via API (project=$PROJ_UUID)"
+
+  # Step 2: Create new chat via stateless-handoff.py (calls claude.ai internal API)
   NEW_UUID=$(python3 "$SCRIPTS_DIR/stateless-handoff.py" "$PROJ_UUID" 2>/dev/null)
   if [ -z "$NEW_UUID" ]; then
     log "ERROR: failed to create chat"
-    bash "$NOTIFY" "stateless handoff fail: $DOMAIN"
+    bash "$NOTIFY" "❌ $DOMAIN stateless handoff fail"
     exit 1
   fi
   NEW_URL="https://claude.ai/chat/$NEW_UUID"
+
+  # Step 3: Update chat-router.py with new URL
   $CHAT_ROUTER set-url "$DOMAIN" "$NEW_URL"
   log "URL switched: $NEW_URL"
-  bash "$NOTIFY" "$DOMAIN stateless handoff OK"
+
+  # Step 4: Notify DJ
+  bash "$NOTIFY" "✅ $DOMAIN stateless handoff OK → $NEW_UUID"
   exit 0
 fi
 
@@ -259,6 +266,15 @@ print(f'\n---\n📨 HANDOFF中にDJから届いたメッセージ ({len(entries)
     python3 "$SCRIPTS_DIR/rename-conversation.py" "$OLD_CHAT_ID" "$OLD_TITLE" 2>/dev/null || true
     log "Old chat renamed: $OLD_TITLE"
   fi
+
+  # Save to handoffs dir for session-start auto-pickup
+  HANDOFF_DIR="$SCRIPTS_DIR/../autonomous/state/handoffs"
+  mkdir -p "$HANDOFF_DIR"
+  HANDOFF_TS=$(date "+%Y-%m-%d_%H%M")
+  HANDOFF_FILE="$HANDOFF_DIR/croppy-${HANDOFF_TS}.md"
+  cp "$SUMMARY_OUT" "$HANDOFF_FILE"
+  ln -sf "$(basename "$HANDOFF_FILE")" "$HANDOFF_DIR/croppy-latest.md"
+  log "Handoff saved: $HANDOFF_FILE"
 
   # Cleanup
   rm -f "$LOCK_FILE"
