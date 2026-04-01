@@ -35,7 +35,11 @@ domains:
     - 設計議論
     - 設計判断
     title_template: '{date}_Debate'
-    url: https://claude.ai/chat/82c0754f-c0f0-45b3-8b98-1e9da775ec81
+    url: https://claude.ai/chat/efb9b172-e856-4a1f-ae72-9f319e8610e7
+    chat_history:
+    - id: 82c0754f-c0f0-45b3-8b98-1e9da775ec81
+      created: '2026-04-01'
+      title: 2026-04-01_2059_Debate
   fa:
     bootstrap: 'あなたはFA（ファクトリーオートメーション）制御設計の専門チャットです。
 
@@ -104,7 +108,11 @@ domains:
     - X取得
     - Web検索
     title_template: '{date}_Forge_Research'
-    url: https://claude.ai/chat/48b0af77-6b78-4882-8535-573c40016a22
+    url: https://claude.ai/chat/090d5f4b-35e6-4a7a-bfa0-7897d74cbde3
+    chat_history:
+    - id: 48b0af77-6b78-4882-8535-573c40016a22
+      created: '2026-04-01'
+      title: 2026-04-01_2157_Forge_Research
   forge-vision:
     bootstrap: 'あなたはNightly Forge Visionスキル学習ワーカーです。
 
@@ -157,7 +165,7 @@ domains:
       \n【重要】[TRIAGE]メッセージへの応答はJSON1行のみ。説明文・判断理由の追記は禁止。"
     keywords: []
     title_template: '{date}_INBOX'
-    url: https://claude.ai/chat/d65e77b8-f399-4e86-8d4c-8d31a1f4bad9
+    url: https://claude.ai/chat/ab82777d-3709-43dd-889f-29206b981a82
   m1300:
     bootstrap: 'あなたはM1300案件（伊藤ハム米久 ケンコー工場 ロースライン出口コンベヤ等1号）の専門チャットです。
 
@@ -264,13 +272,16 @@ domains:
     - created: '2026-03-22'
       id: 4e386341-d47a-409f-b78f-bf76b2f009cc
       title: 2026-03-22_0306_Research_ニュース
+    - id: d6aa1571-1211-4dba-852a-58a4fdaf19e8
+      created: '2026-04-01'
+      title: 2026-04-01_2106_Research_ニュース
     keywords:
     - ニュース
     - トレンド
     - リサーチ
     - Tech News
     title_template: '{date}_Research_ニュース'
-    url: https://claude.ai/chat/d6aa1571-1211-4dba-852a-58a4fdaf19e8
+    url: https://claude.ai/chat/14be8c85-05f9-4717-b741-846c723a3d3e
   secretary:
     bootstrap: 'あなたはDJ（松岡大次郎）の秘書AIです。スケジュール管理のプロフェッショナルとして行動してください。
 
