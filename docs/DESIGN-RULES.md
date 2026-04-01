@@ -329,3 +329,10 @@ IDLE → RUNNING → DONE/FAILED/WAITING
 ### Forge配給制
 - Forge起動時に各チャットの残り寿命(ChatLogサイズ)を確認
 - 残量に応じてタスク数を配分（残25%→1タスクのみ等）
+
+### Agent SDK (2026-04-01)
+- `permissionMode: "default"` は非対話環境でハング（ツール許可プロンプト待ち）→ `"dontAsk"` を使う
+- 読み取り専用は `disallowedTools: ["Write","Edit","Bash"]` が正解。プロンプトに「READ ONLY」と書くのはハック
+- SDKResultMessage は subtype で分岐: `"success"` → `result: string`、`"error_max_turns"` → `errors: string[]`
+- `systemPrompt` でモード別の指示を与える（SDK公式機能）
+- 根本解決: SDK公式ドキュメントを読んでから実装。場当たり的パッチ禁止
