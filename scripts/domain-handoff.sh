@@ -131,7 +131,7 @@ if [ "$MODE" = "activate" ]; then
 
   # Step 1: Agent SDK generates summary from chatlog
   log "Generating summary via Agent SDK..."
-  CHATLOG_DIR="$HOME/Library/Mobile Documents/iCloud~md~obsidian/Documents/MyObsidian/80_ChatLog"
+  CHATLOG_DIR="$HOME/Library/Mobile Documents/iCloud~md~obsidian/Documents/MyObsidian/90_System/ChatLogs"
   CHATLOG_FILE=""
   if [ -n "$OLD_CHAT_ID" ]; then
     CHATLOG_FILE=$(find "$CHATLOG_DIR" -name "*${OLD_CHAT_ID}*" -type f 2>/dev/null | head -1)
