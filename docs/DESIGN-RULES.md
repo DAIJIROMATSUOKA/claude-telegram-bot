@@ -222,6 +222,8 @@ Stop: Deliverablesが揃ったら終了
 - 最後の `.font-claude-response` がUI要素（短いテキスト）の場合がある → 逆順スキャンで実質的な応答を探す
 - inject直後のcheck-status BUSY判定は信頼できない（Claude処理開始まで3-5秒ラグ）→ 5秒固定待ち+waitAndRelayResponseのダブルREADY確認で代替
 
+### Telegram UX (2026-04-01)
+- Telegramのボタン付き通知を新規作成する際は必ず3秒デバウンスバッチキューを適用すること。inbox.tsのqueueBatchActionパターンを参照。適用漏れで毎回壊れる。
 
 ---
 
