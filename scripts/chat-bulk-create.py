@@ -21,6 +21,24 @@ SCRIPTS_DIR = os.path.expanduser("~/claude-telegram-bot/scripts")
 PROJECT_BASE = os.path.expanduser("~/Machinelab Dropbox/machinelab/プロジェクト")
 OBSIDIAN_LIST = None  # read from yaml
 
+
+def add_new_domain(domain_name, description):
+    cfg = load_yaml()
+    domains = cfg.get("domains", {})
+    if domain_name in domains and domains[domain_name].get("url", ""):
+        print("Domain already exists with URL. Use --recreate.")
+        return False
+    m = domain_name.upper()
+    bs = chr(12354)+chr(12394)+chr(12383)+chr(12399) + m + chr(26696)+chr(20214)+chr(65288) + description + chr(65289)+chr(12398)+chr(23554)+chr(38272)+chr(12481)+chr(12515)+chr(12483)+chr(12488)+chr(12391)+chr(12377)+chr(12290)+chr(10)
+    bs += "Dropbox: ~/Machinelab Dropbox/machinelab/" + chr(12503)+chr(12525)+chr(12472)+chr(12455)+chr(12463)+chr(12488) + "/ " + chr(20197)+chr(19979)+chr(12395) + m + chr(12501)+chr(12457)+chr(12523)+chr(12480)+chr(12290)+chr(10)
+    bs += chr(36942)+chr(21435)+chr(12398)+chr(35696)+chr(35542)+chr(12420)+chr(35373)+chr(35336)+chr(27770)+chr(23450)+chr(12434)+chr(36367)+chr(12414)+chr(12360)+chr(12390)+chr(22238)+chr(31572)+chr(12375)+chr(12390)+chr(12367)+chr(12384)+chr(12373)+chr(12356)+chr(12290)+chr(10)
+    tt = "{date}_" + m + "_" + description
+    domains[domain_name] = {"bootstrap": bs, "keywords": [], "title_template": tt, "url": ""}
+    cfg["domains"] = domains
+    save_yaml(cfg)
+    print("Added domain " + domain_name)
+    return True
+
 def load_yaml():
     with open(YAML_PATH) as f:
         return yaml.safe_load(f)
@@ -89,7 +107,15 @@ def create_chat(project_uuid, title):
 def main():
     dry_run = "--dry-run" in sys.argv
     recreate = "--recreate" in sys.argv
+    new_mode = "--new" in sys.argv
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
+
+    if new_mode and len(args) >= 2:
+        dn = args[0].lower()
+        desc = " ".join(args[1:])
+        if not add_new_domain(dn, desc):
+            return
+        args = [dn]
 
     cfg = load_yaml()
     project_uuid = cfg.get("default_project", "019c15f4-3d2d-7263-a308-e7f6ccd6b3f8")
