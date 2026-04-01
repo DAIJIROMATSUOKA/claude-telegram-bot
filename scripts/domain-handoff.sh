@@ -109,182 +109,147 @@ fi
 
 # --- Activate warm standby ---
 if [ "$MODE" = "activate" ]; then
-  if [ ! -f "$STANDBY_FILE" ]; then
-    log "ERROR: no warm standby for $DOMAIN"
-    exit 1
-  fi
-  STANDBY_URL=$(python3 -c "import json; print(json.load(open('$STANDBY_FILE'))['url'])")
-  if [ -z "$STANDBY_URL" ]; then
-    log "ERROR: could not parse standby URL"
-    exit 1
-  fi
-  log "Activating warm standby: $STANDBY_URL"
-
-  # Get current URL for summary request
+  # API-based handoff: Agent SDK summary + API chat creation (Chrome-free)
   CURRENT_URL=$($CHAT_ROUTER url "$DOMAIN" 2>/dev/null)
   BOOTSTRAP=$($CHAT_ROUTER bootstrap "$DOMAIN" 2>/dev/null || echo "")
   HISTORY_FILE="$HOME/machinelab-knowledge/${DOMAIN}/history.compressed.md"
   HISTORY=""
   if [ -f "$HISTORY_FILE" ]; then HISTORY=$(cat "$HISTORY_FILE"); fi
+  PROJ_UUID=$($CHAT_ROUTER get-field "$DOMAIN" project_uuid 2>/dev/null || echo "019c15f4-3d2d-7263-a308-e7f6ccd6b3f8")
+  OLD_CHAT_ID=$(echo "$CURRENT_URL" | grep -o '[0-9a-f-]\{36\}$')
+  TODAY=$(date '+%Y-%m-%d')
 
   # Lock (per-domain + global relay tab)
   echo "{\"type\":\"handoff\",\"pid\":$$,\"since\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"domain\":\"$DOMAIN\"}" > "$LOCK_FILE"
   GLOBAL_RELAY_LOCK="$LOCK_DIR/domain-relay-tab.lock"
   echo "{\"domain\":\"$DOMAIN\",\"pid\":$$,\"since\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"type\":\"handoff\"}" > "$GLOBAL_RELAY_LOCK"
   trap 'rm -f "$GLOBAL_RELAY_LOCK"' EXIT
-  bash "$NOTIFY" "📌 $DOMAIN HANDOFF中(activate)"
+  bash "$NOTIFY" "📌 $DOMAIN HANDOFF中(api)"
 
-  # Ask old chat for summary
-  WT=$(cat /tmp/domain-relay-wt 2>/dev/null || echo "1:1")
-  _WIDX=$(echo "$WT" | cut -d: -f1)
-  _TIDX=$(echo "$WT" | cut -d: -f2)
-  osascript -e "tell application \"Google Chrome\" to set URL of tab $_TIDX of window $_WIDX to \"$CURRENT_URL\"" 2>/dev/null
-  sleep 6
-
-  SUMMARY_PROMPT='セッション引き継ぎのため、完全な要約を出力して。以下の形式で:
-
-## SESSION SUMMARY
-**やったこと:** (箇条書き、具体的commit/修正内容を含む)
-**決定事項:** (【決定】マーク付き)
-**残課題:** (未完了・未確認事項)
-**次のアクション:** (新しい🦞が最初にすべきこと)
-
-## Compressed History
-(Legend: D:=decided Q:=open F:=fixed E:=error W:=done)
-(今世代の全作業を圧縮記法で)
-
-漏れなく書いて。要約ではなく完全な記録。'
-
-  SUMMARY_FILE="/tmp/handoff-summary-request-$$.txt"
-  echo "$SUMMARY_PROMPT" > "$SUMMARY_FILE"
-  bash "$TAB_MANAGER" inject-file "$WT" "$SUMMARY_FILE" 2>/dev/null
-  rm -f "$SUMMARY_FILE"
-
-  log "Waiting for summary response..."
-  sleep 8
-  READY_COUNT=0
-  ELAPSED=0
-  SKIP_SUMMARY=0
-  while [ "$ELAPSED" -lt 180 ]; do
-    STATUS=$(bash "$TAB_MANAGER" check-status "$WT" 2>/dev/null || echo "UNKNOWN")
-    if [ "$STATUS" = "READY" ]; then
-      READY_COUNT=$((READY_COUNT + 1))
-      if [ "$READY_COUNT" -ge 3 ]; then break; fi
-    elif [ "$STATUS" = "RATE_LIMIT" ]; then
-      log "RATE_LIMIT detected — skipping summary"
-      SKIP_SUMMARY=1
-      break
-    else
-      READY_COUNT=0
-    fi
-    sleep 5
-    ELAPSED=$((ELAPSED + 5))
-  done
+  # Step 1: Agent SDK generates summary from chatlog
+  log "Generating summary via Agent SDK..."
+  CHATLOG_DIR="$HOME/Library/Mobile Documents/iCloud~md~obsidian/Documents/MyObsidian/80_ChatLog"
+  CHATLOG_FILE=""
+  if [ -n "$OLD_CHAT_ID" ]; then
+    CHATLOG_FILE=$(find "$CHATLOG_DIR" -name "*${OLD_CHAT_ID}*" -type f 2>/dev/null | head -1)
+  fi
 
   SUMMARY=""
-  if [ "$SKIP_SUMMARY" = "0" ]; then
-    sleep 3
-    SUMMARY=$(bash "$TAB_MANAGER" read-response "$WT" 2>/dev/null || echo "")
-  fi
-  if [ -z "$SUMMARY" ]; then
-    SUMMARY="(旧チャットからの要約取得失敗。conversation_searchで補完してください)"
-  fi
-  log "Got summary: ${#SUMMARY} chars"
-
-  # Navigate relay tab to warm standby
-  NEW_URL="$STANDBY_URL"
-  osascript -e "tell application \"Google Chrome\" to set URL of tab $_TIDX of window $_WIDX to \"$NEW_URL\"" 2>/dev/null
-  sleep 6
-
-  # Inject bootstrap + summary
-  BOOTSTRAP_FULL=""
-  if [ -n "$BOOTSTRAP" ]; then BOOTSTRAP_FULL="$BOOTSTRAP"$'\n\n'; fi
-  BOOTSTRAP_FULL="${BOOTSTRAP_FULL}## 前チャットの要約
-${SUMMARY}"
-  if [ -n "$HISTORY" ]; then
-    BOOTSTRAP_FULL="${BOOTSTRAP_FULL}"$'\n\n'"## Compressed History
-${HISTORY}"
-  fi
-  BOOTSTRAP_FULL="${BOOTSTRAP_FULL}"$'\n\n'"## 前チャットURL
-${CURRENT_URL}"$'\n\n'"## 必須アクション
-conversation_searchで前チャットの最新内容を検索し、上記要約で欠落している詳細を補完せよ。
-以上の文脈を踏まえて、今後のメッセージに対応してください。"
-
-  BOOT_FILE="/tmp/handoff-bootstrap-$$.txt"
-  echo "$BOOTSTRAP_FULL" > "$BOOT_FILE"
-  bash "$TAB_MANAGER" inject-file "$WT" "$BOOT_FILE" 2>/dev/null
-  rm -f "$BOOT_FILE"
-  log "Bootstrap injected to warm standby"
-
-  sleep 5
-  ELAPSED=0
-  while [ "$ELAPSED" -lt 120 ]; do
-    STATUS=$(bash "$TAB_MANAGER" check-status "$WT" 2>/dev/null || echo "UNKNOWN")
-    if [ "$STATUS" = "READY" ]; then break; fi
-    sleep 5
-    ELAPSED=$((ELAPSED + 5))
-  done
-  log "Warm standby ready"
-
-  # Switch URL
-  $CHAT_ROUTER archive-url "$DOMAIN" 2>/dev/null
-  $CHAT_ROUTER set-url "$DOMAIN" "$NEW_URL" 2>/dev/null
-  log "URL switched: $NEW_URL"
-
-  # Rename old chat
-  OLD_CHAT_ID=$(echo "$CURRENT_URL" | grep -o '[0-9a-f-]\{36\}$')
-  if [ -n "$OLD_CHAT_ID" ]; then
-    TODAY=$(date '+%Y-%m-%d')
-    TITLE_TEMPLATE=$($CHAT_ROUTER get-field "$DOMAIN" title_template 2>/dev/null || echo "")
-    if [ -n "$TITLE_TEMPLATE" ]; then
-      OLD_TITLE=$(echo "$TITLE_TEMPLATE" | sed "s/{date}/$TODAY/g")_archived
+  SKIP_SUMMARY=0
+  if [ -n "$CHATLOG_FILE" ]; then
+    SUMMARY_PROMPT="Read this chatlog file and create a session handoff summary. Format:
+## SESSION SUMMARY
+**Done:** (bullet list with specific commits/changes)
+**Decisions:** (with【決定】marks)
+**Remaining:** (incomplete/unverified items)
+**Next actions:** (what new session should do first)
+## Compressed History
+(Legend: D:=decided Q:=open F:=fixed E:=error W:=done)
+(Compress all work into this notation)
+Be thorough - this is a complete record, not a summary.
+File: $CHATLOG_FILE"
+    PROMPT_B64=$(echo -n "$SUMMARY_PROMPT" | base64)
+    RESULT=$(bash "$SCRIPTS_DIR/agent-bridge.sh" "$PROMPT_B64" "read" "120" 2>/dev/null)
+    if echo "$RESULT" | head -1 | grep -q "\[OK\]"; then
+      SUMMARY=$(echo "$RESULT" | tail -n +2)
+      log "Summary generated: ${#SUMMARY} chars"
     else
-      OLD_TITLE="${TODAY}_${DOMAIN}_archived"
+      log "Agent SDK summary failed: $(echo "$RESULT" | head -1)"
+      SUMMARY="(Agent SDK要約取得失敗。conversation_searchで補完してください)"
     fi
-    bash "$TAB_MANAGER" rename-conversation "$OLD_CHAT_ID" "$OLD_TITLE" 2>/dev/null || true
-    log "Old chat renamed: $OLD_TITLE"
+  else
+    log "No chatlog found for $OLD_CHAT_ID"
+    SUMMARY="(ChatLog未検出。conversation_searchで補完してください)"
   fi
 
-  # Flush buffer
+  # Step 2: Create new chat via API
+  TITLE_TEMPLATE=$($CHAT_ROUTER get-field "$DOMAIN" title_template 2>/dev/null || echo "")
+  if [ -n "$TITLE_TEMPLATE" ]; then
+    NEW_TITLE=$(echo "$TITLE_TEMPLATE" | sed "s/{date}/$TODAY/g")
+  else
+    NEW_TITLE="${TODAY}_${DOMAIN}"
+  fi
+
+  NEW_UUID=$(python3 "$SCRIPTS_DIR/stateless-handoff.py" "$PROJ_UUID" --name "$NEW_TITLE" 2>/dev/null)
+  if [ -z "$NEW_UUID" ]; then
+    log "ERROR: failed to create chat via API"
+    bash "$NOTIFY" "❌ $DOMAIN API handoff fail: chat creation"
+    rm -f "$LOCK_FILE" "$GLOBAL_RELAY_LOCK"
+    exit 1
+  fi
+  NEW_URL="https://claude.ai/chat/$NEW_UUID"
+  log "New chat created: $NEW_UUID ($NEW_TITLE)"
+
+  # Step 3: Save summary for next relay prepend
+  SUMMARY_OUT="/tmp/handoff-summary-${DOMAIN}.md"
+  {
+    if [ -n "$BOOTSTRAP" ]; then printf '%s
+
+' "$BOOTSTRAP"; fi
+    printf '## 前チャットの要約
+%s
+
+' "$SUMMARY"
+    if [ -n "$HISTORY" ]; then printf '## Compressed History
+%s
+
+' "$HISTORY"; fi
+    printf '## 前チャットURL
+%s
+
+' "$CURRENT_URL"
+    printf '## 必須アクション
+conversation_searchで前チャットの最新内容を検索し、上記要約で欠落している詳細を補完せよ。
+以上の文脈を踏まえて、今後のメッセージに対応してください。
+'
+  } > "$SUMMARY_OUT"
+  log "Summary saved: $SUMMARY_OUT ($(wc -c < "$SUMMARY_OUT") bytes)"
+
+  # Flush buffer into summary file
   if [ -f "$BUFFER_FILE" ] && [ -s "$BUFFER_FILE" ]; then
     COUNT=$(wc -l < "$BUFFER_FILE" | tr -d ' ')
-    log "Flushing $COUNT buffered messages"
     FLUSH_MSG=$(python3 -c "
 import json, sys
 entries = []
 for line in open('$BUFFER_FILE'):
     try: entries.append(json.loads(line.strip()))
     except: pass
-if not entries:
-    print('')
-    sys.exit(0)
+if not entries: sys.exit(0)
 lines = []
 for i, e in enumerate(entries):
     ts = e.get('ts','')
     if 'T' in ts: ts = ts.split('T')[1][:5]
     lines.append(f'[{i+1}] {ts} — {e["text"]}')
-print(f'📨 HANDOFF中にDJから届いたメッセージ ({len(entries)}件):
-' + '
-'.join(lines) + '
-
-以上を踏まえて対応してください。')
+print(f'\n---\n📨 HANDOFF中にDJから届いたメッセージ ({len(entries)}件):\n' + '\n'.join(lines) + '\n\n以上を踏まえて対応してください。')
 ")
     if [ -n "$FLUSH_MSG" ]; then
-      FLUSH_FILE="/tmp/handoff-flush-$$.txt"
-      echo "$FLUSH_MSG" > "$FLUSH_FILE"
-      bash "$TAB_MANAGER" inject-file "$WT" "$FLUSH_FILE" 2>/dev/null
-      rm -f "$FLUSH_FILE"
+      echo "$FLUSH_MSG" >> "$SUMMARY_OUT"
     fi
     rm -f "$BUFFER_FILE"
-    log "Buffer flushed"
+    log "Buffer flushed ($COUNT msgs) to summary file"
   fi
 
-  # Complete
+  # Step 4: Switch URL + rename old chat
+  $CHAT_ROUTER archive-url "$DOMAIN" 2>/dev/null
+  $CHAT_ROUTER set-url "$DOMAIN" "$NEW_URL" 2>/dev/null
+  log "URL switched: $NEW_URL"
+
+  if [ -n "$OLD_CHAT_ID" ]; then
+    if [ -n "$TITLE_TEMPLATE" ]; then
+      OLD_TITLE=$(echo "$TITLE_TEMPLATE" | sed "s/{date}/$TODAY/g")_archived
+    else
+      OLD_TITLE="${TODAY}_${DOMAIN}_archived"
+    fi
+    python3 "$SCRIPTS_DIR/rename-conversation.py" "$OLD_CHAT_ID" "$OLD_TITLE" 2>/dev/null || true
+    log "Old chat renamed: $OLD_TITLE"
+  fi
+
+  # Cleanup
   rm -f "$LOCK_FILE"
-  rm -f "$STANDBY_FILE"
-  log "Handoff complete (activate)"
+  rm -f "$STANDBY_FILE" 2>/dev/null
+  log "Handoff complete (api)"
   echo "HANDOFF_COMPLETE"
-  bash "$NOTIFY" "✅ $DOMAIN HANDOFF完了(activate) → 新チャット"
+  bash "$NOTIFY" "✅ $DOMAIN HANDOFF完了(api) → $NEW_TITLE"
   exit 0
 fi
 

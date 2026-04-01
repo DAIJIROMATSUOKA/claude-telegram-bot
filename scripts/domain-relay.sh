@@ -134,7 +134,17 @@ if [ "$READY_COUNT" -lt 2 ]; then
   exit 2
 fi
 
-# --- 5. Inject ---
+# --- 5. Inject (with handoff summary prepend) ---
+SUMMARY_FILE="/tmp/handoff-summary-${DOMAIN}.md"
+if [ -f "$SUMMARY_FILE" ]; then
+  PREPEND=$(cat "$SUMMARY_FILE")
+  MESSAGE="${PREPEND}
+
+---
+${MESSAGE}"
+  rm -f "$SUMMARY_FILE"
+  log "Prepended handoff summary (${#PREPEND} chars)"
+fi
 MSG_FILE="/tmp/domain-relay-msg-$$.txt"
 printf '%s' "$MESSAGE" > "$MSG_FILE"
 INJECT_OUT=$(bash "$TAB_MANAGER" inject-file "$WT" "$MSG_FILE" 2>/dev/null)
