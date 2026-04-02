@@ -451,9 +451,18 @@ async function executeAction(item: TriageItem, judgment: TriageJudgment): Promis
         const url = `${GAS_GMAIL_URL}?action=${action}&gmail_id=${item.source_id}&key=${GAS_GMAIL_KEY}`;
         try {
           const res = await fetch(url, { redirect: 'follow' });
-          const result: any = await res.json();
-          if (!result.ok) {
-            console.error(`[Triage] Gmail ${action} failed:`, result);
+          if (!res.ok) {
+            console.error(`[Triage] Gmail ${action} HTTP ${res.status} ${res.statusText}`);
+          } else {
+            const text = await res.text();
+            try {
+              const result: any = JSON.parse(text);
+              if (!result.ok) {
+                console.error(`[Triage] Gmail ${action} failed:`, result);
+              }
+            } catch (_parseErr) {
+              console.error(`[Triage] Gmail ${action} JSON parse error, body: ${text.substring(0, 100)}`);
+            }
           }
         } catch (e) {
           console.error(`[Triage] Gmail ${action} error:`, e);

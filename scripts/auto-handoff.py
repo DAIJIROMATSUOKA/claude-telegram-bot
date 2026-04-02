@@ -236,29 +236,34 @@ def _run():
         log(f"M1.md update failed: {e}")
 
     # Telegram通知: セッション完了
-    try:
-        env = {}
-        env_path = os.path.join(PROJECT_DIR, ".env")
-        if os.path.exists(env_path):
-            with open(env_path) as ef:
-                for line in ef:
-                    line = line.strip()
-                    if "=" in line and not line.startswith("#"):
-                        k, v = line.split("=", 1)
-                        env[k.strip()] = v.strip().strip('"').strip("'")
-        token = env.get("TELEGRAM_BOT_TOKEN", "")
-        chat_id = env.get("TELEGRAM_ALLOWED_USERS", "")
-        if token and chat_id:
-            import urllib.request, urllib.parse
-            msg = "\U0001F99E Claude Code セッション完了\n" + datetime.now().strftime("%H:%M JST")
-            data = urllib.parse.urlencode({"chat_id": chat_id, "text": msg}).encode()
-            req = urllib.request.Request(f"https://api.telegram.org/bot{token}/sendMessage", data=data)
-            urllib.request.urlopen(req, timeout=10)
-            log("Telegram notified")
-        else:
-            log("Telegram: missing token/chat_id")
-    except Exception as e:
-        log(f"Telegram notify failed: {e}")
+    # デフォルトは通知OFF。session-end-notify.shが別途通知するため二重通知防止。
+    # 明示的に AUTO_HANDOFF_NOTIFY=1 を設定した場合のみ送信する。
+    if os.environ.get("AUTO_HANDOFF_NOTIFY") == "1":
+        try:
+            env = {}
+            env_path = os.path.join(PROJECT_DIR, ".env")
+            if os.path.exists(env_path):
+                with open(env_path) as ef:
+                    for line in ef:
+                        line = line.strip()
+                        if "=" in line and not line.startswith("#"):
+                            k, v = line.split("=", 1)
+                            env[k.strip()] = v.strip().strip('"').strip("'")
+            token = env.get("TELEGRAM_BOT_TOKEN", "")
+            chat_id = env.get("TELEGRAM_ALLOWED_USERS", "")
+            if token and chat_id:
+                import urllib.request, urllib.parse
+                msg = "\U0001F99E Claude Code セッション完了\n" + datetime.now().strftime("%H:%M JST")
+                data = urllib.parse.urlencode({"chat_id": chat_id, "text": msg}).encode()
+                req = urllib.request.Request(f"https://api.telegram.org/bot{token}/sendMessage", data=data)
+                urllib.request.urlopen(req, timeout=10)
+                log("Telegram notified")
+            else:
+                log("Telegram: missing token/chat_id")
+        except Exception as e:
+            log(f"Telegram notify failed: {e}")
+    else:
+        log("Telegram notify skipped (AUTO_HANDOFF_NOTIFY != 1)")
 
     log("Done")
 
