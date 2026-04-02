@@ -97,6 +97,7 @@ export async function handleAgentTask(
   api: Api,
   mode: AgentMode = "execute",
   silent = false,
+  timeoutMs?: number,
 ): Promise<AgentResult> {
   const preset = MODE_PRESETS[mode];
   const modeLabel = mode === "read" ? "📖" : "🤖";
@@ -113,6 +114,13 @@ export async function handleAgentTask(
 
   try {
     const messages: any[] = [];
+    // AbortController to kill SDK process on timeout
+    const abortController = new AbortController();
+    const abortTimer = setTimeout(() => {
+      abortController.abort();
+      console.error("[AgentTask] Timeout: aborting SDK process");
+    }, (timeoutMs ?? 720000) - 5000); // 5s before HTTP timeout
+    try {
     for await (const msg of query({
       prompt: taskPrompt,
       options: {
@@ -124,9 +132,13 @@ export async function handleAgentTask(
         maxTurns: preset.maxTurns,
         settingSources: ["user", "project"],
         model: "claude-opus-4-6",
+        abortSignal: abortController.signal,
       },
     })) {
       messages.push(msg);
+    }
+    } finally {
+      clearTimeout(abortTimer);
     }
 
     const extracted = extractResult(messages);

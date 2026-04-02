@@ -428,9 +428,9 @@ Bun.serve({
   async fetch(req) {
     if (req.method === 'POST' && new URL(req.url).pathname === '/agent-task') {
       try {
-        const body = await req.json() as { prompt: string; mode?: "read" | "execute" };
+        const body = await req.json() as { prompt: string; mode?: "read" | "execute"; timeout?: number };
         if (!body.prompt) return Response.json({ ok: false, error: 'missing prompt' }, { status: 400 });
-        const result = await handleAgentTask(body.prompt, AGENT_CHAT_ID, bot.api, body.mode, true);
+        const result = await handleAgentTask(body.prompt, AGENT_CHAT_ID, bot.api, body.mode, true, (body.timeout ?? 120) * 1000);
         return Response.json({ ok: true, ...result });
       } catch (e: any) {
         return Response.json({ ok: false, error: e.message }, { status: 500 });
