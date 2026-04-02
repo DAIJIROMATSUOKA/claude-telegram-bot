@@ -194,7 +194,7 @@ while [ "$ELAPSED" -lt "$RESPONSE_TIMEOUT" ]; do
   if [ "$SAW_BUSY" -eq 1 ] || [ "$ELAPSED" -gt 15 ]; then
     CURR_RESP=$(bash "$TAB_MANAGER" read-response "$WT" 2>/dev/null)
     CURR_LEN=${#CURR_RESP}
-    if [ "$CURR_LEN" -gt 10 ] && [ "$CURR_LEN" -eq "$PREV_LEN" ]; then
+    if [ "$CURR_LEN" -gt 30 ] && [ "$CURR_LEN" -eq "$PREV_LEN" ]; then
       STABLE_COUNT=$((STABLE_COUNT + 1))
       if [ "$STABLE_COUNT" -ge 2 ]; then
         log "Response stable: ${CURR_LEN} chars x${STABLE_COUNT}, done"

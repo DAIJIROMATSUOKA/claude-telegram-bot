@@ -56,6 +56,34 @@ function djQuote(msg: string): string {
   return `💬 ${truncated}\n`;
 }
 
+/** Send relay response safely: edit statusMsg or fallback to new reply, with chunking */
+async function sendRelayResponse(
+  ctx: Context,
+  chatId: number,
+  statusMsgId: number,
+  text: string
+): Promise<void> {
+  const MAX = 4000;
+  try {
+    if (text.length <= MAX) {
+      await ctx.api.editMessageText(chatId, statusMsgId, text);
+    } else {
+      // Too long for editMessageText — delete status and send chunks
+      try { await ctx.api.deleteMessage(chatId, statusMsgId); } catch {}
+      const chunks = splitTelegramMessage(text);
+      for (const chunk of chunks) { await ctx.reply(chunk); }
+    }
+  } catch {
+    // editMessageText failed — fallback to new reply
+    try {
+      const chunks = splitTelegramMessage(text);
+      for (const chunk of chunks) { await ctx.reply(chunk); }
+    } catch (e) {
+      console.error("[Text] sendRelayResponse: all send attempts failed", e);
+    }
+  }
+}
+
 
 
 /**
@@ -213,7 +241,7 @@ export async function handleText(ctx: Context): Promise<void> {
                 await ctx.api.editMessageText(ctx.chat!.id, statusMsg.message_id, `📌 ${domainLower} — 応答なし`);
               }
             } catch (relayErr: any) {
-              await ctx.api.editMessageText(ctx.chat!.id, statusMsg.message_id, `📌 ${domainLower} — エラー`);
+              try { await ctx.api.editMessageText(ctx.chat!.id, statusMsg.message_id, `📌 ${domainLower} — エラー`); } catch {}
               console.error("[Text] Direct send error:", relayErr?.message?.substring(0, 100));
             }
             return;
@@ -271,18 +299,20 @@ export async function handleText(ctx: Context): Promise<void> {
                   console.log(`[Text] INBOX routed to ${routeTag}, forwarding...`);
                   try {
                     const fwdResponse = await relayDomain(routeTag, message, async () => {
-                      await ctx.api.editMessageText(ctx.chat!.id, statusMsg.message_id, `📥 → ${routeTag} 応答中...`);
+                      try { await ctx.api.editMessageText(ctx.chat!.id, statusMsg.message_id, `📥 → ${routeTag} 応答中...`); } catch {}
                     });
-                    if (fwdResponse) {
-                      await ctx.api.editMessageText(ctx.chat!.id, statusMsg.message_id, `${djQuote(message)}📌 ${routeTag}\n\n${fwdResponse}`);
+                    if (fwdResponse && fwdResponse !== "BUFFERED") {
+                      await sendRelayResponse(ctx, ctx.chat!.id, statusMsg.message_id, `${djQuote(message)}📌 ${routeTag}\n\n${fwdResponse}`);
                       console.log(`[Text] ${routeTag} replied ${fwdResponse.length} chars`);
+                    } else if (fwdResponse === "BUFFERED") {
+                      try { await ctx.api.editMessageText(ctx.chat!.id, statusMsg.message_id, `📌 ${routeTag} 応答中（バッファ済み）`); } catch {}
                     } else {
-                      await ctx.api.editMessageText(ctx.chat!.id, statusMsg.message_id, `${djQuote(message)}📌 ${routeTag}\n\n${cleanResponse}`);
+                      await sendRelayResponse(ctx, ctx.chat!.id, statusMsg.message_id, `${djQuote(message)}📌 ${routeTag}\n\n${cleanResponse}`);
                       console.log(`[Text] ${routeTag} no response, showing INBOX answer`);
                     }
                   } catch (fwdErr: any) {
                     // Forward failed, show INBOX response as fallback
-                    await ctx.api.editMessageText(ctx.chat!.id, statusMsg.message_id, `📥 INBOX (${routeTag}転送失敗)\n\n${cleanResponse}`);
+                    await sendRelayResponse(ctx, ctx.chat!.id, statusMsg.message_id, `📥 INBOX (${routeTag}転送失敗)\n\n${cleanResponse}`);
                     console.error(`[Text] Forward to ${routeTag} failed:`, fwdErr?.message?.substring(0, 100));
                   }
                 } else {
