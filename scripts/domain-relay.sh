@@ -17,7 +17,7 @@ TAB_MANAGER="$SCRIPTS_DIR/croppy-tab-manager.sh"
 CHAT_ROUTER="$SCRIPTS_DIR/chat-router.py"
 LOG="/tmp/domain-relay.log"
 RELAY_WT_FILE="/tmp/domain-relay-wt"
-RESPONSE_TIMEOUT=240
+RESPONSE_TIMEOUT=600
 
 log() { echo "[$(date '+%H:%M:%S')] $*" >> "$LOG"; }
 

@@ -157,7 +157,7 @@ function execRelay(
   domain: string,
   message: string,
   onResponding?: () => Promise<void>,
-  timeoutMs = 270000
+  timeoutMs = 720000
 ): Promise<string | null> {
   return new Promise((resolve) => {
     const scriptPath = `${process.env.HOME}/claude-telegram-bot/scripts/domain-relay.sh`;
@@ -190,13 +190,15 @@ function execRelay(
  * Poll Chrome tab directly after relay timeout.
  * Claude may still be generating — wait up to maxMs for READY.
  */
-async function pollTabUntilReady(maxMs = 300_000): Promise<string | null> {
+async function pollTabUntilReady(maxMs = 600_000): Promise<string | null> {
   const { execSync } = await import("child_process");
   const TAB_MANAGER = `${process.env.HOME}/claude-telegram-bot/scripts/croppy-tab-manager.sh`;
   const wt = (() => { try { return readFileSync("/tmp/domain-relay-wt", "utf-8").trim(); } catch(e) { return "1:1"; } })();
 
   const start = Date.now();
   let readyCount = 0;
+  let prevLen = -1;
+  let stableCount = 0;
   while (Date.now() - start < maxMs) {
     await new Promise(r => setTimeout(r, 5000));
     // Keep relay lock fresh during polling
@@ -208,19 +210,25 @@ async function pollTabUntilReady(maxMs = 300_000): Promise<string | null> {
         readyCount = 0;
         continue;
       }
-      if (status === "READY") {
-        readyCount++;
-        if (readyCount >= 2) {
-          await new Promise(r => setTimeout(r, 2000)); // settle
+      if (status === "READY" || status === "TOOL_LIMIT") {
+        if (status === "TOOL_LIMIT") {
+          try { execSync(`bash ${TAB_MANAGER} auto-continue ${wt} 2>/dev/null`, { encoding: "utf-8", timeout: 5000 }); } catch(e) {}
+          prevLen = -1; stableCount = 0;
+        } else {
+          // Use response-length stability check (same as domain-relay.sh)
           const response = execSync(`bash ${TAB_MANAGER} read-response ${wt} 2>/dev/null`, { encoding: "utf-8", timeout: 10000 }).trim();
-          if (response && !response.includes("NO_RESPONSE") && !response.includes("ERROR") && response.length > 20) {
-            console.log(`[Buffer] Late response: ${response.length} chars after ${Math.round((Date.now() - start) / 1000)}s`);
-            return response;
-          }
-          return null;
+          const currLen = response.length;
+          if (currLen > 30 && currLen === prevLen) {
+            stableCount++;
+            if (stableCount >= 2) {
+              console.log(`[Buffer] Late response stable: ${currLen} chars after ${Math.round((Date.now() - start) / 1000)}s`);
+              return response.includes("NO_RESPONSE") ? null : response;
+            }
+          } else { stableCount = 0; }
+          prevLen = currLen;
         }
       } else {
-        readyCount = 0;
+        prevLen = -1; stableCount = 0;
       }
     } catch(e) { /* check-status failed, continue */ }
   }
@@ -233,7 +241,7 @@ export async function relayDomain(
   domain: string,
   message: string,
   onResponding?: () => Promise<void>,
-  timeoutMs = 270000
+  timeoutMs = 720000
 ): Promise<string | "BUFFERED" | null> {
   // 1. Check per-domain handoff lock
   const handoffLock = getLock(domain);
