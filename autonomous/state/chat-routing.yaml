@@ -424,5 +424,9 @@ domains:
       - 資金繰り・投資判断\n- 人員・外注体制\n- 大森機械工業などパートナー戦略\n"
     keywords: []
     title_template: '{date}_経営相談'
-    url: https://claude.ai/chat/64f306c2-3cf7-4fde-a1f9-a70496998af1
+    url: https://claude.ai/chat/8a4d990f-507c-46a9-a60a-827d316bb614
+    chat_history:
+    - id: 64f306c2-3cf7-4fde-a1f9-a70496998af1
+      created: '2026-04-02'
+      title: 2026-04-02_1030_経営相談
 obsidian_chat_list: ~/Library/Mobile Documents/iCloud~md~obsidian/Documents/MyObsidian/90_System/JARVIS/専門チャット一覧.md
