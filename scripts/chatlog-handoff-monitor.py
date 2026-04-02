@@ -14,7 +14,7 @@ CHAT_ROUTER = f"{PROJECT_DIR}/scripts/chat-router.py"
 LOG_FILE = "/tmp/chatlog-handoff-monitor.log"
 
 # Thresholds
-LINE_THRESHOLD = 300      # chatlog lines ≈ 70% of context
+LINE_THRESHOLD = 1500      # chatlog lines ≈ 70% of context
 COOLDOWN_SECS = 1800      # 30min: don't re-trigger same domain within this window
 COOLDOWN_FILE = "/tmp/chatlog-handoff-cooldown.json"
 
