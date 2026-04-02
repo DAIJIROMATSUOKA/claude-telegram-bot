@@ -123,6 +123,7 @@ export async function handleAgentTask(
         permissionMode: preset.permissionMode,
         maxTurns: preset.maxTurns,
         settingSources: ["user", "project"],
+        model: "claude-opus-4-6",
       },
     })) {
       messages.push(msg);
