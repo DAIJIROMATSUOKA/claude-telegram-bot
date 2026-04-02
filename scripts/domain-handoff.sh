@@ -20,7 +20,7 @@ source "$HOME/claude-telegram-bot/.env" 2>/dev/null || true
 LOCK_DIR="/tmp"
 
 # --- Parse args ---
-MODE="full"
+MODE="activate" # full mode deprecated: Chrome new-chat removed, redirect to --activate
 if [ "${1:-}" = "--warm" ]; then MODE="warm"; shift; fi
 if [ "${1:-}" = "--flush" ]; then MODE="flush"; shift; fi
 if [ "${1:-}" = "--lock" ]; then MODE="lock"; shift; fi
