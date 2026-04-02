@@ -152,21 +152,36 @@ if entry and os.path.exists(entry['filepath']):
   SUMMARY=""
   SKIP_SUMMARY=0
   if [ -n "$CHATLOG_FILE" ]; then
-    # Truncate chatlog to last 200 lines to fit Agent SDK timeout
+    # Use full chatlog (up to 400 lines) for complete artifact capture
     CHATLOG_TAIL="/tmp/chatlog-tail-$$.md"
-    tail -200 "$CHATLOG_FILE" > "$CHATLOG_TAIL"
+    tail -400 "$CHATLOG_FILE" > "$CHATLOG_TAIL"
     CHATLOG_FILE="$CHATLOG_TAIL"
 
-    SUMMARY_PROMPT="Read this chatlog file (last 200 lines of conversation) and create a session handoff summary. Format:
-## SESSION SUMMARY
-**Done:** (bullet list with specific commits/changes)
-**Decisions:** (with【決定】marks)
-**Remaining:** (incomplete/unverified items)
-**Next actions:** (what new session should do first)
-## Compressed History
-(Legend: D:=decided Q:=open F:=fixed E:=error W:=done)
-(Compress all work into this notation)
-Be thorough - this is a complete record, not a summary.
+    SUMMARY_PROMPT="Read this chatlog file and create a complete session handoff. The next Claude session MUST be able to continue without searching for anything.
+
+## STATE（現在地 - 最重要）
+- 今どのフェーズか（例: 訪問準備中、実装完了、テスト待ち）
+- 直近のアクションの完了/未完了状態
+- 次セッション開始時に最初にすべきこと
+
+## ARTIFACTS（作成済み成果物 - 全文必須）
+セッション中に作成したメッセージ文・コード・ドキュメント・分析結果は全文ここに貼る。
+省略・要約しない。次セッションが検索不要になるよう完全な形で記録する。
+
+## DECISIONS + RATIONALE（決定事項と理由）
+【決定】内容: 理由・背景を一緒に記録（理由なしの決定記録は不可）
+
+## OPEN QUESTIONS（未解決・前提未確認事項）
+次セッションが追跡すべき未解決事項、相手の返答待ち、未確認の前提条件
+
+## REMAINING（未完了タスク）
+具体的に何が残っているか
+
+## COMPRESSED CONTEXT（背景）
+Legend: D:=decided Q:=open F:=fixed W:=done E:=error
+必要最小限の経緯のみ。上記セクションと重複しない。
+
+重要: ARTIFACTSセクションは省略禁止。メッセージ全文・コード全文を必ず含める。
 File: $CHATLOG_FILE"
     PROMPT_B64=$(echo -n "$SUMMARY_PROMPT" | base64)
     RESULT=$(bash "$SCRIPTS_DIR/agent-bridge.sh" "$PROMPT_B64" "read" "120" 2>/dev/null)
@@ -221,9 +236,7 @@ File: $CHATLOG_FILE"
 %s
 
 ' "$CURRENT_URL"
-    printf '## 必須アクション
-conversation_searchで前チャットの最新内容を検索し、上記要約で欠落している詳細を補完せよ。
-以上の文脈を踏まえて、今後のメッセージに対応してください。
+    printf '以上の文脈を踏まえて、今後のメッセージに対応してください。
 '
   } > "$SUMMARY_OUT"
   log "Summary saved: $SUMMARY_OUT ($(wc -c < "$SUMMARY_OUT") bytes)"
@@ -435,9 +448,7 @@ ${HISTORY}"
 fi
 
 BOOTSTRAP_FULL="${BOOTSTRAP_FULL}"$'\n\n'"## 前チャットURL
-${CURRENT_URL}"$'\n\n'"## 必須アクション
-conversation_searchで前チャットの最新内容を検索し、上記要約で欠落している詳細を補完せよ。
-以上の文脈を踏まえて、今後のメッセージに対応してください。"
+${CURRENT_URL}"$'\n\n'"以上の文脈を踏まえて、今後のメッセージに対応してください。"
 
 BOOT_FILE="/tmp/handoff-bootstrap-$$.txt"
 echo "$BOOTSTRAP_FULL" > "$BOOT_FILE"
