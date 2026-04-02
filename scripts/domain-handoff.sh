@@ -330,61 +330,65 @@ trap 'rm -f "$GLOBAL_RELAY_LOCK"' EXIT
 log "Handoff lock created (+ global relay lock)"
 bash "$NOTIFY" "📌 $DOMAIN HANDOFF中"
 
-# === Step 2: Ask old chat for summary ===
-log "Requesting summary from old chat..."
-SUMMARY_PROMPT='セッション引き継ぎのため、完全な要約を出力して。以下の形式で:
+# === Step 2: Generate summary via Agent SDK (chatlog reading, no chat injection) ===
+log "Generating summary via Agent SDK (no chat injection)..."
+OLD_CHAT_ID=$(echo "$CURRENT_URL" | sed 's|.*/chat/||;s|[/?].*||' 2>/dev/null)
+CHATLOG_FILE=""
+if [ -n "$OLD_CHAT_ID" ]; then
+  CHATLOG_FILE=$(python3 -c "
+import json, os
+try:
+    state = json.load(open(os.path.expanduser('~/.claude-chatlog-state.json')))
+    entry = state.get('$OLD_CHAT_ID')
+    if entry and os.path.exists(entry['filepath']):
+        print(entry['filepath'])
+except: pass
+" 2>/dev/null)
+fi
 
-## SESSION SUMMARY
-**やったこと:** (箇条書き、具体的commit/修正内容を含む)
-**決定事項:** (【決定】マーク付き)
-**残課題:** (未完了・未確認事項)
-**次のアクション:** (新しい🦞が最初にすべきこと)
+SUMMARY=""
+if [ -n "$CHATLOG_FILE" ]; then
+  CHATLOG_TAIL="/tmp/chatlog-tail-full-$$.md"
+  tail -400 "$CHATLOG_FILE" > "$CHATLOG_TAIL"
+  SUMMARY_PROMPT_SDK="Read this chatlog file and create a complete session handoff. The next Claude session MUST be able to continue without searching for anything.
 
-## Compressed History
-(Legend: D:=decided Q:=open F:=fixed E:=error W:=done)
-(今世代の全作業を圧縮記法で)
+## STATE（現在地 - 最重要）
+- 今どのフェーズか（例: 訪問準備中、実装完了、テスト待ち）
+- 直近のアクションの完了/未完了状態
+- 次セッション開始時に最初にすべきこと
 
-漏れなく書いて。要約ではなく完全な記録。'
+## ARTIFACTS（作成済み成果物 - 全文必須）
+セッション中に作成したメッセージ文・コード・ドキュメント・分析結果は全文ここに貼る。
+省略・要約しない。次セッションが検索不要になるよう完全な形で記録する。
 
-WT=$(cat /tmp/domain-relay-wt 2>/dev/null || echo "1:1")
-# Navigate to old chat (direct osascript, no tab-manager navigate needed)
-_WIDX=$(echo "$WT" | cut -d: -f1)
-_TIDX=$(echo "$WT" | cut -d: -f2)
-osascript -e "tell application \"Google Chrome\" to set URL of tab $_TIDX of window $_WIDX to \"$CURRENT_URL\"" 2>/dev/null
-sleep 6
+## DECISIONS + RATIONALE（決定事項と理由）
+【決定】内容: 理由・背景を一緒に記録（理由なしの決定記録は不可）
 
-# Inject summary request
-SUMMARY_FILE="/tmp/handoff-summary-request-$$.txt"
-echo "$SUMMARY_PROMPT" > "$SUMMARY_FILE"
-bash "$TAB_MANAGER" inject-file "$WT" "$SUMMARY_FILE" 2>/dev/null
-rm -f "$SUMMARY_FILE"
+## OPEN QUESTIONS（未解決・前提未確認事項）
+次セッションが追跡すべき未解決事項、相手の返答待ち、未確認の前提条件
 
-# Wait for summary response (double-READY like domain-relay.sh)
-log "Waiting for summary response..."
-sleep 8
-READY_COUNT=0
-ELAPSED=0
-while [ "$ELAPSED" -lt 180 ]; do
-  STATUS=$(bash "$TAB_MANAGER" check-status "$WT" 2>/dev/null || echo "UNKNOWN")
-  if [ "$STATUS" = "READY" ]; then
-    READY_COUNT=$((READY_COUNT + 1))
-    if [ "$READY_COUNT" -ge 3 ]; then
-      break
-    fi
+## REMAINING（未完了タスク）
+具体的に何が残っているか
+
+## COMPRESSED CONTEXT（背景）
+Legend: D:=decided Q:=open F:=fixed W:=done E:=error
+必要最小限の経緯のみ。上記セクションと重複しない。
+
+重要: ARTIFACTSセクションは省略禁止。メッセージ全文・コード全文を必ず含める。
+File: $CHATLOG_TAIL"
+  PROMPT_B64=$(echo -n "$SUMMARY_PROMPT_SDK" | base64)
+  RESULT=$(bash "$SCRIPTS_DIR/agent-bridge.sh" "$PROMPT_B64" "read" "120" 2>/dev/null)
+  if echo "$RESULT" | head -1 | grep -q "\[OK\]"; then
+    SUMMARY=$(echo "$RESULT" | tail -n +2)
+    log "Summary generated via Agent SDK: ${#SUMMARY} chars"
   else
-    READY_COUNT=0
+    log "Agent SDK summary failed: $(echo "$RESULT" | head -1)"
+    SUMMARY="(Agent SDK要約取得失敗)"
   fi
-  sleep 5
-  ELAPSED=$((ELAPSED + 5))
-done
-# Settle delay to let DOM fully render
-sleep 3
-
-# Read summary response
-SUMMARY=$(bash "$TAB_MANAGER" read-response "$WT" 2>/dev/null || echo "")
-if [ -z "$SUMMARY" ]; then
-  log "WARNING: Could not get summary from old chat"
-  SUMMARY="(旧チャットからの要約取得失敗。conversation_searchで補完してください)"
+  rm -f "$CHATLOG_TAIL"
+else
+  log "No chatlog found for $OLD_CHAT_ID"
+  SUMMARY="(ChatLog未検出)"
 fi
 log "Got summary: ${#SUMMARY} chars"
 
