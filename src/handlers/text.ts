@@ -162,7 +162,7 @@ export async function handleText(ctx: Context): Promise<void> {
     if (replyMsg?.from?.is_bot) {
       const replyContent = ("text" in replyMsg ? replyMsg.text : "") || "";
       // Match domain tags: "\xf0\x9f\x93\x8b [domain]" or "\xf0\x9f\x93\x8c domain"
-      const domainMatch = replyContent.match(/^(?:\u{1F4CB}\s*\[([\w-]+)\]|\u{1F4CC}\s*([\w-]+))/u);
+      const domainMatch = replyContent.match(/(?:\u{1F4CB}\s*\[([\w-]+)\]|\u{1F4CC}\s*([\w-]+))/u);
       const replyDomain = domainMatch?.[1] || domainMatch?.[2];
       if (replyDomain) {
         console.log(`[Text] Reply to domain ${replyDomain} response -> routing back`);
