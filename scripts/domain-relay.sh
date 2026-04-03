@@ -230,7 +230,8 @@ printf "RESPONSE: %s\n" "$RESPONSE"
 if [ "$DOMAIN" != "inbox" ] && [ "$DOMAIN" != "direct" ]; then
   TOKEN_RAW=$(bash "$TAB_MANAGER" token-estimate "$WT" 2>/dev/null)
   TOKEN_PCT=$(echo "$TOKEN_RAW" | grep -o '"pct":[0-9]*' | grep -o '[0-9]*' 2>/dev/null)
-  if [ "${TOKEN_PCT:-0}" -ge 70 ]; then
+  HANDOFF_LOCK="/tmp/domain-lock-${DOMAIN}.json"
+  if [ "${TOKEN_PCT:-0}" -ge 70 ] && [ ! -f "$HANDOFF_LOCK" ]; then
     log "Token warning: ${TOKEN_PCT}% -> triggering handoff for $DOMAIN"
     echo "TOKEN_WARNING: ${TOKEN_PCT}%"
     # Fire-and-forget handoff (don't block relay response)
