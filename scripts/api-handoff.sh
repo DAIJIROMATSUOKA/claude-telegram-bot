@@ -140,7 +140,7 @@ print(count + 1)
 TITLE_BASE=$($CHAT_ROUTER get-field "$DOMAIN" title_template 2>/dev/null || echo "$DOMAIN")
 TITLE_BASE=$(echo "$TITLE_BASE" | sed "s/{date}_//; s/{date}//")
 NEW_CHAT_NAME="${TODAY_MMDD}${TODAY_COUNT}_${TITLE_BASE}"
-ARCHIVED_NAME="${TODAY_MMDD}${TODAY_COUNT}_${TITLE_BASE}_archived"
+ARCHIVED_NAME="${NEW_CHAT_NAME}_archived"
 log "Chat name: $NEW_CHAT_NAME (seq=$TODAY_COUNT)"
 
 # --- Step 2: Create new chat via API ---
