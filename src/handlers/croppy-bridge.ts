@@ -21,6 +21,7 @@ const NIGHTSHIFT = `${SCRIPTS_DIR}/nightshift.sh`;
 const SUPERVISOR = `${SCRIPTS_DIR}/croppy-supervisor.sh`;
 
 const DATE_PREFIX_RE = /^\d{4}-\d{2}-\d{2}_\d{4}/;
+const HANDOFF_PREFIX_RE = /^\d{5,6}_/;  // MMDD{seq}_ from api-handoff.sh
 
 // Bridge reply routing: Telegram msgId -> Worker tab (wt)
 // Enables reply-chain: DJ replies to bridge response -> same worker tab
@@ -64,7 +65,7 @@ async function formatConversationTitle(wt: string): Promise<void> {
       .replace(/^\[J-WORKER-\d+\]\s*/i, "")
       .replace(/\s*-\s*Claude\s*$/i, "")
       .trim();
-    if (DEFAULT_RE.test(cleaned) || DATE_PREFIX_RE.test(cleaned) || !cleaned) return;
+    if (DEFAULT_RE.test(cleaned) || DATE_PREFIX_RE.test(cleaned) || HANDOFF_PREFIX_RE.test(cleaned) || !cleaned) return;
 
     const now = new Date();
     const jst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
