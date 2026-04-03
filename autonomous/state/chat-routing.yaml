@@ -138,7 +138,11 @@ domains:
       '
     keywords: []
     title_template: '{date}_iCAD_機械設計'
-    url: https://claude.ai/chat/9e8c40dd-80d7-4249-8e76-512a0fd99e17
+    url: https://claude.ai/chat/6ef96049-fee7-4f5b-86af-1994292566cc
+    chat_history:
+    - id: 9e8c40dd-80d7-4249-8e76-512a0fd99e17
+      created: '2026-04-03'
+      title: 2026-04-03_1602_iCAD_機械設計
   inbox:
     bootstrap: "あなたはINBOXルーターです。全てのユーザーメッセージがここに届きます。\n\n## 動作ルール\n1. メッセージに回答する\n\
       2. 適切な専門チャットがあれば、回答の最終行に [ROUTE:ドメイン名] を付ける\n3. どのドメインにも当てはまらない場合は [ROUTE:none]\
@@ -161,11 +165,14 @@ domains:
       \n【重要】[TRIAGE]メッセージへの応答はJSON1行のみ。説明文・判断理由の追記は禁止。"
     keywords: []
     title_template: '{date}_INBOX'
-    url: https://claude.ai/chat/58b6bc1e-3db8-4e5f-b8e3-872250ee1b5c
+    url: https://claude.ai/chat/1910b3a2-1b56-4028-af69-d3fa024ab9d3
     chat_history:
     - id: ab82777d-3709-43dd-889f-29206b981a82
       created: '2026-04-02'
       title: 2026-04-02_0326_INBOX
+    - id: 58b6bc1e-3db8-4e5f-b8e3-872250ee1b5c
+      created: '2026-04-03'
+      title: 2026-04-03_1603_INBOX
   m1300:
     bootstrap: 'あなたはM1300案件（伊藤ハム米久 ケンコー工場 ロースライン出口コンベヤ等1号）の専門チャットです。
 
@@ -258,9 +265,18 @@ domains:
     - id: 2037e532-c433-4b62-aadc-efad0e0c260b
       created: '2026-04-02'
       title: 2026-04-02_0432_PC操作_Mac設定
+    - id: aff955c8-68cf-4a5d-93e3-e1ea8ab61192
+      created: '2026-04-03'
+      title: 2026-04-03_1604_PC操作_Mac設定
+    - id: 8df9c098-8353-44b9-8f93-5dbea3f9384f
+      created: '2026-04-03'
+      title: 2026-04-03_1721_PC操作_Mac設定
+    - id: dce25b44-0434-4145-add3-4ddb619d3622
+      created: '2026-04-03'
+      title: 2026-04-03_1811_PC操作_Mac設定
     keywords: []
     title_template: '{date}_PC操作_Mac設定'
-    url: https://claude.ai/chat/aff955c8-68cf-4a5d-93e3-e1ea8ab61192
+    url: https://claude.ai/chat/a8f6ce07-03ca-466b-8c4c-6a8f3e34decc
   research:
     bootstrap: 'あなたはリサーチ・ニュース専門チャットです。
 
@@ -424,9 +440,12 @@ domains:
       - 資金繰り・投資判断\n- 人員・外注体制\n- 大森機械工業などパートナー戦略\n"
     keywords: []
     title_template: '{date}_経営相談'
-    url: https://claude.ai/chat/8a4d990f-507c-46a9-a60a-827d316bb614
+    url: https://claude.ai/chat/f3fbde5f-1875-4f17-9868-5f703683b385
     chat_history:
     - id: 64f306c2-3cf7-4fde-a1f9-a70496998af1
       created: '2026-04-02'
       title: 2026-04-02_1030_経営相談
+    - id: 8a4d990f-507c-46a9-a60a-827d316bb614
+      created: '2026-04-03'
+      title: 2026-04-03_1611_経営相談
 obsidian_chat_list: ~/Library/Mobile Documents/iCloud~md~obsidian/Documents/MyObsidian/90_System/JARVIS/専門チャット一覧.md
