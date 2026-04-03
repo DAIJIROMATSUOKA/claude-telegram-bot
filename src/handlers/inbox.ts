@@ -233,18 +233,7 @@ export async function handleInboxCallback(ctx: Context): Promise<boolean> {
         // 1-click Todoist task creation from Telegram notification
         try {
           const msgText = ctx.callbackQuery?.message?.text || "";
-          const lines = msgText.split("\n").filter((l: string) => l.trim());
-          // Extract meaningful content: prefer 📧 (email subject) or 📝 (body) lines
-          const emailLine = lines.find((l: string) => l.startsWith("📧"));
-          const bodyLine = lines.find((l: string) => l.startsWith("📝"));
-          const lineLine = lines.find((l: string) => l.startsWith("👤"));
-          const taskContent = (
-            emailLine ? emailLine.replace(/^📧\s*/, "") :
-            lineLine ? lineLine.replace(/^👤\s*/, "") :
-            bodyLine ? bodyLine.replace(/^📝\s*/, "") :
-            lines.find((l: string) => l.length > 10 && !/^(🦀|📧|📝|💭|🔴|❗|⚠|✅|❌|🗑|📋)/.test(l)) ||
-            lines[1] || lines[0] || "Telegram task"
-          ).substring(0, 200);
+          const taskContent = msgText || "Telegram task";
 
           // Calculate next :00 or :30 in JST
           const now = new Date();
