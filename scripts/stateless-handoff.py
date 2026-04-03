@@ -15,7 +15,7 @@ cfg = json.load(open(os.path.expanduser("~/.claude-chatlog-config.json")))
 sk, org = cfg["session_key"], cfg["org_id"]
 
 url = f"https://claude.ai/api/organizations/{org}/chat_conversations"
-body = json.dumps({"name": chat_name, "project_uuid": proj_uuid}).encode()
+body = json.dumps({"name": chat_name, "project_uuid": proj_uuid, "model": "claude-opus-4-6"}).encode()
 req = urllib.request.Request(url, data=body, method="POST", headers={
     "Cookie": f"sessionKey={sk}",
     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
