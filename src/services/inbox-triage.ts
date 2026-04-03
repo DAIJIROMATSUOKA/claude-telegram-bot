@@ -75,7 +75,7 @@ async function executeTriageBatch(chatId: number): Promise<void> {
   // Process OK entries - report feedback + delete messages
   for (const e of okEntries) {
     try {
-      await reportFeedback(e.itemId, 'approved');
+      await reportFeedback(e.itemId, 'approved', 'manual-ok');
       await botApi.deleteMessage(e.chatId, e.msgId).catch(() => {});
     } catch (err) {
       console.error('[TriageBatch] OK action error:', err);
@@ -704,7 +704,7 @@ export async function handleTriageCallback(
 
   switch (action) {
     case 'approve':
-      await reportFeedback(itemId, 'approved');
+      await reportFeedback(itemId, 'approved', 'manual-approve');
       if (botApi && chatId && msgId) {
         await botApi.editMessageText(chatId, msgId, '✅ 承認済み').catch(() => {});
         setTimeout(() => botApi.deleteMessage(chatId, msgId).catch(() => {}), 5000);
@@ -712,7 +712,7 @@ export async function handleTriageCallback(
       break;
 
     case 'reject':
-      await reportFeedback(itemId, 'rejected');
+      await reportFeedback(itemId, 'rejected', 'manual-reject');
       if (botApi && chatId && msgId) {
         await botApi.editMessageText(chatId, msgId, '❌ 却下').catch(() => {});
       }
@@ -786,7 +786,7 @@ export async function handleTriageCallback(
 
     case 'send':
       // TODO: Actually send the reply via LINE/Gmail
-      await reportFeedback(itemId, 'approved');
+      await reportFeedback(itemId, 'approved', 'manual-send');
       if (botApi && chatId && msgId) {
         await botApi.editMessageText(chatId, msgId, '📤 送信済み').catch(() => {});
       }
