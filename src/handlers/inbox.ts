@@ -242,7 +242,7 @@ export async function handleInboxCallback(ctx: Context): Promise<boolean> {
             emailLine ? emailLine.replace(/^📧\s*/, "") :
             lineLine ? lineLine.replace(/^👤\s*/, "") :
             bodyLine ? bodyLine.replace(/^📝\s*/, "") :
-            lines.find((l: string) => l.length > 10 && !/^[🌀-🫿☀-➿]/.test(l.charAt(0))) ||
+            lines.find((l: string) => l.length > 10 && !/^(🦀|📧|📝|💭|🔴|❗|⚠|✅|❌|🗑|📋)/.test(l)) ||
             lines[1] || lines[0] || "Telegram task"
           ).substring(0, 200);
 
