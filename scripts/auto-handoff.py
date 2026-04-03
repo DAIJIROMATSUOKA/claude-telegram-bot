@@ -9,6 +9,7 @@ import os
 import sys
 import subprocess
 import fcntl
+import re
 import time
 from datetime import datetime
 from pathlib import Path
