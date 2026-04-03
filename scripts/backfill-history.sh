@@ -135,13 +135,18 @@ while IFS= read -r line; do
     echo "" >> "$HISTORY_FILE"
   fi
 
-  # Process each chat
+  # Process each chat (JSONL file + python3 per-line to avoid pipe encoding issues)
+  CHAT_TASKS="/tmp/backfill-chats-$$.jsonl"
   echo "$CHATS_JSON" | python3 -c "
 import json, sys
-chats = json.load(sys.stdin)
-for c in chats:
-    print(f\"{c['id']}|{c['created']}|{c['title']}|{c['filepath']}\")
-" | while IFS='|' read -r CHAT_ID CHAT_DATE CHAT_TITLE CHAT_FILEPATH; do
+for c in json.load(sys.stdin):
+    print(json.dumps(c, ensure_ascii=False))
+" > "$CHAT_TASKS"
+
+  while IFS= read -r CHAT_LINE; do
+    CHAT_ID=$(echo "$CHAT_LINE" | python3 -c "import json,sys; print(json.load(sys.stdin)['id'])")
+    CHAT_DATE=$(echo "$CHAT_LINE" | python3 -c "import json,sys; print(json.load(sys.stdin)['created'])")
+    CHAT_TITLE=$(echo "$CHAT_LINE" | python3 -c "import json,sys; print(json.load(sys.stdin)['title'])")
 
     log "  Chat: $CHAT_DATE $CHAT_TITLE"
 
@@ -151,9 +156,20 @@ for c in chats:
       continue
     fi
 
-    # Read chatlog tail
+    # Copy chatlog to /tmp with safe ASCII name (avoids Japanese path issues in LaunchAgent)
     CHATLOG_TAIL="/tmp/backfill-chatlog-$$.md"
-    tail -400 "$CHAT_FILEPATH" > "$CHATLOG_TAIL" 2>/dev/null
+    echo "$CHAT_LINE" | python3 -c "
+import json, sys, shutil
+fp = json.load(sys.stdin)['filepath']
+try:
+    with open(fp, 'r') as f:
+        lines = f.readlines()
+    with open('/tmp/backfill-chatlog-src.md', 'w') as f:
+        f.writelines(lines[-400:])
+except Exception as e:
+    print(f'COPY_ERROR: {e}', file=sys.stderr)
+"
+    cp /tmp/backfill-chatlog-src.md "$CHATLOG_TAIL" 2>/dev/null
 
     if [ ! -s "$CHATLOG_TAIL" ]; then
       log "  SKIP (empty chatlog)"
@@ -196,7 +212,7 @@ File: $CHATLOG_TAIL"
         echo ""
         echo "## $CHAT_DATE gen:${CHAT_ID:0:8} ($DOMAIN)"
         echo '```'
-        echo "W: (Agent SDK compression failed - chatlog exists at $CHAT_FILEPATH)"
+        echo "W: (Agent SDK compression failed - chat_id=$CHAT_ID)"
         echo '```'
       } >> "$HISTORY_FILE"
       ERRORS=$((ERRORS + 1))
@@ -206,7 +222,8 @@ File: $CHATLOG_TAIL"
 
     # Rate limit: wait between calls to avoid overloading Agent SDK
     sleep 5
-  done
+  done < "$CHAT_TASKS"
+  rm -f "$CHAT_TASKS" /tmp/backfill-chatlog-src.md
 
   TOTAL=$((TOTAL + CHAT_COUNT))
 
