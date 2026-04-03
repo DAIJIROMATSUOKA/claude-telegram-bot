@@ -1,40 +1,49 @@
 #!/bin/bash
-# Session Start - mechanized startup for claude.ai croppy sessions
-# Usage: bash scripts/session-start.sh
-# Called from exec bridge: exec.sh "bash scripts/session-start.sh" "" 120
+# Session Start - fast, no LLM, direct file read with line limits
+# Usage: exec.sh "bash scripts/session-start.sh"
 
 cd ~/claude-telegram-bot || exit 1
 
 HANDOFF_FILE="autonomous/state/handoffs/croppy-latest.md"
-HAS_HANDOFF=0
 
+echo '=== SESSION START ==='
+date '+%Y-%m-%d %H:%M JST'
+
+# 1. Handoff (full content if exists, then delete)
 if [ -f "$HANDOFF_FILE" ]; then
-  HAS_HANDOFF=1
-  PROMPT="Read these files and return a concise briefing (max 30 lines):
-1. autonomous/state/handoffs/croppy-latest.md - FULL content (session handoff, critical context)
-2. autonomous/state/M1.md - STATUS and NEXT_ACTION only
-3. autonomous/state/WIP.md - active items only
-Focus: handoff STATE, DECISIONS, REMAINING, next actions."
-else
-  PROMPT="Read these files and return a concise status briefing (max 20 lines):
-1. autonomous/state/M1.md - STATUS, NEXT_ACTION, SESSION SUMMARY
-2. autonomous/state/WIP.md - active items only
-3. /Users/daijiromatsuokam1/Machinelab Dropbox/Matsuoka Daijiro/JARVIS-Journal/croppy-notes.md - last 2-3 sections only
-Focus: current STATUS, decisions, stuck items, next actions. Skip missing files."
-fi
-
-B64=$(echo -n "$PROMPT" | base64)
-RESULT=$(bash scripts/agent-bridge.sh "$B64" read 120 2>&1)
-
-if [ "$HAS_HANDOFF" = "1" ]; then
-  echo "HANDOFF LOADED"
-else
-  echo "NO HANDOFF (fresh start)"
-fi
-echo "$RESULT"
-
-if [ "$HAS_HANDOFF" = "1" ]; then
+  echo ''
+  echo '=== HANDOFF: YES ==='
+  cat "$HANDOFF_FILE"
   rm -f "$HANDOFF_FILE"
-  echo "---"
-  echo "handoff file deleted"
+  echo ''
+  echo '[handoff file consumed and deleted]'
+else
+  echo ''
+  echo '=== HANDOFF: NO ==='
 fi
+
+# 2. M1.md (first 10 lines - STATUS/NEXT_ACTION)
+echo ''
+echo '=== M1 STATE ==='
+head -10 autonomous/state/M1.md 2>/dev/null || echo 'NOT FOUND'
+
+# 3. WIP.md (first 20 lines if non-empty)
+if [ -s autonomous/state/WIP.md ]; then
+  echo ''
+  echo '=== WIP ==='
+  head -20 autonomous/state/WIP.md 2>/dev/null
+else
+  echo ''
+  echo '=== WIP: EMPTY ==='
+fi
+
+# 4. croppy-notes (last 40 lines)
+NOTES="/Users/daijiromatsuokam1/Machinelab Dropbox/Matsuoka Daijiro/JARVIS-Journal/croppy-notes.md"
+if [ -f "$NOTES" ]; then
+  echo ''
+  echo '=== CROPPY-NOTES (recent) ==='
+  tail -40 "$NOTES"
+fi
+
+echo ''
+echo '=== END ==='
