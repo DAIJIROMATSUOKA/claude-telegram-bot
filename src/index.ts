@@ -166,6 +166,7 @@ bot.api.config.use((prev, method, payload, signal) => {
     let markup = p.reply_markup ? (typeof p.reply_markup === 'string' ? JSON.parse(p.reply_markup) : p.reply_markup) : null;
 
     const delBtn = { text: '🗑', callback_data: 'ib:del:sys' };
+    const todoBtn = { text: '📋', callback_data: 'ib:todo:sys' };
 
     if (markup?.inline_keyboard) {
       // Skip 🗑 for task list messages (they have their own UX)
@@ -184,14 +185,14 @@ bot.api.config.use((prev, method, payload, signal) => {
         // Append 🗑 to the last row if it has space, otherwise new row
         const lastRow = markup.inline_keyboard[markup.inline_keyboard.length - 1];
         if (lastRow.length < 4) {
-          lastRow.push(delBtn);
+          lastRow.push(todoBtn, delBtn);
         } else {
-          markup.inline_keyboard.push([delBtn]);
+          markup.inline_keyboard.push([todoBtn, delBtn]);
         }
       }
     } else if (!markup || !markup.keyboard) {
       // No markup at all → add 🗑 button
-      markup = { inline_keyboard: [[delBtn]] };
+      markup = { inline_keyboard: [[todoBtn, delBtn]] };
     }
 
     p.reply_markup = JSON.stringify(markup);

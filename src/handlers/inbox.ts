@@ -229,7 +229,57 @@ export async function handleInboxCallback(ctx: Context): Promise<boolean> {
         }
         break;
       }
-      case "snz1h": {
+      case "todo": {
+        // 1-click Todoist task creation from Telegram notification
+        try {
+          const msgText = ctx.callbackQuery?.message?.text || "";
+          const lines = msgText.split("\n").filter((l: string) => l.trim());
+          const taskContent = (lines.find((l: string) => l.length > 5) || lines[0] || "Telegram task").substring(0, 200);
+
+          // Calculate next :00 or :30 in JST
+          const now = new Date();
+          const jstMs = now.getTime() + 9 * 60 * 60 * 1000;
+          const jst = new Date(jstMs);
+          const min = jst.getUTCMinutes();
+          if (min < 30) {
+            jst.setUTCMinutes(30, 0, 0);
+          } else {
+            jst.setUTCMinutes(0, 0, 0);
+            jst.setUTCHours(jst.getUTCHours() + 1);
+          }
+          const y = jst.getUTCFullYear();
+          const mo = String(jst.getUTCMonth() + 1).padStart(2, "0");
+          const d = String(jst.getUTCDate()).padStart(2, "0");
+          const h = String(jst.getUTCHours()).padStart(2, "0");
+          const mi = String(jst.getUTCMinutes()).padStart(2, "0");
+          const dueString = `${y}-${mo}-${d} ${h}:${mi}`;
+
+          const os = await import("os");
+          const fs = await import("fs");
+          const { join } = await import("path");
+          const configPath = join(os.homedir(), ".claude", "jarvis_config.json");
+          const config = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+          const apiToken = config.rules?.todoist?.api_token;
+          if (!apiToken) throw new Error("Todoist token not found");
+
+          const res = await fetch("https://api.todoist.com/api/v1/tasks", {
+            method: "POST",
+            headers: { "Authorization": `Bearer ${apiToken}`, "Content-Type": "application/json" },
+            body: JSON.stringify({ content: taskContent, due_string: dueString }),
+          });
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+          if (chatId && msgId) {
+            try { await ctx.api.deleteMessage(chatId, msgId); } catch {}
+          }
+          await ctx.answerCallbackQuery({ text: `\u{1F4CB} ${h}:${mi} \u30BF\u30B9\u30AF\u5316`, show_alert: false });
+        } catch (e: any) {
+          await ctx.answerCallbackQuery({ text: `\u274C ${(e as Error).message || "\u30BF\u30B9\u30AF\u5316\u5931\u6557"}`, show_alert: true });
+        }
+        break;
+      }
+
+            case "snz1h": {
         if (chatId && msgId) {
           const origMsg = ctx.callbackQuery?.message;
           const rm = origMsg && "reply_markup" in origMsg ? JSON.stringify((origMsg as any).reply_markup) : null;
