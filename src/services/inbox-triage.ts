@@ -46,6 +46,8 @@ interface TriageBatchQueue {
 }
 const triageBatchQueue = new Map<number, TriageBatchQueue>();
 const TRIAGE_BATCH_DELAY = 3000;
+const AUTO_APPROVE_SECONDS = 1800; // 30min - DJ only taps if WRONG
+const autoApproveTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 function queueTriageBatchAction(chatId: number, entry: TriageBatchEntry): number {
   let q = triageBatchQueue.get(chatId);
@@ -490,6 +492,18 @@ async function executeAction(item: TriageItem, judgment: TriageJudgment): Promis
         console.error('[Triage] sendMessage FAILED:', sendErr?.message || sendErr);
       }
       console.log('[Triage] Confirm sent, msgId:', confirmMsg?.message_id);
+      // Auto-approve after 30s if DJ doesn't interact
+      if (confirmMsg?.message_id) {
+        const _iid = item.id, _mid = confirmMsg.message_id, _cid = chatId;
+        const tid = setTimeout(async () => {
+          autoApproveTimers.delete(_iid);
+          try {
+            await reportFeedback(_iid, 'approved', 'auto-30min');
+            await botApi!.deleteMessage(_cid, _mid).catch(() => {});
+          } catch (e) { console.error('[Triage] Auto-approve error:', e); }
+        }, AUTO_APPROVE_SECONDS * 1000);
+        autoApproveTimers.set(_iid, tid);
+      }
       break;
     }
 
@@ -705,6 +719,7 @@ export async function handleTriageCallback(
       break;
 
     case 'ok': {
+      { const t = autoApproveTimers.get(itemId); if (t) { clearTimeout(t); autoApproveTimers.delete(itemId); } }
       if (chatId && msgId) {
         const count = queueTriageBatchAction(chatId, { action: 'ok', itemId, msgId, chatId });
         if (answerCallback) {
@@ -716,6 +731,7 @@ export async function handleTriageCallback(
     }
 
     case 'undo': {
+      { const t = autoApproveTimers.get(itemId); if (t) { clearTimeout(t); autoApproveTimers.delete(itemId); } }
       if (chatId && msgId) {
         const count = queueTriageBatchAction(chatId, { action: 'undo', itemId, msgId, chatId });
         if (answerCallback) {
