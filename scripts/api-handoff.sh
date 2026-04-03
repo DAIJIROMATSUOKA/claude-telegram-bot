@@ -217,6 +217,47 @@ print(f'\n---\n📨 HANDOFF中にDJから届いたメッセージ ({len(entries)
 fi
 
 # --- Step 6: Save to handoffs directory ---
+# --- Step 5.5: Validate REMAINING section (仕組み化 — 不完全な引き継ぎを物理的に防止) ---
+VALIDATION=$(python3 -c "
+import sys
+text = open('$SUMMARY_FILE').read()
+lines = text.split('\n')
+in_remaining = False
+items = []
+for line in lines:
+    if line.strip().startswith('## REMAINING'):
+        in_remaining = True
+        continue
+    if in_remaining and line.strip().startswith('## '):
+        break
+    if in_remaining and line.strip().startswith('- '):
+        items.append(line.strip())
+
+warnings = []
+for item in items:
+    if len(item) < 30:
+        warnings.append(f'  SHORT: {item}')
+    if not any(kw in item.lower() for kw in ['script', 'file', 'cmd', 'api', 'url', 'path', '/', 'exec', 'bash', 'python', 'commit', 'pr', 'deploy', 'test', 'verify', 'check', 'run', 'status', 'pending', 'done', 'fail', 'ok', 'error', 'waiting', 'running', 'blocked']):
+        warnings.append(f'  NO_HOW: {item}')
+
+if warnings:
+    print('⚠️ REMAINING items lack detail (what/how/status):')
+    for w in warnings:
+        print(w)
+    print('次セッションが自力で判断できるよう、各項目にスクリプト名・現在の状態を含めてください。')
+else:
+    print('OK')
+" 2>/dev/null)
+
+if [ "$VALIDATION" != "OK" ]; then
+  log "WARNING: REMAINING validation failed"
+  # Inject warning into handoff file
+  {
+    echo ""
+    echo "## ⚠️ HANDOFF品質警告"
+    echo "$VALIDATION"
+  } >> "$HANDOFF_OUT"
+fi
 HANDOFF_DIR="$SCRIPTS_DIR/../autonomous/state/handoffs"
 mkdir -p "$HANDOFF_DIR"
 HANDOFF_SAVE="$HANDOFF_DIR/croppy-$(date '+%Y-%m-%d_%H%M').md"
