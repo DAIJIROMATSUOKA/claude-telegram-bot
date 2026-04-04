@@ -42,7 +42,7 @@ OUTPUT_LOG="$TASK_DIR/${TASK_ID}.log"
 RUNNER="$TASK_DIR/${TASK_ID}.runner.sh"
 RUNNER_LOG="$TASK_DIR/${TASK_ID}.runner.log"
 
-# Write .run.sh file then setsid nohup (avoids bash -c quoting hell + poller pgid kill)
+# Write .run.sh file then nohup (avoids bash -c quoting hell + poller pgid kill)
 RUNSH="$TASK_DIR/${TASK_ID}.run.sh"
 python3 - "$RUNSH" "$CWD" "$MODEL" "$PROMPT_FILE" "$OUTPUT_LOG" "$CURRENT" "$TASK_DIR" "$TASK_ID" "$NOTIFY" "$CLEANUP" << 'PYBLOCK'
 import sys, os, stat
@@ -62,7 +62,7 @@ os.chmod(runsh, os.stat(runsh).st_mode | stat.S_IEXEC)
 PYBLOCK
 
 # setsid detaches from poller process group; nohup survives HUP
-setsid nohup bash "$RUNSH" > "$TASK_DIR/${TASK_ID}.runner.log" 2>&1 &
+nohup bash "$RUNSH" > "$TASK_DIR/${TASK_ID}.runner.log" 2>&1 &
 PID=$!
 
 # Update PID
