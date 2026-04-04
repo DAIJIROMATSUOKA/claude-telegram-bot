@@ -58,6 +58,7 @@ ${descSection}
 - .cjsが動かない → package.jsonの"type":"module"環境では.cjs必須`;
 }
 
+/** /manual <device> [description] -- Generate equipment manual via Claude Code. */
 export async function handleManual(ctx: Context): Promise<void> {
   if (!isAuthorized(ctx.from?.id, ALLOWED_USERS)) return;
 

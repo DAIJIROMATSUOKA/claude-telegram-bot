@@ -68,7 +68,7 @@ export async function ensureMemoryTables(): Promise<void> {
       console.error('[Memory] Table creation failed:', e);
     }
   }
-  console.log('✅ Memory tables initialized');
+  console.log('[Memory] Tables initialized');
 }
 
 // ─── User Profile ───

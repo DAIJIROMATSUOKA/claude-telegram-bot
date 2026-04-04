@@ -53,11 +53,13 @@ function isDirectMedia(mimeType: string): boolean {
   return MEDIA_TYPES.some(t => mimeType.startsWith(t));
 }
 
+/** /line_schedule -- Schedule LINE messages with optional file attachments. */
 export async function handleLineSchedule(ctx: Context): Promise<void> {
   const userId = ctx.from?.id;
   const chatId = ctx.chat?.id!;
   const raw = (ctx.message?.text || '').replace(/^\/line_?schedule\s*/i, '').trim();
 
+  try {
   // Sub-commands: list, cancel
   if (raw === 'list' || raw === '一覧') {
     const data: any = await fetch(`${GATEWAY_URL}/v1/db/query`, {
@@ -259,4 +261,8 @@ export async function handleLineSchedule(ctx: Context): Promise<void> {
   ].filter(Boolean).join('\n');
 
   await ctx.reply(parts);
+  } catch (e: any) {
+    console.error("[LineSchedule] Unhandled error:", e);
+    await ctx.reply(`❌ エラー: ${e.message || e}`).catch(() => {});
+  }
 }

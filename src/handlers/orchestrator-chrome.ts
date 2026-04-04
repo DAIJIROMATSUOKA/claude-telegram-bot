@@ -15,7 +15,7 @@ import { extractMachineNo, getProjectContext } from "../project-context-injector
 import { homedir } from "os";
 
 const execAsync = promisify(exec);
-import { waitAndRelayResponse, registerBridgeReply } from "./croppy-bridge";
+import { waitAndRelayResponse } from "./croppy-bridge";
 
 // ─── Constants ────────────────────────────────────────────────
 
@@ -333,8 +333,6 @@ async function claudeInboxRoute(
 
 // ─── Auto-Handoff (long chat → summarize → new chat) ────────
 
-const HANDOFF_INJECT_THRESHOLD = 25; // inject count before warning
-const HANDOFF_TRIGGER_THRESHOLD = 30; // inject count to trigger handoff
 
 /**
  * Check if a project tab needs handoff and execute if needed
@@ -427,7 +425,7 @@ async function checkAndHandoff(
       `osascript -e 'tell application "Google Chrome" to tell window ${widx} to set URL of (make new tab) to "${projectUrl}"'`,
       5000
     );
-    const newTidx = parseInt(tbefore) + 1;
+    const newTidx = parseInt(tbefore!) + 1;
     newWT = `${widx}:${newTidx}`;
 
     // Wait for page load
@@ -610,7 +608,7 @@ export class ChromeOrchestrator {
             text: opts.text,
             source: opts.source,
             senderHint: opts.senderHint,
-            projectId: decision.projectId,
+            projectId: decision.projectId!,
             error: result || "resolve returned empty",
           });
           return { decision, tabWT: null, forwarded: false, error: `resolve失敗+キュー保存: ${result}` };

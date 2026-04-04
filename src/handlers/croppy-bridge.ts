@@ -12,6 +12,7 @@ import { exec } from 'child_process';
 import { writeFileSync as bwSync } from 'fs';
 import { promisify } from 'util';
 import type { Context } from 'grammy';
+import { escapeHtml } from '../formatting';
 
 const execAsync = promisify(exec);
 
@@ -42,6 +43,7 @@ function isProjectTab(wt: string): boolean {
   } catch { return false; }
 }
 
+/** Register a Telegram message ID as belonging to a specific worker tab for reply routing. */
 export function registerBridgeReply(msgId: number, wt: string): void {
   bridgeReplyMap.set(msgId, wt);
   // Evict oldest if over limit
@@ -210,7 +212,6 @@ async function handleBridgeStatus(ctx: Context): Promise<void> {
       const parts = line.split('|').map(p => p.trim());
       if (parts.length >= 3) {
         const wt = parts[0];
-        const title = parts[1];
         const status = parts[2];
         const icon = status === 'READY' ? '🟢' : status === 'BUSY' ? '🟡' : '🔴';
         msg += `${icon} <code>${wt}</code> ${status}\n`;
@@ -412,7 +413,7 @@ export async function waitAndRelayResponse(ctx: Context, wt: string, maxWaitMs =
         }
         for (let i = 0; i < chunks.length; i++) {
           try {
-            const text = (i === 0 && dispatchHeader) ? `${dispatchHeader}\n\n${chunks[i]}` : chunks[i];
+            const text: string = (i === 0 && dispatchHeader) ? `${dispatchHeader}\n\n${chunks[i]}` : chunks[i]!
             const sent = await ctx.reply(text, { parse_mode: i === 0 && dispatchHeader ? 'HTML' : undefined });
             registerBridgeReply(sent.message_id, wt);
           } catch (e) {
@@ -479,9 +480,4 @@ export async function handleBridgeReply(ctx: Context): Promise<boolean> {
   return true;
 }
 
-function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
-}
+// escapeHtml imported from ../formatting

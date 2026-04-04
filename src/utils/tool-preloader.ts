@@ -5,7 +5,7 @@
  */
 import { readFileSync, existsSync } from 'fs';
 import { execSync } from 'child_process';
-import { join, resolve } from 'path';
+import { join } from 'path';
 
 const PROJECT_ROOT = '/Users/daijiromatsuokam1/claude-telegram-bot';
 const MAX_FILE_SIZE = 10000;

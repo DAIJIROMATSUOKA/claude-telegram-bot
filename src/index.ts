@@ -15,9 +15,8 @@ process.on("unhandledRejection", (reason) => {
 
 import { Bot } from "grammy";
 import { run, sequentialize } from "@grammyjs/runner";
-import { TELEGRAM_TOKEN, WORKING_DIR, ALLOWED_USERS, RESTART_FILE, PENDING_TASK_FILE } from "./config";
+import { TELEGRAM_TOKEN, WORKING_DIR, ALLOWED_USERS, RESTART_FILE } from "./config";
 import { unlinkSync, readFileSync, writeFileSync, existsSync } from "fs";
-import { join } from "path";
 import {
   handleStart,
   handleNew,
@@ -42,7 +41,9 @@ import {
   handleAlarm,
   handleReminder,
   handleRecall,
-  handleCroppyDispatch } from "./handlers";
+  handleCroppyDispatch,
+  handleStats,
+  incrementMessageCount } from "./handlers";
 import {
   handleDebate,
   handleAskGPT,
@@ -51,7 +52,7 @@ import {
 import { handleAISession } from "./handlers/ai-session";
 import { handleBridgeCommand } from "./handlers/croppy-bridge";
 import { handleChatCommand, handlePostCommand, handleChatsCommand } from "./handlers/claude-chat";
-import { handleAsk, handleFindChat, handleAskUuid, handleNewDomain } from "./handlers/claude-chat-api";
+import { handleFindChat, handleAskUuid, handleNewDomain } from "./handlers/claude-chat-api";
 import { handleAsk as handleAskChrome } from "./handlers/ask-command";
 import { handleAudit } from "./handlers/audit-command";
 import { handleSpec, handleDecide, handleDecisions } from "./handlers/dj-spec-command";
@@ -69,19 +70,16 @@ import { handleMemory, handleForget, handleRemember } from "./handlers/memory-co
 import { runVectorGC, runPendingGC, runSummaryGC } from "./services/jarvis-memory";
 import { ensureLearnedMemoryTable } from './utils/learned-memory';
 import { ensureSessionSummaryTable } from './utils/session-summary';
-import { startMemoryGCScheduler } from './utils/memory-gc';
 import { getPendingTask, clearPendingTask } from './utils/pending-task';
 import { handleMailSend } from './handlers/mail-send';
 import { handleImsgSend } from './handlers/imsg-send';
 import { handleLinePost } from './handlers/line-post';
 import { handleLineSchedule } from './handlers/line-schedule';
 import { handleJarvisNotif, initNotifTable } from './handlers/jarvisnotif-command';
-import { handleTimeTimer, initTimerTable } from './handlers/timetimer-command';
+import { handleTimeTimer } from './handlers/timetimer-command';
 import { handleFileMessage } from './handlers/file-message';
-import { handleTaskAdd as handleTodoAdd, handleTaskList as handleTodoList, handleTaskCallback as handleTodoCallback } from './handlers/task-command';
+import { handleTaskAdd as handleTodoAdd, handleTaskList as handleTodoList } from './handlers/task-command';
 import { getWorkState, formatWorkStateForContext, updateWorkStateSessionId, isWorkComplete } from './utils/work-state';
-import { session } from './session';
-import { convertMarkdownToHtml } from './formatting';
 import { startSnoozeChecker } from "./services/snooze";
 import { startInboxTriage } from "./services/inbox-triage";
 import { handleAgentTask } from "./handlers/agent-task";
@@ -95,9 +93,9 @@ function loadAgentsMarkdown(): void {
   try {
     if (existsSync(agentsPath)) {
       AGENTS_MD_CONTENT = readFileSync(agentsPath, "utf-8");
-      console.log(`✅ Loaded CLAUDE.md (${AGENTS_MD_CONTENT.length} chars)`);
+      console.log(`[Startup] Loaded CLAUDE.md (${AGENTS_MD_CONTENT.length} chars)`);
     } else {
-      console.warn("⚠️ CLAUDE.md not found at:", agentsPath);
+      console.warn("[Startup] CLAUDE.md not found at:", agentsPath);
       AGENTS_MD_CONTENT = "";
     }
   } catch (error) {
@@ -314,11 +312,15 @@ bot.command("askuuid", handleAskUuid);
 bot.command("newdomain", handleNewDomain);
 bot.command("manual", handleManual);
 bot.command("search", handleSearch);
+bot.command("stats", handleStats);
 bot.command("help", handleCroppyDispatch);
 // Auto-delete "X pinned" service messages
 bot.on("message:pinned_message", async (ctx) => { try { await ctx.deleteMessage(); } catch {} });
 
-bot.on("message:text", handleText);
+bot.on("message:text", (ctx) => {
+  incrementMessageCount();
+  return handleText(ctx);
+});
 
 // Voice messages: STT (whisper) -> Claude -> TTS (Kyoko)
 bot.on("message:voice", handleVoice);
@@ -413,7 +415,7 @@ const runner = run(bot);
     ensureLearnedMemoryTable(),
     ensureSessionSummaryTable(),
   ]).then(() => {
-    console.log('✅ Memory tables initialized');
+    console.log('[Startup] Memory tables initialized');
     // Inbox Zero: snooze re-notification checker
     try { startSnoozeChecker(bot); } catch(e) { console.error("[Snooze] Init failed:", e); }
     try { startInboxTriage(bot, ALLOWED_USERS[0] || 0); } catch(e) { console.error("[Triage] Init failed:", e); }

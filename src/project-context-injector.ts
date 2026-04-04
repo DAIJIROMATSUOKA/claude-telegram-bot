@@ -17,11 +17,9 @@
 
 import { readFileSync, existsSync } from 'fs';
 import { resolve } from 'path';
-import { exec } from 'child_process';
-import { promisify } from 'util';
-import { createHash } from 'crypto';
 
-const execAsync = promisify(exec);
+
+
 
 const HOME = process.env.HOME || '/Users/daijiromatsuokam1';
 const CACHE_FILE = resolve(HOME, 'claude-telegram-bot/cache/project-contexts.json');
@@ -105,7 +103,7 @@ function saveInjectedHash(machineKey: string, hash: string): void {
  */
 export function extractMachineNo(text: string): string | null {
   const m = text.match(/[MP]M?(\d{3,4})/i);
-  return m ? m[1] : null;
+  return m ? m[1]! : null;
 }
 
 /**
@@ -158,15 +156,15 @@ export function getProjectContext(
     });
   const byProject: Record<string, ProjectQuote[]> = {};
   for (const q of quotes) {
-    const pno = q.プロジェクトNo || 'unknown';
+    const pno = q!.プロジェクトNo || 'unknown';
     if (!byProject[pno]) byProject[pno] = [];
-    byProject[pno].push(q);
+    byProject[pno]!.push(q!);
   }
 
   lines.push(`[案件コンテキスト - Access DB ${generated}取得]\n`);
 
   for (const [pno, pquotes] of Object.entries(byProject)) {
-    const main = pquotes[0];
+    const main = pquotes[0]!;
     const mno = main.マシンNo || '';
     const device = main.装置名 || '';
     const pname = main.プロジェクト名 || main.名称 || '';

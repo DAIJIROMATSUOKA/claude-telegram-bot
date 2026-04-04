@@ -573,7 +573,7 @@ export async function handleDocument(ctx: Context): Promise<void> {
   try {
     docPath = await downloadDocument(ctx);
   } catch (error) {
-    console.error("Failed to download document:", error);
+    console.error("[Document] Failed to download document:", error);
     await ctx.reply("❌ Failed to download document.");
     return;
   }
@@ -602,8 +602,6 @@ export async function handleDocument(ctx: Context): Promise<void> {
       }
 
       // Send image directly (photo handler removed)
-      const { readFileSync } = await import("fs");
-      
       await ctx.replyWithPhoto(new InputFile(imagePath), {
         caption: ctx.message?.caption || fileName,
       });
@@ -664,7 +662,7 @@ export async function handleDocument(ctx: Context): Promise<void> {
         chatId
       );
     } catch (error) {
-      console.error("Failed to extract document:", error);
+      console.error("[Document] Failed to extract document:", error);
       await ctx.reply(
         `❌ Failed to process document: ${String(error).slice(0, 100)}`
       );

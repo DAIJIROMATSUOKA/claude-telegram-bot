@@ -9,6 +9,7 @@
 import { exec } from "child_process";
 import { promisify } from "util";
 import type { Context } from "grammy";
+import { DOMAIN_RELAY_TIMEOUT_MS, CMD_TIMEOUT_SHORT_MS } from "../constants";
 
 function djQuote(msg: string): string {
   const clean = msg.replace(/\n/g, " ").trim();
@@ -25,13 +26,6 @@ const SCRIPTS_DIR = `${HOME}/claude-telegram-bot/scripts`;
 const DOMAIN_RELAY = `${SCRIPTS_DIR}/domain-relay.sh`;
 const CHAT_ROUTER = `${SCRIPTS_DIR}/chat-router.py`;
 
-interface DomainRouteResult {
-  domain: string;
-  url: string;
-  wt: string;
-  response: string;
-}
-
 /**
  * Quick check: does the message match any domain keywords?
  * Synchronous — uses execSync for speed.
@@ -41,7 +35,7 @@ export function quickDomainRoute(text: string): { domain: string; url: string } 
     const { execSync } = require("child_process");
     const out = execSync(
       `python3 "${CHAT_ROUTER}" route ${JSON.stringify(text)}`,
-      { timeout: 5000, encoding: "utf-8" }
+      { timeout: CMD_TIMEOUT_SHORT_MS, encoding: "utf-8" }
     );
     const domain = out.match(/^DOMAIN: (.+)$/m)?.[1]?.trim();
     const url = out.match(/^URL: (.+)$/m)?.[1]?.trim();
@@ -83,7 +77,7 @@ export async function handleDomainRelay(
     const { stdout, stderr } = await execAsync(
       `bash "${DOMAIN_RELAY}" --domain "${route.domain}" '${escapedMsg}'`,
       {
-        timeout: 270_000, // 4.5min
+        timeout: DOMAIN_RELAY_TIMEOUT_MS,
         maxBuffer: 1024 * 1024,
         env: { ...process.env, PATH: `/opt/homebrew/bin:/usr/local/bin:${process.env.PATH}` },
       }

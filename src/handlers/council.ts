@@ -18,12 +18,13 @@ import {
   type AIResponse,
 } from "../utils/multi-ai";
 import { maybeEnrichWithWebSearch } from "../utils/web-search";
+import { TG_MESSAGE_LIMIT } from "../constants";
 
 // ========================================
 // Telegram Formatting Utilities
 // ========================================
 
-const TG_LIMIT = 4096;
+const TG_LIMIT = TG_MESSAGE_LIMIT;
 
 function escHtml(t: string): string {
   return t
@@ -53,7 +54,7 @@ async function safeEditMessageText(
     });
   } catch (e: any) {
     // Log error or handle silently as per current behavior
-    console.error("Failed to edit message:", e);
+    console.error("[Council] Failed to edit message:", e);
   }
 }
 

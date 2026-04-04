@@ -197,7 +197,7 @@ export async function handleCallback(ctx: Context): Promise<void> {
 
   // Interrupt any running query - button responses are always immediate
   if (session.isRunning) {
-    console.log("Interrupting current query for button response");
+    console.log("[Callback] Interrupting current query for button response");
     await session.stop();
     // Small delay to ensure clean interruption
     await new Promise((resolve) => setTimeout(resolve, 100));
@@ -222,7 +222,7 @@ export async function handleCallback(ctx: Context): Promise<void> {
 
     await auditLog(userId, username, "CALLBACK", message, response);
   } catch (error) {
-    console.error("Error processing callback:", error);
+    console.error("[Callback] Error processing callback:", error);
 
     for (const toolMsg of state.toolMessages) {
       try {
@@ -303,7 +303,7 @@ async function handleResumeCallback(
       ctx
     );
   } catch (error) {
-    console.error("Error getting recap:", error);
+    console.error("[Callback] Error getting recap:", error);
     // Don't show error to user - session is still resumed, recap just failed
   } finally {
     typing.stop();

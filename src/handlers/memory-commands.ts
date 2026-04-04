@@ -23,20 +23,15 @@ import {
   approvePendingMemory,
   rejectPendingMemory,
 } from '../services/jarvis-memory';
+import { escapeHtml } from '../formatting';
+import { isAuthorized } from '../security';
 
 const ALLOWED_USERS = (process.env.TELEGRAM_ALLOWED_USERS || '')
   .split(',')
   .map((id) => parseInt(id.trim(), 10))
   .filter(Boolean);
 
-function isAuthorized(userId: number | undefined, allowed: number[]): boolean {
-  return userId !== undefined && allowed.includes(userId);
-}
-
-function escapeHtml(text: string): string {
-  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
-
+/** /memory -- Display all memory overview, pending items, or approve/reject. */
 export async function handleMemory(ctx: Context): Promise<void> {
   const userId = ctx.from?.id;
   if (!isAuthorized(userId, ALLOWED_USERS)) {
@@ -147,6 +142,7 @@ async function handleMemoryReject(ctx: Context, id: string): Promise<void> {
   }
 }
 
+/** /forget <keyword> -- Delete matching memory entries. */
 export async function handleForget(ctx: Context): Promise<void> {
   const userId = ctx.from?.id;
   if (!isAuthorized(userId, ALLOWED_USERS)) {
@@ -247,6 +243,7 @@ export async function handleForget(ctx: Context): Promise<void> {
   }
 }
 
+/** /remember <key> <value> -- Manually store a memory entry. */
 export async function handleRemember(ctx: Context): Promise<void> {
   const userId = ctx.from?.id;
   if (!isAuthorized(userId, ALLOWED_USERS)) {

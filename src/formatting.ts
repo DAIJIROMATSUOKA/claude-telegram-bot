@@ -64,8 +64,7 @@ export function convertMarkdownToHtml(text: string): string {
   // Blockquotes: &gt; text -> <blockquote>text</blockquote>
   text = convertBlockquotes(text);
 
-  // Markdown tables
-  text = convertMarkdownTables(text);
+  // Markdown tables (removed: convertMarkdownTables not available)
 
   // Bullet lists: - item or * item -> • item
   text = text.replace(/^[-*] /gm, "• ");

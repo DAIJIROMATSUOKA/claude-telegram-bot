@@ -163,7 +163,10 @@ def get_todoist_tasks(token: str, filter_str: str = "today") -> list:
 def add_todoist_task(token: str, content: str) -> str:
     import urllib.request
     import urllib.parse
-    data = json.dumps({"content": content, "due_string": "today"}).encode()
+    from datetime import datetime, timezone, timedelta
+    jst = datetime.now(timezone(timedelta(hours=9)))
+    due_dt = jst.strftime("%Y-%m-%dT23:59:00+09:00")
+    data = json.dumps({"content": content, "due_datetime": due_dt}).encode()
     req = urllib.request.Request(
         f"{TODOIST_API}/tasks",
         data=data,

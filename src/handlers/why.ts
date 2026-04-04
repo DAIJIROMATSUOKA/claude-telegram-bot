@@ -46,8 +46,6 @@ export async function handleWhy(ctx: Context): Promise<void> {
   // 3. Get latest action trace for this session
   // We use chat_id + message_id as session_id (format: "{chatId}_{messageId}")
   // For simplicity, we'll get the latest trace from any session for this user
-  const allTraces = controlTowerDB.getAllSettings();
-
   // Try to find session_id from control tower
   const towers = controlTowerDB.getAllControlTowers();
   const latestTower = towers.find(t => t.session_id.includes(String(chatId)));

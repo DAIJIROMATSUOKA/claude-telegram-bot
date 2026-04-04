@@ -8,7 +8,6 @@
 import {
   query,
   type Options,
-  type SDKMessage,
 } from "@anthropic-ai/claude-agent-sdk";
 import { readFileSync } from "fs";
 import { buildMemoryContext } from "./services/jarvis-memory";
@@ -157,21 +156,6 @@ function getThinkingLevel(message: string): number {
 
   // Default: no thinking
   return 0;
-}
-
-/**
- * Extract text content from SDK message.
- */
-function getTextFromMessage(msg: SDKMessage): string | null {
-  if (msg.type !== "assistant") return null;
-
-  const textParts: string[] = [];
-  for (const block of msg.message.content) {
-    if (block.type === "text") {
-      textParts.push(block.text);
-    }
-  }
-  return textParts.length > 0 ? textParts.join("") : null;
 }
 
 /**

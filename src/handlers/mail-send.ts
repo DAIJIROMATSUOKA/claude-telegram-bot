@@ -15,6 +15,7 @@ const GAS_GMAIL_URL = process.env.GAS_GMAIL_URL || "";
 const GAS_GMAIL_KEY = process.env.GAS_GMAIL_KEY || "";
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
 
+/** /mail -- Send email from Telegram via GAS. */
 export async function handleMailSend(ctx: Context): Promise<void> {
   if (!GAS_GMAIL_URL || !GAS_GMAIL_KEY) {
     await ctx.reply("❌ GAS_GMAIL_URL/KEY未設定");

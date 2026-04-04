@@ -12,6 +12,7 @@ import { isAuthorized } from "../security";
 import { getChatHistory } from "../utils/chat-history";
 import { saveSessionSummary } from "../utils/session-summary";
 import { callMemoryGateway } from "./ai-router";
+import { escapeHtml } from "../formatting";
 import { exec, execSync } from "child_process";
 import { promisify } from "util";
 import { readFileSync, writeFileSync, existsSync } from "fs";
@@ -45,6 +46,7 @@ import {
   isFocusModeEnabled,
 } from "../utils/focus-mode";
 import { formatMetricsForStatus } from "../utils/metrics";
+import { getUptime } from "../utils/uptime";
 import { memoryGatewayBreaker, geminiBreaker } from "../utils/circuit-breaker";
 import { getBgTaskSummary } from "../utils/bg-task-manager";
 import { updateTower } from "../utils/tower-manager";
@@ -55,7 +57,6 @@ import type { TowerIdentifier } from "../types/control-tower";
  */
 export async function handleStart(ctx: Context): Promise<void> {
   const userId = ctx.from?.id;
-  const username = ctx.from?.username || "unknown";
 
   if (!isAuthorized(userId, ALLOWED_USERS)) {
     await ctx.reply("Unauthorized. Contact the bot owner for access.");
@@ -166,6 +167,9 @@ export async function handleStatus(ctx: Context): Promise<void> {
 
   const lines: string[] = ["📊 <b>Bot Status</b>\n"];
 
+  // Uptime
+  lines.push(`⏳ Uptime: ${getUptime()}`);
+
   // Session status
   if (session.isActive) {
     lines.push(`✅ Session: Active (${session.sessionId?.slice(0, 8)}...)`);
@@ -243,6 +247,58 @@ export async function handleStatus(ctx: Context): Promise<void> {
 
   // Performance metrics
   lines.push(`\n${formatMetricsForStatus(1)}`);
+
+  await ctx.reply(lines.join("\n"), { parse_mode: "HTML" });
+}
+
+// Bot start timestamp for uptime calculation
+const BOT_START_TIME = Date.now();
+
+// Simple message counter
+let messageCount = 0;
+/** Increment the global message counter for /stats. */
+export function incrementMessageCount(): void {
+  messageCount++;
+}
+
+/**
+ * /stats - Show bot statistics (message count, uptime).
+ */
+export async function handleStats(ctx: Context): Promise<void> {
+  const userId = ctx.from?.id;
+
+  if (!isAuthorized(userId, ALLOWED_USERS)) {
+    await ctx.reply("Unauthorized.");
+    return;
+  }
+
+  const uptimeMs = Date.now() - BOT_START_TIME;
+  const uptimeSec = Math.floor(uptimeMs / 1000);
+  const days = Math.floor(uptimeSec / 86400);
+  const hours = Math.floor((uptimeSec % 86400) / 3600);
+  const minutes = Math.floor((uptimeSec % 3600) / 60);
+  const uptimeStr = days > 0
+    ? `${days}d ${hours}h ${minutes}m`
+    : hours > 0
+      ? `${hours}h ${minutes}m`
+      : `${minutes}m`;
+
+  const sessionStatus = session.isActive ? "Active" : "Inactive";
+  const queryStatus = session.isRunning ? "Running" : "Idle";
+
+  const lines: string[] = [
+    "📊 <b>Bot Stats</b>\n",
+    `💬 Messages processed: ${messageCount}`,
+    `⏱️ Uptime: ${uptimeStr}`,
+    `🔗 Session: ${sessionStatus}`,
+    `⚙️ Query: ${queryStatus}`,
+  ];
+
+  if (session.lastUsage) {
+    const totalInput = session.lastUsage.input_tokens || 0;
+    const totalOutput = session.lastUsage.output_tokens || 0;
+    lines.push(`\n📈 Last query tokens: ${totalInput.toLocaleString()} in / ${totalOutput.toLocaleString()} out`);
+  }
 
   await ctx.reply(lines.join("\n"), { parse_mode: "HTML" });
 }
@@ -535,6 +591,28 @@ export async function handleTodoist(ctx: Context): Promise<void> {
   const args = text.replace(/^\/todoist\s*/, "").trim();
   const subcommand = args.split(/\s+/)[0]?.toLowerCase() || "";
 
+  if (subcommand === "help" || subcommand === "?") {
+    await ctx.reply(
+      `<b>📋 /todoist コマンド一覧</b>\n\n` +
+      `<b>タスク一覧（今日）:</b>\n` +
+      `  /todoist\n\n` +
+      `<b>タスク追加:</b>\n` +
+      `  /todoist add 買い物に行く\n` +
+      `  /todoist add 田中さんにメール送る\n` +
+      `  /todoist add レポート提出 p1\n\n` +
+      `<b>タスク完了:</b>\n` +
+      `  /todoist done 1234567890\n` +
+      `  (タスクIDは一覧表示で確認)\n\n` +
+      `<b>期限切れリスケ:</b>\n` +
+      `  /todoist reschedule          → 7日後に移動\n` +
+      `  /todoist reschedule 2026-04-10 → 指定日に移動\n\n` +
+      `<b>ヘルプ:</b>\n` +
+      `  /todoist help`,
+      { parse_mode: "HTML" }
+    );
+    return;
+  }
+
   if (subcommand === "add") {
     // Add task
     const taskContent = args.replace(/^add\s+/, "").trim();
@@ -552,7 +630,14 @@ export async function handleTodoist(ctx: Context): Promise<void> {
         },
         body: JSON.stringify({
           content: taskContent,
-          due_string: "today",
+          due_datetime: (() => {
+            const now = new Date();
+            const jst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+            const y = jst.getUTCFullYear();
+            const mo = String(jst.getUTCMonth() + 1).padStart(2, "0");
+            const d = String(jst.getUTCDate()).padStart(2, "0");
+            return `${y}-${mo}-${d}T23:59:00+09:00`;
+          })(),
         }),
       });
 
@@ -773,6 +858,7 @@ function parseAlarmMessage(message: string): { time: string; label: string } | n
   return null;
 }
 
+/** /alarm <time> [label] -- Set a one-time alarm notification. */
 export async function handleAlarm(ctx: Context): Promise<void> {
   const userId = ctx.from?.id;
 
@@ -929,6 +1015,7 @@ function parseReminderDateTime(input: string): { dateTime: string; label: string
   }
 }
 
+/** /reminder <time> <label> -- Schedule a reminder notification. */
 export async function handleReminder(ctx: Context): Promise<void> {
   const userId = ctx.from?.id;
 
@@ -953,7 +1040,7 @@ export async function handleReminder(ctx: Context): Promise<void> {
 
   try {
     const input = `${dateTime}\n${label}`;
-    const { stdout, stderr } = await execAsync(
+    const { stderr } = await execAsync(
       `printf '${input}' | shortcuts run '緊急リマインダー'`,
       { timeout: 15000 }
     );
@@ -974,6 +1061,7 @@ export async function handleReminder(ctx: Context): Promise<void> {
   }
 }
 
+/** /recall <keyword> -- Search memory facts, summaries, and vectors. */
 export async function handleRecall(ctx: Context): Promise<void> {
   const userId = ctx.from?.id;
 
@@ -1101,9 +1189,7 @@ function truncate(s: string, max: number): string {
   return oneLine.length > max ? oneLine.slice(0, max) + '...' : oneLine;
 }
 
-function escapeHtml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
+// escapeHtml imported from ../formatting
 
 /**
  * Generic handler for croppy-dispatch.sh commands (/timer, /git, /help).

@@ -4,4 +4,5 @@ if git diff --cached -- . ':!.husky/*' ':!.git/hooks/*' ':!docs/*' | grep -E "$B
     echo "🔴 コミット拒否: 従量課金APIキーまたはSDKが検出されました"
     exit 1
 fi
+bun run typecheck
 bun test

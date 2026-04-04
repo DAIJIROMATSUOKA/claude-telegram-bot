@@ -19,6 +19,8 @@ export {
   handleReminder,
   handleRecall,
   handleCroppyDispatch,
+  handleStats,
+  incrementMessageCount,
 } from "./commands";
 export { handleText } from "./text";
 export { handleDocument } from "./document";

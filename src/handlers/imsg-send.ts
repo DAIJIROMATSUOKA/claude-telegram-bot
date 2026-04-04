@@ -102,6 +102,7 @@ async function sendImsgFile(handle: string, filePath: string): Promise<{ ok: boo
   return { ok: exitCode === 0, error: stderr.substring(0, 300) };
 }
 
+/** /imsg -- Send iMessage/SMS from Telegram via AppleScript. */
 export async function handleImsgSend(ctx: Context): Promise<void> {
   const text = (ctx.message?.text || "").replace(/^\/imsg\s*/, "").trim();
   const userId = ctx.from?.id;

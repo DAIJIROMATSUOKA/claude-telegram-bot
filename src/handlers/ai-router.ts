@@ -13,6 +13,8 @@
  * プレフィックスなし → Jarvis (デフォルト)
  */
 
+import { CMD_TIMEOUT_LONG_MS, COUNCIL_TIMEOUT_MS } from "../constants";
+
 export type AIProvider = 'jarvis' | 'gpt' | 'gemini' | 'croppy' | 'all' | 'council';
 
 export interface RouteResult {
@@ -169,76 +171,6 @@ export async function getMemoryPack(
 }
 
 /**
- * 子プロセスを非同期で実行（タイムアウト管理付き）
- */
-async function execAsync(
-  command: string,
-  args: string[],
-  options: { timeout: number; cwd: string }
-): Promise<string> {
-  const { spawn } = await import('child_process');
-
-  console.log('[execAsync] Starting process:', command);
-  console.log('[execAsync] Args count:', args.length);
-  console.log('[execAsync] Timeout:', options.timeout);
-  console.log('[execAsync] CWD:', options.cwd);
-
-  return new Promise((resolve, reject) => {
-    console.log('[execAsync] Creating spawn process...');
-    const proc = spawn(command, args, {
-      cwd: options.cwd,
-      shell: true,
-      env: { ...process.env, PATH: '/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin:' + (process.env.PATH || '') },
-    });
-
-    console.log('[execAsync] Process spawned, PID:', proc.pid);
-
-    let stdout = '';
-    let stderr = '';
-    let timedOut = false;
-
-    const timer = setTimeout(() => {
-      console.log('[execAsync] ⚠️ TIMEOUT! Killing process...');
-      timedOut = true;
-      proc.kill('SIGKILL');
-    }, options.timeout);
-
-    proc.stdout?.on('data', (data) => {
-      const chunk = data.toString();
-      console.log('[execAsync] stdout chunk received, length:', chunk.length);
-      stdout += chunk;
-    });
-
-    proc.stderr?.on('data', (data) => {
-      const chunk = data.toString();
-      console.log('[execAsync] stderr chunk received:', chunk.slice(0, 200));
-      stderr += chunk;
-    });
-
-    proc.on('close', (code) => {
-      console.log('[execAsync] Process closed, code:', code);
-      clearTimeout(timer);
-      if (timedOut) {
-        reject(new Error(`Process timed out after ${options.timeout}ms`));
-      } else if (code !== 0) {
-        reject(new Error(`Process exited with code ${code}: ${stderr}`));
-      } else {
-        console.log('[execAsync] Success! stdout length:', stdout.length);
-        resolve(stdout);
-      }
-    });
-
-    proc.on('error', (err) => {
-      console.log('[execAsync] Process error event:', err.message);
-      clearTimeout(timer);
-      reject(err);
-    });
-
-    console.log('[execAsync] Event listeners attached, waiting for completion...');
-  });
-}
-
-/**
  * Claude CLI でクロッピー🦞を呼び出し
  *
  * @param prompt プロンプト（文脈注入済みの場合もあり）
@@ -352,7 +284,7 @@ ${memoryPack}
       const { stdout, stderr } = await execPromise(
         `claude --model claude-opus-4-6 --print < ${tempFile}`,
         {
-          timeout: 180000, // 180秒（3分）- クロッピー🦞のタイムアウト改善
+          timeout: CMD_TIMEOUT_LONG_MS,
           cwd: '/Users/daijiromatsuokam1',
           env: { ...process.env, PATH: '/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin:' + (process.env.PATH || '') },
           maxBuffer: 10 * 1024 * 1024, // 10MB
@@ -499,7 +431,7 @@ ${memoryPack}
       const { stdout, stderr } = await execPromise(
         `${codexPath} exec --skip-git-repo-check < ${tempFile}`,
         {
-          timeout: 180000, // 180秒（3分）- チャッピー🧠のタイムアウト改善
+          timeout: CMD_TIMEOUT_LONG_MS,
           cwd: '/Users/daijiromatsuokam1',
           env: { ...process.env, PATH: '/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin:' + (process.env.PATH || '') },
           maxBuffer: 10 * 1024 * 1024, // 10MB
@@ -646,7 +578,7 @@ export async function callAICouncil(
     try {
       // 210秒タイムアウト（個別AI呼び出し180秒 + バッファ30秒）
       const timeoutPromise = new Promise<AIResponse>((_, reject) =>
-        setTimeout(() => reject(new Error('COUNCIL_TIMEOUT')), 210000)
+        setTimeout(() => reject(new Error('COUNCIL_TIMEOUT')), COUNCIL_TIMEOUT_MS)
       );
 
       const result = await Promise.race([fn(), timeoutPromise]);

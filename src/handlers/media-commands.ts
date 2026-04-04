@@ -17,6 +17,7 @@ import { spawn, execSync } from "child_process";
 import { existsSync, mkdirSync, unlinkSync, writeFileSync, statSync } from "fs";
 import { join, basename } from "path";
 import { InputFile } from "grammy";
+import { escapeHtml } from "../formatting";
 
 // Media queue: serialize heavy AI tasks to prevent SIGTERM under memory pressure
 let mediaQueueBusy = false;
@@ -32,11 +33,6 @@ async function withMediaQueue<T>(fn: () => Promise<T>): Promise<T> {
     if (next) { next.run().then(next.resolve, next.reject).finally(() => { mediaQueueBusy = false; }); }
     else { mediaQueueBusy = false; }
   }
-}
-
-// HTML escape for Telegram messages
-function escapeHtml(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 // Config
@@ -316,9 +312,7 @@ async function downloadPhoto(ctx: Context): Promise<string | null> {
   }
 }
 
-// ============================================================
-// /imagine handler
-// ============================================================
+/** /imagine <prompt> -- Generate an image from text via AI. */
 export async function handleImagine(ctx: Context): Promise<void> {
   const text = ctx.message?.text || "";
   const prompt = text.replace(/^\/imagine\s*/i, "").trim();
@@ -381,9 +375,7 @@ export async function handleImagine(ctx: Context): Promise<void> {
   }
 }
 
-// ============================================================
-// /edit handler
-// ============================================================
+/** /edit <instruction> -- Edit a replied-to photo with AI. */
 export async function handleEdit(ctx: Context): Promise<void> {
   const text = ctx.message?.text || "";
   const rawArgs = text.replace(/^\/edit\s*/i, "").trim();
@@ -590,9 +582,7 @@ export async function handleEdit(ctx: Context): Promise<void> {
   }
 }
 
-// ============================================================
-// /outpaint handler
-// ============================================================
+/** /outpaint -- Extend image canvas with AI outpainting. */
 export async function handleOutpaint(ctx: Context): Promise<void> {
   const text = ctx.message?.text || "";
   const rawArgs = text.replace(/^\/outpaint\s*/i, "").trim();
@@ -757,9 +747,7 @@ export async function handleOutpaint(ctx: Context): Promise<void> {
   }
 }
 
-// ============================================================
-// /animate handler
-// ============================================================
+/** /animate -- Convert a photo to video with AI. */
 export async function handleAnimate(ctx: Context): Promise<void> {
   const text = ctx.message?.text || "";
   const rawArgs = text.replace(/^\/animate\s*/i, "").trim();
@@ -860,9 +848,7 @@ export async function handleAnimate(ctx: Context): Promise<void> {
   }
 }
 
-// ============================================================
-// /undress handler (dedicated nude generation)
-// ============================================================
+/** /undress -- Dedicated nude generation from a replied-to photo. */
 export async function handleUndress(ctx: Context): Promise<void> {
   const text = ctx.message?.text || "";
   const rawArgs = text.replace(/^\/undress\s*/i, "").trim();

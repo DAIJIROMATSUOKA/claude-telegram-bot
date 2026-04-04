@@ -90,6 +90,7 @@ function extractLabel(input: string): string {
     .trim();
 }
 
+/** /jarvisnotif <time> <label> -- Schedule a Jarvis notification. */
 export async function handleJarvisNotif(ctx: Context): Promise<void> {
   const raw = (ctx.message?.text || "").replace(/^\/jarvisnotif\s*/i, "").trim();
   const chatId = String(ctx.chat?.id ?? "");

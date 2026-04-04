@@ -11,6 +11,7 @@
 import { exec } from "child_process";
 import { promisify } from "util";
 import type { Context } from "grammy";
+import { escapeHtml } from "../formatting";
 
 const execAsync = promisify(exec);
 const HOME = process.env.HOME || "/Users/daijiromatsuokam1";
@@ -26,10 +27,6 @@ async function runScript(args: string, timeoutMs = 200000): Promise<any> {
     },
   });
   return JSON.parse(stdout.trim());
-}
-
-function escapeHtml(t: string): string {
-  return t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 function truncate(text: string, max: number): string {
@@ -155,8 +152,7 @@ export async function handleAskUuid(ctx: Context): Promise<void> {
   let fullUuid = uuidInput;
   if (uuidInput.length < 36) {
     try {
-      const searchResult = await runScript("search ''", 15000);
-      // Actually need to grep state.json directly
+      // grep state.json directly
       const { stdout } = await execAsync(
         `python3 -c "import json,os; s=json.load(open(os.path.expanduser('~/.claude-chatlog-state.json'))); [print(k) for k in s if k.startswith('${uuidInput}')]"`,
         { timeout: 5000, shell: "/bin/zsh" }

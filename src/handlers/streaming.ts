@@ -283,7 +283,7 @@ export function createStatusCallback(ctx: Context, state: StreamingState): Statu
 
           // Complete all pending action traces
           const now = Math.floor(Date.now() / 1000);
-          for (const [key, traceId] of state.actionTraceIds.entries()) {
+          for (const [, traceId] of state.actionTraceIds.entries()) {
             try {
               const trace = controlTowerDB.getActionTraces(sessionId, 1000).find(t => t.id === traceId);
               if (trace && trace.status === 'started') {

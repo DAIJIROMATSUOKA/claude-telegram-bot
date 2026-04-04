@@ -132,7 +132,7 @@ export async function handleAgentTask(
         maxTurns: preset.maxTurns,
         settingSources: ["user", "project"],
         model: "claude-opus-4-6",
-        abortSignal: abortController.signal,
+        abortController,
       },
     })) {
       messages.push(msg);

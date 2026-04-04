@@ -7,7 +7,6 @@
 
 import type { Context } from "grammy";
 import {
-  readSpec,
   getSpecSections,
   updateSpecSection,
   logDecision,
@@ -15,10 +14,7 @@ import {
   countDecisions,
   initSpec,
 } from "../utils/dj-spec-manager";
-
-function escapeHtml(t: string): string {
-  return t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
+import { escapeHtml } from "../formatting";
 
 function truncate(text: string, max: number): string {
   return text.length > max ? text.substring(0, max) + "…" : text;

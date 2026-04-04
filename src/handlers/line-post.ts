@@ -54,6 +54,7 @@ async function getLineTargets(): Promise<LineTarget[]> {
   }
 }
 
+/** /line -- Post to LINE group or individual from Telegram. */
 export async function handleLinePost(ctx: Context): Promise<void> {
   const text = (ctx.message?.text || "").replace(/^\/line\s*/, "").trim();
   const userId = ctx.from?.id;

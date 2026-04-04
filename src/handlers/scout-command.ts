@@ -14,7 +14,6 @@ import { promisify } from "util";
 const execAsync = promisify(exec);
 
 const ACTIONS_FILE = "/tmp/jarvis-scout/actions.json";
-const REPORT_FILE = "/tmp/jarvis-scout/latest-report.txt";
 
 interface ScoutAction {
   number: number;

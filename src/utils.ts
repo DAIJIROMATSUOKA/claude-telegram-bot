@@ -4,7 +4,6 @@
  * Audit logging, typing indicator.
  */
 
-import type { Chat } from "grammy/types";
 import type { Context } from "grammy";
 import type { AuditEvent } from "./types";
 import {

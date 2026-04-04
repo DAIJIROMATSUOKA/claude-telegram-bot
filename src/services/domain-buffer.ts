@@ -179,7 +179,7 @@ function execRelay(
     child.on("close", () => {
       clearTimeout(timer);
       const match = stdout.match(/^RESPONSE: ([\s\S]+)$/m);
-      resolve(match ? match[1].trim() : null);
+      resolve(match ? match[1]!.trim() : null);
     });
     child.on("error", () => { clearTimeout(timer); resolve(null); });
   });
@@ -196,7 +196,6 @@ async function pollTabUntilReady(maxMs = 600_000): Promise<string | null> {
   const wt = (() => { try { return readFileSync("/tmp/domain-relay-wt", "utf-8").trim(); } catch(e) { return "1:1"; } })();
 
   const start = Date.now();
-  let readyCount = 0;
   let prevLen = -1;
   let stableCount = 0;
   while (Date.now() - start < maxMs) {
@@ -207,7 +206,6 @@ async function pollTabUntilReady(maxMs = 600_000): Promise<string | null> {
       const status = execSync(`bash ${TAB_MANAGER} check-status ${wt} 2>/dev/null`, { encoding: "utf-8", timeout: 5000 }).trim();
       if (status === "TOOL_LIMIT") {
         try { execSync(`bash ${TAB_MANAGER} auto-continue ${wt} 2>/dev/null`, { encoding: "utf-8", timeout: 5000 }); } catch(e) {}
-        readyCount = 0;
         continue;
       }
       if (status === "READY" || status === "TOOL_LIMIT") {
@@ -337,7 +335,7 @@ export async function triageRelay(
     child.on("close", () => {
       clearTimeout(timer);
       const match = stdout.match(/^RESPONSE: ([\s\S]+)$/m);
-      resolve(match ? match[1].trim() : null);
+      resolve(match ? match[1]!.trim() : null);
     });
     child.on("error", () => { clearTimeout(timer); resolve(null); });
   });

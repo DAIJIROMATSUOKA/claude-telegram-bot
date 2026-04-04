@@ -90,26 +90,6 @@ function readActiveTasks(): ActiveTask[] {
 }
 
 // ============================================================================
-// Croppy Status Formatter
-// ============================================================================
-
-function formatCroppyStatus(state: TowerState): string {
-  if (state.status === 'idle') return '⏸ 待機中';
-  if (state.status === 'completed') return '✅ 完了';
-  if (state.status === 'failed') return '❌ エラー';
-
-  // running — currentStep に詳細がある
-  if (state.currentStep) {
-    // 長すぎる場合は切り詰め
-    const step = state.currentStep.length > 40
-      ? state.currentStep.slice(0, 40) + '…'
-      : state.currentStep;
-    return `▶ ${step}`;
-  }
-  return '▶ 処理中';
-}
-
-// ============================================================================
 // Main Render Function
 // ============================================================================
 

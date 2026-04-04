@@ -22,8 +22,6 @@ export interface DetectionResult {
  * Detect work mode from message content
  */
 export function detectWorkMode(message: string): DetectionResult {
-  const lowerMessage = message.toLowerCase();
-
   // Score each mode
   const scores: Record<WorkMode, number> = {
     coding: 0,

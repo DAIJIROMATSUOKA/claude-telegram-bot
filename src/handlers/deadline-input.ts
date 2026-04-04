@@ -15,6 +15,7 @@ import type { Context } from 'grammy';
 // YYYY/MM/DD or YYYY-MM-DD (年必須)
 const DEADLINE_REGEX = /[MP]M?(\d{3,4})\S*\s*(?:の)?(?:希望)?納期\s*[:：]?\s*(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/i;
 
+/** Detect and process deadline messages (e.g. "M1300の納期2026/03/31"). */
 export async function handleDeadlineInput(ctx: Context): Promise<boolean> {
   const text = ctx.message?.text;
   if (!text) return false;
@@ -29,9 +30,9 @@ export async function handleDeadlineInput(ctx: Context): Promise<boolean> {
   if (!match) return false;
 
   const machineNo = match[1];
-  const year = parseInt(match[2]);
-  const month = parseInt(match[3]);
-  const day = parseInt(match[4]);
+  const year = parseInt(match[2]!);
+  const month = parseInt(match[3]!);
+  const day = parseInt(match[4]!);
 
   const deadline = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
   const machineLabel = `M${machineNo}`;

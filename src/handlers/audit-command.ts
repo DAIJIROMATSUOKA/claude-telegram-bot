@@ -13,12 +13,9 @@ import { readFileSync, existsSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
 import { getQueuedMessages } from "../utils/message-queue";
+import { escapeHtml } from "../formatting";
 
 const AUDIT_FILE = join(homedir(), ".jarvis/orchestrator/audit.jsonl");
-
-function escapeHtml(t: string): string {
-  return t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
 
 function truncate(text: string, max: number): string {
   return text.length > max ? text.substring(0, max) + "…" : text;
@@ -48,6 +45,7 @@ function loadAuditEntries(): AuditEntry[] {
   }
 }
 
+/** /audit -- Show recent message routing audit log or queue status. */
 export async function handleAudit(ctx: Context): Promise<void> {
   const text = (ctx.message?.text || "").replace(/^\/audit\s*/, "").trim();
 

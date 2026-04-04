@@ -109,7 +109,7 @@ export async function handleAISession(ctx: Context): Promise<void> {
         );
       }
 
-      const newSession = startSession(userId!, ai);
+      startSession(userId!, ai);
 
       // インラインメッセージ: /ai claude 本文 → セッション開始+即処理
       const inlineMessage = args.slice(1).join(" ").trim();

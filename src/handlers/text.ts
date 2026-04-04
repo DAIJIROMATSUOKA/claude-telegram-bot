@@ -167,7 +167,6 @@ export async function handleText(ctx: Context): Promise<void> {
       if (replyDomain) {
         console.log(`[Text] Reply to domain ${replyDomain} response -> routing back`);
         try {
-          const { execSync } = await import("child_process");
           const userText = ctx.message?.text || "";
           const statusMsg = await ctx.reply(`\u{1F4CC} ${replyDomain} \u306B\u9001\u4FE1\u4E2D...`);
           const response = await relayDomain(replyDomain, userText, async () => {
@@ -205,7 +204,7 @@ export async function handleText(ctx: Context): Promise<void> {
       const directMatch = message.match(/^\/([a-zA-Z0-9_]+)\s+(.+)/s);
       if (directMatch) {
         const [, maybeDomain, domainMsg] = directMatch;
-        const domainLower = maybeDomain.toLowerCase();
+        const domainLower = maybeDomain!.toLowerCase();
         // Check if this domain exists in chat-routing.yaml
         try {
           const { execSync } = await import("child_process");
@@ -219,7 +218,7 @@ export async function handleText(ctx: Context): Promise<void> {
             try { await ctx.api.deleteMessage(ctx.chat!.id, ctx.message!.message_id); } catch {}
             const statusMsg = await ctx.reply(`📌 ${domainLower} に送信中...`);
             try {
-              const response = await relayDomain(domainLower, domainMsg, async () => {
+              const response = await relayDomain(domainLower, domainMsg!, async () => {
                 await ctx.api.editMessageText(ctx.chat!.id, statusMsg.message_id, `📌 ${domainLower} 応答中...`);
               });
               if (response === "BUFFERED") {
@@ -229,7 +228,7 @@ export async function handleText(ctx: Context): Promise<void> {
                 await ctx.api.editMessageText(ctx.chat!.id, statusMsg.message_id, `📌 ${domainLower} ${label}（バッファ ${count}/${MAX_BUFFER}）`);
               } else if (response) {
                 // Split long responses to avoid Telegram 4096 char limit
-                const fullDirect = `${djQuote(domainMsg)}📌 ${domainLower}\n\n${response}`;
+                const fullDirect = `${djQuote(domainMsg!)}📌 ${domainLower}\n\n${response}`;
                 if (fullDirect.length <= 4000) {
                   await ctx.api.editMessageText(ctx.chat!.id, statusMsg.message_id, fullDirect);
                 } else {
@@ -599,7 +598,7 @@ export async function handleText(ctx: Context): Promise<void> {
     // Audit log
     await auditLog(userId, username, "TEXT", message, response);
   } catch (error) {
-    console.error("Error processing message:", error);
+    console.error("[Text] Error processing message:", error);
 
     const completedAt = Math.floor(Date.now() / 1000);
     const durationMs = Date.now() - startedAt;

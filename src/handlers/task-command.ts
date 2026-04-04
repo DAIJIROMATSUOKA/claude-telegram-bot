@@ -6,8 +6,9 @@
  */
 
 import { Context } from 'grammy';
+import { DEFAULT_GATEWAY_URL } from '../constants';
 
-const GATEWAY_URL = process.env.GATEWAY_URL || 'https://jarvis-memory-gateway.jarvis-matsuoka.workers.dev';
+const GATEWAY_URL = process.env.GATEWAY_URL || DEFAULT_GATEWAY_URL;
 
 // Track last task list message per chat for cleanup
 const lastTaskMsgs: Record<number, number[]> = {};
@@ -17,23 +18,30 @@ const lastTaskMsgs: Record<number, number[]> = {};
 // ============================================================
 
 async function apiPost(path: string, body: any): Promise<any> {
-  const res = await fetch(`${GATEWAY_URL}${path}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  return res.json();
+  try {
+    const res = await fetch(`${GATEWAY_URL}${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    return res.json();
+  } catch (e) {
+    console.error('[TaskCommand] apiPost failed:', path, e);
+    throw e;
+  }
 }
 
 async function apiGet(path: string): Promise<any> {
-  const res = await fetch(`${GATEWAY_URL}${path}`);
-  return res.json();
+  try {
+    const res = await fetch(`${GATEWAY_URL}${path}`);
+    return res.json();
+  } catch (e) {
+    console.error('[TaskCommand] apiGet failed:', path, e);
+    throw e;
+  }
 }
 
-// ============================================================
-// /task — add a new task
-// ============================================================
-
+/** /todo <title> -- Add a new task to the task list. */
 export async function handleTaskAdd(ctx: Context): Promise<void> {
   const text = (ctx.message?.text || '').replace(/^\/todo\s*/, '').trim();
   if (!text) {
@@ -95,9 +103,7 @@ export async function handleTaskAdd(ctx: Context): Promise<void> {
 }
 
 // ============================================================
-// /tasks — list open tasks
-// ============================================================
-
+/** /todos -- List open tasks with inline action buttons. */
 export async function handleTaskList(ctx: Context): Promise<void> {
   const filter = (ctx.message?.text || '').replace(/^\/todos\s*/, '').trim();
 
@@ -179,6 +185,7 @@ async function showTaskList(ctx: Context, filter: string | null, header?: string
 // Callback handler
 // ============================================================
 
+/** Handle inline button callbacks for task done/postpone actions. */
 export async function handleTaskCallback(ctx: Context): Promise<boolean> {
   const data = ctx.callbackQuery?.data;
   if (!data || !data.startsWith('task:')) return false;
@@ -188,7 +195,6 @@ export async function handleTaskCallback(ctx: Context): Promise<boolean> {
 
   const action = parts[1];
   const taskId = parts[2];
-  const category = parts[3] || '';
 
   try {
     if (action === 'done') {

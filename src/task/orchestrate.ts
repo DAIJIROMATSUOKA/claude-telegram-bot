@@ -33,7 +33,7 @@ import {
 } from "./reporter";
 import { RunLogger } from "./run-logger";
 import { buildRetryPrompt, summarizeFailureReason } from "./retry";
-import { checkDockerAvailable, buildDockerImage, runTestInDocker, redactSecrets } from "./docker-runner";
+import { checkDockerAvailable } from "./docker-runner";
 import type { ValidatorMode } from "./types";
 import { checkAllLimits } from "./resource-limits";
 import { DEFAULT_RESOURCE_LIMITS } from "./types";

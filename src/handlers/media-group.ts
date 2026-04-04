@@ -197,7 +197,7 @@ export async function handleProcessingError(
   error: unknown,
   toolMessages: Message[]
 ): Promise<void> {
-  console.error("Error processing media:", error);
+  console.error("[MediaGroup] Error processing media:", error);
 
   // Clean up tool messages
   for (const toolMsg of toolMessages) {

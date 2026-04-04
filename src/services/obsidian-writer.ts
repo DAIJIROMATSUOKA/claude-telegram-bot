@@ -3,7 +3,7 @@
  * Writes directly to Obsidian vault on M1 filesystem
  */
 
-import { existsSync, readFileSync, writeFileSync, appendFileSync, mkdirSync } from "fs";
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from "fs";
 import { join } from "path";
 
 const VAULT_PATH =
@@ -75,23 +75,6 @@ export async function archiveToObsidian(
   actionTaken: string
 ): Promise<void> {
   try {
-    const path = getDailyNotePath();
-    const now = new Date();
-    const jst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
-    const time = jst.toISOString().substring(11, 16); // HH:MM
-
-    const icon =
-      {
-        gmail: "📧",
-        line: "💬",
-        slack: "🔔",
-        apple: "📱",
-        calendar: "📅",
-        reminder: "⏰",
-      }[source] || "📨";
-
-    const dirIcon = direction === "in" ? "←" : "→";
-    // Skip daily note Telegram Log (replaced by Daily Briefing)
     // Route to project notes if M-numbers detected
     const routed = await routeToProjectNotes(content, source, actionTaken);
     if (routed.length > 0) {

@@ -9,7 +9,6 @@
  */
 
 import type { Context } from "grammy";
-import { getChromeOrchestrator } from "./orchestrator-chrome";
 import { waitAndRelayResponse } from "./croppy-bridge";
 import { writeFileSync } from "fs";
 import { exec } from "child_process";
@@ -41,6 +40,7 @@ async function runLocal(cmd: string, timeoutMs = 30000): Promise<string> {
   }
 }
 
+/** /ask <project> <message> -- Route question to project Chrome tab. */
 export async function handleAsk(ctx: Context): Promise<void> {
   const text = (ctx.message?.text || "").replace(/^\/ask\s*/, "").trim();
 

@@ -7,6 +7,7 @@
 import { Context } from "grammy";
 import { gatewayQuery } from "../services/gateway-db";
 
+/** Initialize the D1 timetimer table at startup. */
 export async function initTimerTable(): Promise<void> {
   await gatewayQuery(
     `CREATE TABLE IF NOT EXISTS jarvis_timetimers (
@@ -47,6 +48,7 @@ export function buildTimerText(remaining: number, total: number, label = ""): st
   return `⏱ <b>${timeStr}</b>${labelPart}\n${bar}\n<code>${pct}%</code>`;
 }
 
+/** /timetimer N [label] -- Start a visual countdown timer. */
 export async function handleTimeTimer(ctx: Context): Promise<void> {
   const raw = (ctx.message?.text || "").replace(/^\/timetimer\s*/i, "").trim();
   const chatId = ctx.chat?.id;

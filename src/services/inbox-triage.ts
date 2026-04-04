@@ -375,7 +375,7 @@ function parseTriageResponse(raw: string): TriageJudgment | null {
   // 2. Text format: "**判断:** archive" or "判断: delete"
   const textMatch = raw.match(/(?:\*\*)?判断(?:\*\*)?\s*[:：]\s*(archive|delete|escalate|reply|ignore)/i);
   if (textMatch) {
-    const action = textMatch[1].toLowerCase() as TriageJudgment['action'];
+    const action = textMatch[1]!.toLowerCase() as TriageJudgment['action'];
     // Extract reason from rest of response
     const reasonLines = raw.split('\n').filter(l =>
       !l.includes('判断') && l.trim().length > 0 && !l.startsWith('[TRIAGE]')
@@ -421,7 +421,7 @@ function buildOpenButton(item: TriageItem): { text: string; url: string } | null
     case 'phone': {
       const phoneMatch = (item.sender_name + ' ' + item.body).match(/(\+?\d[\d-]{8,})/);
       if (phoneMatch) {
-        const num = phoneMatch[1].replace(/-/g, '');
+        const num = phoneMatch[1]!.replace(/-/g, '');
         return { text: '📞折返し', url: `tel:${num}` };
       }
       return null; // tel: without number is invalid for Telegram

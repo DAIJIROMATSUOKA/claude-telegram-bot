@@ -14,7 +14,6 @@ import type {
   TowerIdentifier,
   TowerUpdateResult,
   TowerEditError,
-  EditErrorType,
 } from '../types/control-tower.js';
 
 // ============================================================================

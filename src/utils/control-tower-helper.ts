@@ -5,7 +5,7 @@
  */
 
 import type { Context } from 'grammy';
-import { updateTower, getTowerStatus } from './tower-manager.js';
+import { updateTower } from './tower-manager.js';
 import type { TowerState } from './tower-renderer.js';
 import type { TowerIdentifier } from '../types/control-tower.js';
 import { controlTowerDB } from './control-tower-db.js';
@@ -131,9 +131,6 @@ export async function updateStatus(
   ctx: Context
 ): Promise<void> {
   const identifier = createTowerIdentifier(ctx);
-
-  // Get current tower state
-  const cached = getTowerStatus(identifier);
 
   const state: TowerState = {
     status: statusType === 'done' ? 'completed' : 'running',
