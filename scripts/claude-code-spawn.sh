@@ -74,8 +74,8 @@ json.dump(d, open('$SETTINGS', 'w'), indent=2)
 " 2>/dev/null
 fi
 
-PROMPT=$(cat "{prompt}")
-claude -p "$PROMPT" \
+# Workaround: claude-code issue #7263 — long prompt as arg causes 0-byte output
+claude -p "Read the file {prompt} and follow every instruction in it exactly." \
   --dangerously-skip-permissions --model "{model}" \
   < /dev/null > "{output}" 2>&1
 CC_EXIT=$?
