@@ -11,6 +11,7 @@
 
 import { Context } from 'grammy';
 import { callMemoryGateway } from './ai-router';
+import { fetchWithTimeout } from '../utils/fetch-with-timeout';
 import {
   getProfile,
   getActiveProjects,
@@ -64,7 +65,7 @@ export async function handleMemory(ctx: Context): Promise<void> {
   // Vector stats
   let vectorCount = 0;
   try {
-    const res = await fetch('http://127.0.0.1:19823/stats');
+    const res = await fetchWithTimeout('http://127.0.0.1:19823/stats');
     const data = await res.json() as any;
     vectorCount = data?.total_embeddings || 0;
   } catch {}

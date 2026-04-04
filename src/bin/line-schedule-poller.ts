@@ -5,13 +5,15 @@
  * テキスト/Dropbox: LINE Worker text で送信
  */
 
+import { fetchWithTimeout } from '../utils/fetch-with-timeout';
+
 const GATEWAY_URL = process.env.GATEWAY_URL || 'https://jarvis-memory-gateway.jarvis-matsuoka.workers.dev';
 const LINE_WORKER_URL = process.env.LINE_WORKER_URL || '';
 const TG_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
 const TG_CHAT = process.env.TELEGRAM_ALLOWED_USERS || '';
 
 async function query(sql: string, params?: any[]) {
-  const res = await fetch(`${GATEWAY_URL}/v1/db/query`, {
+  const res = await fetchWithTimeout(`${GATEWAY_URL}/v1/db/query`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ sql, params }),
@@ -22,7 +24,7 @@ async function query(sql: string, params?: any[]) {
 async function notifyDJ(msg: string) {
   if (!TG_TOKEN || !TG_CHAT) return;
   try {
-    await fetch(`https://api.telegram.org/bot${TG_TOKEN}/sendMessage`, {
+    await fetchWithTimeout(`https://api.telegram.org/bot${TG_TOKEN}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ chat_id: TG_CHAT, text: msg }),
@@ -32,7 +34,7 @@ async function notifyDJ(msg: string) {
 
 async function getTgFileUrl(fileId: string): Promise<string | null> {
   try {
-    const res = await fetch(`https://api.telegram.org/bot${TG_TOKEN}/getFile?file_id=${fileId}`);
+    const res = await fetchWithTimeout(`https://api.telegram.org/bot${TG_TOKEN}/getFile?file_id=${fileId}`);
     const data: any = await res.json();
     if (!data.ok) return null;
     return `https://api.telegram.org/file/bot${TG_TOKEN}/${data.result.file_path}`;
@@ -48,7 +50,7 @@ async function sendToLine(task: any): Promise<boolean> {
     if (!fileUrl) {
       errors.push('Telegram file URL取得失敗');
     } else if (task.file_type === 'image') {
-      const res = await fetch(`${LINE_WORKER_URL}/v1/reply`, {
+      const res = await fetchWithTimeout(`${LINE_WORKER_URL}/v1/reply`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -67,7 +69,7 @@ async function sendToLine(task: any): Promise<boolean> {
 
   // Send text message
   if (task.message) {
-    const res = await fetch(`${LINE_WORKER_URL}/v1/reply`, {
+    const res = await fetchWithTimeout(`${LINE_WORKER_URL}/v1/reply`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

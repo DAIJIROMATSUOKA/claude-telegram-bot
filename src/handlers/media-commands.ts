@@ -18,6 +18,7 @@ import { existsSync, mkdirSync, unlinkSync, writeFileSync, statSync } from "fs";
 import { join, basename } from "path";
 import { InputFile } from "grammy";
 import { escapeHtml } from "../formatting";
+import { fetchWithTimeout } from "../utils/fetch-with-timeout";
 
 // Media queue: serialize heavy AI tasks to prevent SIGTERM under memory pressure
 let mediaQueueBusy = false;
@@ -282,7 +283,7 @@ async function downloadPhoto(ctx: Context): Promise<string | null> {
 
     // Download via Bot API
     const url = `https://api.telegram.org/file/bot${ctx.api.token}/${filePath}`;
-    const response = await fetch(url);
+    const response = await fetchWithTimeout(url);
     if (!response.ok) return null;
 
     const ext = (filePath.split(".").pop() || "jpg").toLowerCase();

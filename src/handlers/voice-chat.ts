@@ -10,6 +10,7 @@ import { promisify } from 'util';
 import { writeFileSync, unlinkSync } from 'fs';
 import type { Context } from 'grammy';
 import { startTypingIndicator } from '../utils';
+import { fetchWithTimeout } from '../utils/fetch-with-timeout';
 
 const execAsync = promisify(exec);
 
@@ -51,7 +52,7 @@ export async function handleVoice(ctx: Context): Promise<void> {
       return;
     }
     const url = `https://api.telegram.org/file/bot${process.env.TELEGRAM_BOT_TOKEN}/${file.file_path}`;
-    const resp = await fetch(url);
+    const resp = await fetchWithTimeout(url);
     writeFileSync(tmpOgg, Buffer.from(await resp.arrayBuffer()));
 
     // 2. Convert ogg → wav (16kHz mono for whisper)

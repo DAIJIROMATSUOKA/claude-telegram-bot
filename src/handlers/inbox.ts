@@ -9,6 +9,7 @@ import { ALLOWED_USERS } from "../config";
 import { isAuthorized } from "../security";
 import { archiveToObsidian } from "../services/obsidian-writer";
 import { notifyError } from "../utils/error-notify";
+import { fetchWithTimeout } from "../utils/fetch-with-timeout";
 
 // ============================================================
 // Batch Action Queue - 3s debounce for all destructive actions
@@ -66,7 +67,7 @@ async function executeBatch(chatId: number): Promise<void> {
         case "archive":
         case "trash": {
           const url = `${GAS_GMAIL_URL}?action=${e.action}&gmail_id=${e.sourceId}&key=${GAS_GMAIL_KEY}`;
-          const res = await fetch(url, { redirect: "follow" });
+          const res = await fetchWithTimeout(url, { redirect: "follow" });
           const result: any = await res.json();
           if (result.ok) {
             logInboxAction(e.action, e.sourceId, "gmail", e.msgDate);
@@ -262,7 +263,7 @@ export async function handleInboxCallback(ctx: Context): Promise<boolean> {
           const apiToken = config.rules?.todoist?.api_token;
           if (!apiToken) throw new Error("Todoist token not found");
 
-          const res = await fetch("https://api.todoist.com/api/v1/tasks", {
+          const res = await fetchWithTimeout("https://api.todoist.com/api/v1/tasks", {
             method: "POST",
             headers: { "Authorization": `Bearer ${apiToken}`, "Content-Type": "application/json" },
             body: JSON.stringify({ content: taskContent, due_datetime: dueString.replace(" ", "T") + ":00+09:00" }),
@@ -330,7 +331,7 @@ async function handleGmailAction(
   await ctx.answerCallbackQuery({ text: `⏳ ${action}...` });
 
   const url = `${GAS_GMAIL_URL}?action=${action}&gmail_id=${gmailId}&key=${GAS_GMAIL_KEY}`;
-  const res = await fetch(url, { redirect: "follow" });
+  const res = await fetchWithTimeout(url, { redirect: "follow" });
   const result: any = await res.json();
 
   if (result.ok) {
@@ -365,7 +366,7 @@ async function handleGmailAction(
 async function handleAttachments(ctx: Context, gmailId: string): Promise<void> {
   await ctx.answerCallbackQuery({ text: "📎 添付取得中..." });
   const url = `${GAS_GMAIL_URL}?action=full&gmail_id=${gmailId}&key=${GAS_GMAIL_KEY}`;
-  const res = await fetch(url, { redirect: "follow" });
+  const res = await fetchWithTimeout(url, { redirect: "follow" });
   const result: any = await res.json();
   if (result.ok && result.attachments?.length > 0) {
     const list = result.attachments
@@ -387,7 +388,7 @@ async function handleFullText(ctx: Context, gmailId: string): Promise<void> {
   await ctx.answerCallbackQuery({ text: "📖 全文取得中..." });
 
   const url = `${GAS_GMAIL_URL}?action=full&gmail_id=${gmailId}&key=${GAS_GMAIL_KEY}`;
-  const res = await fetch(url, { redirect: "follow" });
+  const res = await fetchWithTimeout(url, { redirect: "follow" });
   const result: any = await res.json();
 
   if (result.ok) {
@@ -704,7 +705,7 @@ async function handleGmailReply(
   const sendingMsg2 = await ctx.reply("📤 Gmail返信送信中...");
 
   try {
-    const res = await fetch(GAS_GMAIL_URL, {
+    const res = await fetchWithTimeout(GAS_GMAIL_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -823,7 +824,7 @@ async function handleLineReply(
   const sendingMsg = await ctx.reply("📤 LINE返信送信中...");
 
   try {
-    const res = await fetch(`${LINE_WORKER_URL}/v1/reply`, {
+    const res = await fetchWithTimeout(`${LINE_WORKER_URL}/v1/reply`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

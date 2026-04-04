@@ -29,6 +29,18 @@ const AUDIT_FILE = `${AUDIT_DIR}/audit.jsonl`;
 
 // ─── Periodic State Snapshot (Defense Line 1) ──────────────
 const projectInjectCounts: Map<string, number> = new Map();
+const projectInjectCountsTimestamps: Map<string, number> = new Map();
+const PROJECT_INJECT_MAX = 1000;
+const PROJECT_INJECT_TTL = 60 * 60 * 1000; // 1 hour
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, ts] of projectInjectCountsTimestamps) {
+    if (now - ts > PROJECT_INJECT_TTL) {
+      projectInjectCounts.delete(key);
+      projectInjectCountsTimestamps.delete(key);
+    }
+  }
+}, 60_000).unref();
 const SNAPSHOT_INTERVAL = 15;
 
 async function saveProjectSnapshot(
@@ -72,6 +84,11 @@ async function saveProjectSnapshot(
 function shouldTakeSnapshot(projectId: string): boolean {
   const count = projectInjectCounts.get(projectId) || 0;
   projectInjectCounts.set(projectId, count + 1);
+  projectInjectCountsTimestamps.set(projectId, Date.now());
+  if (projectInjectCounts.size > PROJECT_INJECT_MAX) {
+    const oldest = projectInjectCounts.keys().next().value;
+    if (oldest !== undefined) { projectInjectCounts.delete(oldest); projectInjectCountsTimestamps.delete(oldest); }
+  }
   return (count + 1) % SNAPSHOT_INTERVAL === 0;
 }
 

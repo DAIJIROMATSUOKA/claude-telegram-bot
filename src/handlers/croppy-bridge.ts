@@ -31,6 +31,17 @@ const BRIDGE_REPLY_MAP_MAX = 100;
 
 // Worker-level lock: prevents concurrent inject to same worker
 const lockedWorkers = new Set<string>();
+const lockedWorkersTimestamps = new Map<string, number>();
+const LOCKED_WORKERS_TTL = 60 * 60 * 1000; // 1 hour (stale lock eviction)
+setInterval(() => {
+  const now = Date.now();
+  for (const [wt, ts] of lockedWorkersTimestamps) {
+    if (now - ts > LOCKED_WORKERS_TTL) {
+      lockedWorkers.delete(wt);
+      lockedWorkersTimestamps.delete(wt);
+    }
+  }
+}, 60_000).unref();
 
 // Check if a WT belongs to a project tab (skip J-WORKER marking for these)
 function isProjectTab(wt: string): boolean {
@@ -96,6 +107,18 @@ async function formatConversationTitle(wt: string): Promise<void> {
 const INJECT_WARN_THRESHOLD = 25;
 const INJECT_HANDOFF_THRESHOLD = 30;
 const workerInjectCounts: Map<string, number> = new Map(); // key = W:T
+const workerInjectCountsTimestamps: Map<string, number> = new Map();
+const WORKER_INJECT_MAX = 1000;
+const WORKER_INJECT_TTL = 60 * 60 * 1000; // 1 hour
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, ts] of workerInjectCountsTimestamps) {
+    if (now - ts > WORKER_INJECT_TTL) {
+      workerInjectCounts.delete(key);
+      workerInjectCountsTimestamps.delete(key);
+    }
+  }
+}, 60_000).unref();
 
 function getInjectCount(wt: string): number {
   return workerInjectCounts.get(wt) || 0;
@@ -103,6 +126,11 @@ function getInjectCount(wt: string): number {
 function incrementInjectCount(wt: string): number {
   const count = getInjectCount(wt) + 1;
   workerInjectCounts.set(wt, count);
+  workerInjectCountsTimestamps.set(wt, Date.now());
+  if (workerInjectCounts.size > WORKER_INJECT_MAX) {
+    const oldest = workerInjectCounts.keys().next().value;
+    if (oldest !== undefined) { workerInjectCounts.delete(oldest); workerInjectCountsTimestamps.delete(oldest); }
+  }
   return count;
 }
 function resetInjectCount(wt: string): void {
@@ -317,6 +345,7 @@ async function injectAndNotify(ctx: Context, wt: string, task: string, raw = fal
 
   // Lock this worker until response is relayed
   lockedWorkers.add(wt);
+  lockedWorkersTimestamps.set(wt, Date.now());
 
   const tmpFile = `/tmp/croppy-bridge-task-${Date.now()}.txt`;
   // Write to temp file and use inject-file (avoids all shell escaping)

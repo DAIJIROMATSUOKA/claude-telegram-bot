@@ -7,6 +7,7 @@
 
 import { Context } from 'grammy';
 import { DEFAULT_GATEWAY_URL } from '../constants';
+import { fetchWithTimeout } from '../utils/fetch-with-timeout';
 
 const GATEWAY_URL = process.env.GATEWAY_URL || DEFAULT_GATEWAY_URL;
 
@@ -19,7 +20,7 @@ const lastTaskMsgs: Record<number, number[]> = {};
 
 async function apiPost(path: string, body: any): Promise<any> {
   try {
-    const res = await fetch(`${GATEWAY_URL}${path}`, {
+    const res = await fetchWithTimeout(`${GATEWAY_URL}${path}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -33,7 +34,7 @@ async function apiPost(path: string, body: any): Promise<any> {
 
 async function apiGet(path: string): Promise<any> {
   try {
-    const res = await fetch(`${GATEWAY_URL}${path}`);
+    const res = await fetchWithTimeout(`${GATEWAY_URL}${path}`);
     return res.json();
   } catch (e) {
     console.error('[TaskCommand] apiGet failed:', path, e);

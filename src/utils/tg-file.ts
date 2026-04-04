@@ -3,6 +3,8 @@
  * Downloads files from Telegram CDN and extracts file metadata from context
  */
 
+import { fetchWithTimeout } from './fetch-with-timeout';
+
 const MAX_FILE_BYTES = 7 * 1024 * 1024; // 7MB (GAS JSON payload limit)
 const TG_API = "https://api.telegram.org";
 
@@ -47,7 +49,7 @@ export async function downloadTgFile(
   const { filePath } = await getTgFilePath(info.fileId, botToken);
   const publicUrl = `${TG_API}/file/bot${botToken}/${filePath}`;
 
-  const res = await fetch(publicUrl);
+  const res = await fetchWithTimeout(publicUrl);
   if (!res.ok) throw new Error(`Download failed: ${res.status} ${res.statusText}`);
 
   const arrayBuffer = await res.arrayBuffer();

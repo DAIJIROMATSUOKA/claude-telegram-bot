@@ -9,6 +9,7 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import { existsSync } from 'fs';
 import { gatewayQuery } from './gateway-db';
+import { fetchWithTimeout } from '../utils/fetch-with-timeout';
 
 const execAsync = promisify(exec);
 
@@ -293,7 +294,7 @@ interface CorrectionItem {
 
 async function fetchCorrections(limit = 20): Promise<CorrectionItem[]> {
   try {
-    const res = await fetch(`${GATEWAY_URL}/v1/inbox/corrections?limit=${limit}`);
+    const res = await fetchWithTimeout(`${GATEWAY_URL}/v1/inbox/corrections?limit=${limit}`);
     const data: any = await res.json();
     return data.ok ? (data.corrections || []) : [];
   } catch (e) {
@@ -454,7 +455,7 @@ async function executeAction(item: TriageItem, judgment: TriageJudgment): Promis
         const action = judgment.action === 'delete' ? 'trash' : 'archive';
         const url = `${GAS_GMAIL_URL}?action=${action}&gmail_id=${item.source_id}&key=${GAS_GMAIL_KEY}`;
         try {
-          const res = await fetch(url, { redirect: 'follow' });
+          const res = await fetchWithTimeout(url, { redirect: 'follow' });
           if (!res.ok) {
             console.error(`[Triage] Gmail ${action} HTTP ${res.status} ${res.statusText}`);
           } else {

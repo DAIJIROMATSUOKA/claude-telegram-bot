@@ -2,6 +2,8 @@
  * Dropbox File Upload + Share Link Generator
  */
 
+import { fetchWithTimeout } from '../utils/fetch-with-timeout';
+
 const DROPBOX_TOKEN = process.env.DROPBOX_ACCESS_TOKEN || '';
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
 const DROPBOX_FOLDER = '/JARVIS-Share';
@@ -15,19 +17,19 @@ export async function uploadAndShare(
     return null;
   }
   try {
-    const tgRes = await fetch(
+    const tgRes = await fetchWithTimeout(
       `https://api.telegram.org/bot${BOT_TOKEN}/getFile?file_id=${telegramFileId}`
     );
     const tgData: any = await tgRes.json();
     if (!tgData.ok) throw new Error('Telegram getFile failed');
 
     const fileUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${tgData.result.file_path}`;
-    const fileRes = await fetch(fileUrl);
+    const fileRes = await fetchWithTimeout(fileUrl);
     if (!fileRes.ok) throw new Error(`Download failed: ${fileRes.status}`);
     const fileBuffer = await fileRes.arrayBuffer();
 
     const dbxPath = `${DROPBOX_FOLDER}/${Date.now()}_${filename}`;
-    const uploadRes = await fetch('https://content.dropboxapi.com/2/files/upload', {
+    const uploadRes = await fetchWithTimeout('https://content.dropboxapi.com/2/files/upload', {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${DROPBOX_TOKEN}`,
@@ -38,7 +40,7 @@ export async function uploadAndShare(
     });
     if (!uploadRes.ok) throw new Error(`Upload failed: ${await uploadRes.text()}`);
 
-    const shareRes = await fetch(
+    const shareRes = await fetchWithTimeout(
       'https://api.dropboxapi.com/2/sharing/create_shared_link_with_settings',
       {
         method: 'POST',

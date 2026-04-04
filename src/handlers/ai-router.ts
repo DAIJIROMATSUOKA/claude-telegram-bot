@@ -14,6 +14,7 @@
  */
 
 import { CMD_TIMEOUT_LONG_MS, COUNCIL_TIMEOUT_MS } from "../constants";
+import { fetchWithTimeout } from "../utils/fetch-with-timeout";
 
 export type AIProvider = 'jarvis' | 'gpt' | 'gemini' | 'croppy' | 'all' | 'council';
 
@@ -55,6 +56,9 @@ export interface AIResponse {
  */
 const MEMORY_GATEWAY_URL = process.env.MEMORY_GATEWAY_URL || 'https://jarvis-memory-gateway.jarvis-matsuoka.workers.dev';
 const GATEWAY_API_KEY = process.env.GATEWAY_API_KEY || '';
+if (!GATEWAY_API_KEY) {
+  console.warn('[AI Router] WARNING: GATEWAY_API_KEY is not set. Memory Gateway API calls will fail.');
+}
 
 /**
  * Memory Gatewayへのリクエスト送信
@@ -64,8 +68,11 @@ export async function callMemoryGateway(
   method: string,
   body?: any
 ): Promise<{ error?: string; data?: any }> {
+  if (!GATEWAY_API_KEY) {
+    return { error: 'GATEWAY_API_KEY is not configured' };
+  }
   try {
-    const response = await fetch(`${MEMORY_GATEWAY_URL}${path}`, {
+    const response = await fetchWithTimeout(`${MEMORY_GATEWAY_URL}${path}`, {
       method,
       headers: {
         'Content-Type': 'application/json',

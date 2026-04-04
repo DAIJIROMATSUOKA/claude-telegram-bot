@@ -30,7 +30,10 @@ function resolveFile(ref: string): string | null {
   const p = join(PROJECT_ROOT, ref);
   if (existsSync(p)) return p;
   try {
-    const found = execSync(`find ${PROJECT_ROOT}/src -name "${ref.split('/').pop()}" -type f 2>/dev/null | head -1`, {
+    const rawName = ref.split('/').pop() || '';
+    const safeFilename = rawName.replace(/[^a-zA-Z0-9._-]/g, '');
+    if (!safeFilename) return null;
+    const found = execSync(`find ${PROJECT_ROOT}/src -name "${safeFilename}" -type f 2>/dev/null | head -1`, {
       encoding: 'utf-8', timeout: 3000,
     }).trim();
     return found || null;
