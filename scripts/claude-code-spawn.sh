@@ -42,16 +42,27 @@ OUTPUT_LOG="$TASK_DIR/${TASK_ID}.log"
 RUNNER="$TASK_DIR/${TASK_ID}.runner.sh"
 RUNNER_LOG="$TASK_DIR/${TASK_ID}.runner.log"
 
-# Direct nohup spawn (no runner.sh — avoids process group issues)
-nohup bash -c "
-  cd \"$CWD\" || exit 1
-  claude -p \"Execute all tasks and instructions provided in the appended system prompt.\" \
-    --append-system-prompt-file \"$PROMPT_FILE\" \
-    --dangerously-skip-permissions --output-format json --model \"$MODEL\" \
-    < /dev/null > \"$OUTPUT_LOG\" 2>&1
-  CC_EXIT=\$?
-  python3 \"$CLEANUP\" \"$CURRENT\" \"$TASK_DIR\" \"$TASK_ID\" \"\$CC_EXIT\" \"$NOTIFY\"
-" > "$TASK_DIR/${TASK_ID}.runner.log" 2>&1 &
+# Write .run.sh file then setsid nohup (avoids bash -c quoting hell + poller pgid kill)
+RUNSH="$TASK_DIR/${TASK_ID}.run.sh"
+python3 - "$RUNSH" "$CWD" "$MODEL" "$PROMPT_FILE" "$OUTPUT_LOG" "$CURRENT" "$TASK_DIR" "$TASK_ID" "$NOTIFY" "$CLEANUP" << 'PYBLOCK'
+import sys, os, stat
+runsh, cwd, model, prompt, output, current, task_dir, task_id, notify, cleanup = sys.argv[1:11]
+script = f"""#!/bin/bash
+cd "{cwd}" || exit 1
+claude -p "Execute all tasks and instructions provided in the appended system prompt." \
+  --append-system-prompt-file "{prompt}" \
+  --dangerously-skip-permissions --output-format json --model "{model}" \
+  < /dev/null > "{output}" 2>&1
+CC_EXIT=$?
+python3 "{cleanup}" "{current}" "{task_dir}" "{task_id}" "$CC_EXIT" "{notify}"
+"""
+with open(runsh, "w") as f:
+    f.write(script)
+os.chmod(runsh, os.stat(runsh).st_mode | stat.S_IEXEC)
+PYBLOCK
+
+# setsid detaches from poller process group; nohup survives HUP
+setsid nohup bash "$RUNSH" > "$TASK_DIR/${TASK_ID}.runner.log" 2>&1 &
 PID=$!
 
 # Update PID
