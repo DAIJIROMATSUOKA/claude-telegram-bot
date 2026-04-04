@@ -41,6 +41,10 @@
         "hooks": [
           {
             "type": "command",
+            "command": "bash /Users/daijiromatsuokam1/claude-telegram-bot/scripts/notify-dj.sh '🔄 Claude Code compacting (context filling up)'"
+          },
+          {
+            "type": "command",
             "command": "bash /Users/daijiromatsuokam1/claude-telegram-bot/scripts/pre-compact.sh"
           }
         ]
@@ -53,6 +57,17 @@
           {
             "type": "command",
             "command": "bash /Users/daijiromatsuokam1/claude-telegram-bot/scripts/typecheck-hook.sh"
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash /Users/daijiromatsuokam1/claude-telegram-bot/scripts/claude-code-progress.sh"
           }
         ]
       }
