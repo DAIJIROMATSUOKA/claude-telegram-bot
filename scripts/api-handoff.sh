@@ -219,11 +219,12 @@ fi
 # --- Step 6: Save to handoffs directory ---
 # --- Step 5.5: Validate REMAINING section (仕組み化 — 不完全な引き継ぎを物理的に防止) ---
 VALIDATION=$(python3 -c "
-import sys
+import sys, re
 text = open('$SUMMARY_FILE').read()
 lines = text.split('\n')
 in_remaining = False
 items = []
+numbered_items = set()
 for line in lines:
     if line.strip().startswith('## REMAINING'):
         in_remaining = True
@@ -232,9 +233,26 @@ for line in lines:
         break
     if in_remaining and line.strip().startswith('- '):
         items.append(line.strip())
+    elif in_remaining and line.strip() and re.match(r'^\d+\.\s+', line.strip()):
+        items.append(line.strip())
+        numbered_items.add(line.strip())
 
 warnings = []
+
+# Check: empty REMAINING
+if not items:
+    warnings.append('  NO_REMAINING: REMAININGセクションが空です。本当に全タスク完了ですか？')
+
 for item in items:
+    # Check: too short (< 10 chars total = not actionable)
+    if len(item) < 10:
+        warnings.append(f'  TOO_SHORT: {item}  ← 詳細が不足しています')
+        continue
+
+    # Check: bare number + description (e.g., '1. git push') — lacks state context
+    if item in numbered_items:
+        warnings.append(f'  NO_CONTEXT: {item}  ← 現在の状態(完了/未着手/ブロック中)と次アクションを含めてください')
+
     if len(item) < 30:
         warnings.append(f'  SHORT: {item}')
     if not any(kw in item.lower() for kw in ['script', 'file', 'cmd', 'api', 'url', 'path', '/', 'exec', 'bash', 'python', 'commit', 'pr', 'deploy', 'test', 'verify', 'check', 'run', 'status', 'pending', 'done', 'fail', 'ok', 'error', 'waiting', 'running', 'blocked']):
@@ -315,14 +333,38 @@ SECTION_HEADER="## ${TODAY} seq:${TODAY_COUNT} (${DOMAIN})"
 if grep -qF "$SECTION_HEADER" "$HISTORY_FILE" 2>/dev/null; then
   log "History dedup: '$SECTION_HEADER' already exists, skipping"
 else
-  {
-    echo ""
-    echo "$SECTION_HEADER"
-    echo '```'
-    echo "$COMPRESSED"
-    echo '```'
-  } >> "$HISTORY_FILE"
-  log "History appended: $HISTORY_FILE"
+  # Content dedup: compare with last entry (different seq can have identical content)
+  COMPRESSED_TMP="/tmp/handoff-compressed-$$.txt"
+  printf '%s' "$COMPRESSED" > "$COMPRESSED_TMP"
+  CONTENT_MATCH=$(python3 -c "
+import re, os, sys
+history_file = '$HISTORY_FILE'
+compressed_file = '$COMPRESSED_TMP'
+if not os.path.exists(history_file):
+    print('NO')
+    sys.exit(0)
+compressed = open(compressed_file).read().strip()
+content = open(history_file).read()
+blocks = re.findall(r'\`\`\`\n(.*?)\`\`\`', content, re.DOTALL)
+if not blocks:
+    print('NO')
+    sys.exit(0)
+last_block = blocks[-1].strip()
+print('YES' if last_block == compressed else 'NO')
+" 2>/dev/null || echo "NO")
+  rm -f "$COMPRESSED_TMP"
+  if [ "$CONTENT_MATCH" = "YES" ]; then
+    log "History content dedup: identical to last entry, skipping"
+  else
+    {
+      echo ""
+      echo "$SECTION_HEADER"
+      echo '```'
+      echo "$COMPRESSED"
+      echo '```'
+    } >> "$HISTORY_FILE"
+    log "History appended: $HISTORY_FILE"
+  fi
 fi
 
 # --- Step 8: Cleanup + notify ---
