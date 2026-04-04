@@ -61,11 +61,30 @@ import sys, os, stat
 runsh, cwd, model, prompt, output, current, task_dir, task_id, notify, cleanup = sys.argv[1:11]
 script = f"""#!/bin/bash
 cd "{cwd}" || exit 1
+
+# Temporarily disable project hooks for headless execution
+SETTINGS="{cwd}/.claude/settings.json"
+if [ -f "$SETTINGS" ]; then
+  cp "$SETTINGS" "$SETTINGS.spawn-bak"
+  python3 -c "
+import json
+d = json.load(open('$SETTINGS'))
+d.pop('hooks', None)
+json.dump(d, open('$SETTINGS', 'w'), indent=2)
+" 2>/dev/null
+fi
+
 PROMPT=$(cat "{prompt}")
-claude -p --bare "$PROMPT" \
+claude -p "$PROMPT" \
   --dangerously-skip-permissions --output-format json --model "{model}" \
   < /dev/null > "{output}" 2>&1
 CC_EXIT=$?
+
+# Restore settings
+if [ -f "$SETTINGS.spawn-bak" ]; then
+  mv "$SETTINGS.spawn-bak" "$SETTINGS"
+fi
+
 python3 "{cleanup}" "{current}" "{task_dir}" "{task_id}" "$CC_EXIT" "{notify}"
 """
 with open(runsh, "w") as f:
