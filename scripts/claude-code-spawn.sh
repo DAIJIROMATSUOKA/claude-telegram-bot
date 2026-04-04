@@ -51,7 +51,7 @@ script = (
     f"# Auto-generated runner for {task_id}\n"
     f'trap \'python3 "{cleanup}" "{current}" "{task_dir}" "{task_id}" "$?" "{notify}"\' EXIT\n'
     f'cd "{cwd}" || exit 1\n'
-    f'claude -p --dangerously-skip-permissions --model "{model}" < "{prompt}" > "{output}" 2>&1\n'
+    f'claude -p --dangerously-skip-permissions --output-format json --model "{model}" < "{prompt}" > "{output}" 2>&1\n'
     "CC_EXIT=$?\n"
     "exit $CC_EXIT\n"
 )
