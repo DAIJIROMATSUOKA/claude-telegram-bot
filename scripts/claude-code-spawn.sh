@@ -51,7 +51,7 @@ script = (
     f"# Auto-generated runner for {task_id}\n"
     f'trap \'python3 "{cleanup}" "{current}" "{task_dir}" "{task_id}" "$?" "{notify}"\' EXIT\n'
     f'cd "{cwd}" || exit 1\n'
-    f'claude -p "Execute all tasks and instructions provided in the appended system prompt." --append-system-prompt-file "{prompt}" --dangerously-skip-permissions --output-format json --model "{model}" > "{output}" 2>&1\n'
+    f'claude -p "Execute all tasks and instructions provided in the appended system prompt." --append-system-prompt-file "{prompt}" --dangerously-skip-permissions --output-format json --model "{model}" < /dev/null > "{output}" 2>&1\n'
     "CC_EXIT=$?\n"
     "exit $CC_EXIT\n"
 )
