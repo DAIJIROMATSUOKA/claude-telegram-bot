@@ -72,10 +72,11 @@ async function executeTriageBatch(chatId: number): Promise<void> {
 
   console.log(`[TriageBatch] Executing: ${okEntries.length} ok, ${undoEntries.length} undo in chat ${chatId}`);
 
-  // Process OK entries - report feedback + delete messages
+  // Process OK entries - report feedback + unpin + delete messages
   for (const e of okEntries) {
     try {
       await reportFeedback(e.itemId, 'approved', 'manual-ok');
+      try { await botApi.unpinChatMessage(e.chatId, e.msgId); } catch {}
       await botApi.deleteMessage(e.chatId, e.msgId).catch(() => {});
     } catch (err) {
       console.error('[TriageBatch] OK action error:', err);
@@ -571,10 +572,18 @@ async function executeAction(item: TriageItem, judgment: TriageJudgment): Promis
       }
       if (escOpenBtn) escRows.push([escOpenBtn]);
       escOpts.reply_markup = { inline_keyboard: escRows };
-      await botApi.sendMessage(chatId,
+      const escMsg = await botApi.sendMessage(chatId,
         `🦞 ⚠️DJ確認\n📧 ${item.sender_name}: ${item.subject || '(件名なし)'}\n📝 ${item.body.substring(0, 300).replace(/\n/g, ' ')}\n\n💭 ${judgment.reason}${taskInfo}`,
         escOpts
       );
+      // Pin the escalation message so DJ sees it immediately
+      try {
+        if (escMsg?.message_id) {
+          await botApi.pinChatMessage(chatId, escMsg.message_id, { disable_notification: true });
+        }
+      } catch {
+        // Pin may fail in non-supergroup chats — ignore
+      }
       break;
     }
   }
@@ -778,6 +787,7 @@ export async function handleTriageCallback(
 
       await reportFeedback(reasonItemId, 'rejected', reasonText);
       if (botApi && chatId && msgId) {
+        try { await botApi.unpinChatMessage(chatId, msgId); } catch {}
         await botApi.editMessageText(chatId, msgId, `⏪ \u53d6\u6d88\u6e08\u307f (${reasonText})`).catch(() => {});
         setTimeout(() => botApi.deleteMessage(chatId, msgId).catch(() => {}), 5000);
       }

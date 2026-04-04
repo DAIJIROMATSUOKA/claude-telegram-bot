@@ -20,6 +20,8 @@ import { session } from "../session";
 import { ALLOWED_USERS } from "../config";
 import { isAuthorized, rateLimiter } from "../security";
 import { auditLog, auditLogRateLimit, checkInterrupt, startTypingIndicator } from "../utils";
+import { sendTyping } from "../utils/typing";
+import { notifyError } from "../utils/error-notify";
 import { StreamingState, createStatusCallback } from "./streaming";
 import { controlTowerDB } from "../utils/control-tower-db";
 import { redactSensitiveData } from "../utils/redaction-filter";
@@ -121,6 +123,7 @@ export async function handleText(ctx: Context): Promise<void> {
     await ctx.reply("Unauthorized. Contact the bot owner for access.");
     return;
   }
+  sendTyping(ctx);
 
 
 
@@ -637,7 +640,7 @@ export async function handleText(ctx: Context): Promise<void> {
     } else if (errStr.includes("timeout") || errStr.includes("timed out") || errStr.includes("タイムアウト")) {
       console.warn("[Text Handler] Timeout (suppressed from user):", String(error).slice(0, 200));
     } else {
-      await ctx.reply(`❌ Error: ${String(error).slice(0, 200)}`, _errReplyOpts);
+      await notifyError(ctx, "text", error instanceof Error ? error : new Error(String(error)));
     }
   } finally {
     // Clear pending task (completed or failed - either way, don't auto-resume)

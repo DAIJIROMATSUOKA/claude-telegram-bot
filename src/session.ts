@@ -270,6 +270,11 @@ class ClaudeSession {
       process.env.TELEGRAM_CHAT_ID = String(chatId);
     }
 
+    // Fire-and-forget typing indicator before Claude SDK call
+    if (ctx) {
+      ctx.replyWithChatAction("typing").catch(() => {});
+    }
+
     const isNewSession = !this.isActive;
     const thinkingTokens = getThinkingLevel(message);
     const thinkingLabel =

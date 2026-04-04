@@ -43,6 +43,7 @@ import {
   handleRecall,
   handleCroppyDispatch,
   handleStats,
+  handleHelp,
   incrementMessageCount } from "./handlers";
 import {
   handleDebate,
@@ -83,6 +84,9 @@ import { getWorkState, formatWorkStateForContext, updateWorkStateSessionId, isWo
 import { startSnoozeChecker } from "./services/snooze";
 import { startInboxTriage } from "./services/inbox-triage";
 import { handleAgentTask } from "./handlers/agent-task";
+import { handleDashboard } from "./handlers/dashboard-command";
+import { handleQuick, handleQuickCallback } from "./handlers/quick-command";
+import { handleMorning } from "./handlers/morning-command";
 
 // ============== Global Context ==============
 // Bot起動時にCLAUDE.mdを読み込んでグローバルに保持
@@ -313,7 +317,10 @@ bot.command("newdomain", handleNewDomain);
 bot.command("manual", handleManual);
 bot.command("search", handleSearch);
 bot.command("stats", handleStats);
-bot.command("help", handleCroppyDispatch);
+bot.command("help", handleHelp);
+bot.command("dashboard", handleDashboard);
+bot.command("quick", handleQuick);
+bot.command("morning", handleMorning);
 // Auto-delete "X pinned" service messages
 bot.on("message:pinned_message", async (ctx) => { try { await ctx.deleteMessage(); } catch {} });
 

@@ -8,6 +8,7 @@ import type { Context } from "grammy";
 import { ALLOWED_USERS } from "../config";
 import { isAuthorized } from "../security";
 import { archiveToObsidian } from "../services/obsidian-writer";
+import { notifyError } from "../utils/error-notify";
 
 // ============================================================
 // Batch Action Queue - 3s debounce for all destructive actions
@@ -540,9 +541,7 @@ async function handleAiDraft(
   } catch (e) {
     const chatId = ctx.chat?.id!;
     try { await ctx.api.deleteMessage(chatId, draftMsg.message_id); } catch {}
-    await ctx.reply("❌ AI下書きエラー: " + String(e).substring(0, 200), {
-      reply_to_message_id: msgId,
-    });
+    await notifyError(ctx, "inbox:ai-draft", e instanceof Error ? e : new Error(String(e)));
   }
 }
 
@@ -755,7 +754,7 @@ async function handleGmailReply(
       return true;
     }
   } catch (e) {
-    await ctx.reply(`❌ Gmail返信エラー: ${e}`);
+    await notifyError(ctx, "inbox:gmail-reply", e instanceof Error ? e : new Error(String(e)));
     return true;
   }
 }
@@ -869,7 +868,7 @@ async function handleLineReply(
       return true;
     }
   } catch (e) {
-    await ctx.reply(`❌ LINE返信エラー: ${e}`);
+    await notifyError(ctx, "inbox:line-reply", e instanceof Error ? e : new Error(String(e)));
     return true;
   }
 }
@@ -969,7 +968,7 @@ async function handleImessageReply(
       return true;
     }
   } catch (e) {
-    await ctx.reply("❌ iMessageエラー: " + e);
+    await notifyError(ctx, "inbox:imessage", e instanceof Error ? e : new Error(String(e)));
     try { await ctx.api.deleteMessage(ctx.chat?.id!, sendingMsg.message_id); } catch {}
     return true;
   }

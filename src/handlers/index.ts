@@ -20,6 +20,7 @@ export {
   handleRecall,
   handleCroppyDispatch,
   handleStats,
+  handleHelp,
   incrementMessageCount,
 } from "./commands";
 export { handleText } from "./text";

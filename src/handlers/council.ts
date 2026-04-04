@@ -11,6 +11,7 @@
 import type { Context } from "grammy";
 import { ALLOWED_USERS } from "../config";
 import { isAuthorized } from "../security";
+import { sendTyping } from "../utils/typing";
 import {
   askClaude,
   askGemini,
@@ -454,6 +455,7 @@ export async function handleDebate(ctx: Context): Promise<void> {
     return;
   }
 
+  sendTyping(ctx);
   const chatId = ctx.chat!.id;
   const msg = await ctx.reply(MSG_DEBATE_INIT, { parse_mode: "HTML" });
 
@@ -500,6 +502,7 @@ async function handleDirectAI(
     return;
   }
 
+  sendTyping(ctx);
   const chatId = ctx.chat!.id;
   const msg = await ctx.reply(MSG_THINKING);
 

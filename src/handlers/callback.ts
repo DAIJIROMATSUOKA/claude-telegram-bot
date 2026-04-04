@@ -13,6 +13,8 @@ import { auditLog, startTypingIndicator } from "../utils";
 import { StreamingState, createStatusCallback } from "./streaming";
 import { handleInboxCallback } from "./inbox";
 import { handleTriageCallback } from "../services/inbox-triage";
+import { handleHelpCategoryCallback, handleHelpBackCallback } from "./commands";
+import { handleQuickCallback } from "./quick-command";
 import { handleTaskCallback as handleTodoCallback } from "./task-command";
 import { gatewayQuery } from "../services/gateway-db";
 
@@ -132,6 +134,20 @@ export async function handleCallback(ctx: Context): Promise<void> {
     return;
   }
 
+
+  // Quick panel callbacks
+  if (callbackData.startsWith("quick_")) {
+    const handled = await handleQuickCallback(ctx);
+    if (handled) return;
+  }
+
+  // Help category callbacks
+  if (callbackData.startsWith("help_category_") || callbackData === "help_back") {
+    const handled = callbackData.startsWith("help_category_")
+      ? await handleHelpCategoryCallback(ctx)
+      : await handleHelpBackCallback(ctx);
+    if (handled) return;
+  }
 
   if (!callbackData.startsWith("askuser:")) {
     await ctx.answerCallbackQuery();
