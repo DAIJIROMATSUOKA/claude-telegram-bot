@@ -10,6 +10,7 @@ import { promisify } from 'util';
 import { existsSync } from 'fs';
 import { gatewayQuery } from './gateway-db';
 import { fetchWithTimeout } from '../utils/fetch-with-timeout';
+import { withRetry } from '../utils/retry';
 
 const execAsync = promisify(exec);
 
@@ -455,7 +456,7 @@ async function executeAction(item: TriageItem, judgment: TriageJudgment): Promis
         const action = judgment.action === 'delete' ? 'trash' : 'archive';
         const url = `${GAS_GMAIL_URL}?action=${action}&gmail_id=${item.source_id}&key=${GAS_GMAIL_KEY}`;
         try {
-          const res = await fetchWithTimeout(url, { redirect: 'follow' });
+          const res = await withRetry(() => fetchWithTimeout(url, { redirect: 'follow' }));
           if (!res.ok) {
             console.error(`[Triage] Gmail ${action} HTTP ${res.status} ${res.statusText}`);
           } else {

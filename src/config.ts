@@ -219,6 +219,15 @@ if (ALLOWED_USERS.length === 0) {
 
 export const MEMORY_GATEWAY_URL = process.env.MEMORY_GATEWAY_URL || 'https://jarvis-memory-gateway.jarvis-matsuoka.workers.dev';
 
+// ============== Optional Env Var Warnings ==============
+
+if (!process.env.GATEWAY_API_KEY) {
+  console.warn("WARN: GATEWAY_API_KEY is not set — Memory Gateway API calls will fail");
+}
+if (!process.env.GAS_GMAIL_URL) {
+  console.warn("WARN: GAS_GMAIL_URL is not set — Gmail GAS actions (archive/trash) will be unavailable");
+}
+
 console.log(
   `Config loaded: ${ALLOWED_USERS.length} allowed users, working dir: ${WORKING_DIR}`
 );

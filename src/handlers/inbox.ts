@@ -5,6 +5,7 @@
  */
 
 import type { Context } from "grammy";
+import { logger } from "../utils/logger";
 import { ALLOWED_USERS } from "../config";
 import { isAuthorized } from "../security";
 import { archiveToObsidian } from "../services/obsidian-writer";
@@ -50,7 +51,7 @@ async function executeBatch(chatId: number): Promise<void> {
   if (!q) return;
   batchQueue.delete(chatId);
   const count = q.entries.length;
-  console.log("[Batch] Executing: " + count + " actions in chat " + chatId);
+  logger.info("inbox", "Executing batch actions", { count, chatId });
 
   for (const e of q.entries) {
     try {
@@ -74,7 +75,7 @@ async function executeBatch(chatId: number): Promise<void> {
             await archiveToObsidian(e.msgId, chatId, "in", "gmail", e.msgText, e.action);
             await q.botApi.deleteMessage(chatId, e.msgId).catch(() => {});
           } else {
-            console.error("[Batch] " + e.action + " failed: " + e.sourceId);
+            logger.error("inbox", `Batch ${e.action} failed`, { sourceId: e.sourceId });
           }
           break;
         }
@@ -311,7 +312,7 @@ export async function handleInboxCallback(ctx: Context): Promise<boolean> {
         await ctx.answerCallbackQuery({ text: `Unknown action: ${action}` });
     }
   } catch (error) {
-    console.error("[Inbox] Callback error:", error);
+    logger.error("inbox", "Callback error", error);
     await ctx.answerCallbackQuery({ text: "❌ エラー発生" });
   }
 

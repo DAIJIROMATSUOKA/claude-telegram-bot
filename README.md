@@ -1,244 +1,365 @@
-# Claude Telegram Bot
+# JARVIS — Claude Telegram Bot
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Bun](https://img.shields.io/badge/Bun-1.0+-black.svg)](https://bun.sh/)
+Control Claude Code (and more) from your phone via Telegram.
+Built with **Bun + TypeScript + grammY** (~36,000 lines, 142 files).
 
-**Turn [Claude Code](https://claude.com/product/claude-code) into your personal assistant, accessible from anywhere via Telegram.**
+---
 
-Send text, voice, photos, and documents. See responses and tools usage in real-time.
+## Architecture
 
-![Demo](assets/demo.gif)
+```mermaid
+graph TD
+    TG[Telegram] -->|message| IDX[index.ts<br>Entry Point]
+    IDX -->|command| CMD[commands.ts]
+    IDX -->|text| TXT[text.ts]
+    IDX -->|media| MED[media-commands.ts]
+    IDX -->|document| DOC[document.ts]
+    IDX -->|callback| CB[callback.ts]
+    IDX -->|voice| VC[voice-chat.ts]
 
-## Claude Code as a Personal Assistant
+    TXT -->|auth + rate limit| SEC[security.ts]
+    SEC -->|pass| ENR[pipeline/enrichment.ts]
+    ENR -->|X summary, web search| TXT2[Enriched Message]
+    TXT2 -->|route| AIR[ai-router.ts]
 
-I've started using Claude Code as a personal assistant, and I've built this bot so I can access it from anywhere.
+    AIR -->|jarvis| SES[session.ts<br>Claude Agent SDK]
+    AIR -->|gpt:| GPT[ChatGPT CLI]
+    AIR -->|gemini:| GEM[Gemini CLI]
+    AIR -->|croppy:| CRP[croppy-bridge.ts]
+    AIR -->|council:| COU[council.ts<br>3-AI Debate]
 
-In fact, while Claude Code is described as a powerful AI **coding agent**, it's actually a very capable **general-purpose agent** too when given the right instructions, context, and tools.
+    SES -->|streaming| STR[streaming.ts]
+    STR -->|format| FMT[formatting.ts]
+    FMT -->|reply| TG
 
-To achieve this, I set up a folder with a CLAUDE.md that teaches Claude about me (my preferences, where my notes live, my workflows), has a set of tools and scripts based on my needs, and pointed this bot at that folder.
+    SES -->|post-process| PP[pipeline/post-process.ts]
+    PP -->|memory| MEM[learned-memory.ts]
+    PP -->|review| AR[auto-review.ts]
+    PP -->|resume| ARES[auto-resume.ts]
 
-→ **[📄 See the Personal Assistant Guide](docs/personal-assistant-guide.md)** for detailed setup and examples.
+    SES -->|tool use| MCP[MCP Servers]
+    SES -->|gateway| GW[Memory Gateway<br>Cloudflare D1]
 
-## Bot Features
+    CMD -->|/code| CODE[code-command.ts<br>claude -p spawn]
+    CMD -->|/task| TASK[task/orchestrate.ts]
+    CMD -->|/cal| CAL[cal-command.ts]
+    CMD -->|/mail| MAIL[mail-send.ts]
+    CMD -->|/line| LINE[line-post.ts]
 
-- 💬 **Text**: Ask questions, give instructions, have conversations
-- 🎤 **Voice**: Speak naturally - transcribed via OpenAI and processed by Claude
-- 📸 **Photos**: Send screenshots, documents, or anything visual for analysis
-- 📄 **Documents**: PDFs, text files, and archives (ZIP, TAR) are extracted and analyzed
-- 🔄 **Session persistence**: Conversations continue across messages
-- 📨 **Message queuing**: Send multiple messages while Claude works - they queue up automatically. Prefix with `!` or use `/stop` to interrupt and send immediately
-- 🧠 **Extended thinking**: Trigger Claude's reasoning by using words like "think" or "reason" - you'll see its thought process as it works (configurable via `THINKING_TRIGGER_KEYWORDS`)
-- 🔘 **Interactive buttons**: Claude can present options as tappable inline buttons via the built-in `ask_user` MCP tool
+    TASK -->|execute| EXEC[task/executor.ts]
+    EXEC -->|docker| DOCK[task/docker-runner.ts]
+    EXEC -->|validate| VAL[task/validator.ts]
 
-## Quick Start
+    subgraph External Processes
+        POLL[task-poller.ts<br>LaunchAgent]
+        NIGHT[nightly-agent.ts<br>LaunchAgent]
+        LSCHED[line-schedule-poller.ts]
+    end
+
+    subgraph Services
+        GDB[gateway-db.ts]
+        JMEM[jarvis-memory.ts]
+        ITRI[inbox-triage.ts]
+        OBS[obsidian-writer.ts]
+        DBX[dropbox-share.ts]
+        SNZ[snooze.ts]
+    end
+```
+
+### Message Flow
+
+```
+Telegram message → Handler → Auth check → Rate limit → Claude session → Streaming response → Audit log
+```
+
+---
+
+## Setup
+
+### 1. Prerequisites
+
+- [Bun](https://bun.sh) v1.x
+- macOS (LaunchAgents require macOS)
+- Telegram bot token from [@BotFather](https://t.me/botfather)
+- Claude Code CLI installed and authenticated (`claude` command available)
+
+### 2. Install
 
 ```bash
-git clone https://github.com/linuz90/claude-telegram-bot?tab=readme-ov-file
-cd claude-telegram-bot-ts
-
-cp .env.example .env
-# Edit .env with your credentials
-
+git clone <repo>
+cd claude-telegram-bot
 bun install
-bun run src/index.ts
 ```
 
-### Prerequisites
-
-- **Bun 1.0+** - [Install Bun](https://bun.sh/)
-- **Claude Agent SDK** - `@anthropic-ai/claude-agent-sdk` (installed via bun install)
-- **Telegram Bot Token** from [@BotFather](https://t.me/BotFather)
-- **OpenAI API Key** (optional, for voice transcription)
-
-### Claude Authentication
-
-The bot uses the `@anthropic-ai/claude-agent-sdk` which supports two authentication methods:
-
-| Method                     | Best For                                | Setup                             |
-| -------------------------- | --------------------------------------- | --------------------------------- |
-| **CLI Auth** (recommended) | High usage, cost-effective              | Run `claude` once to authenticate |
-| **API Key**                | CI/CD, environments without Claude Code | Set `ANTHROPIC_API_KEY` in `.env` |
-
-**CLI Auth** (recommended): The SDK automatically uses your Claude Code login. Just ensure you've run `claude` at least once and authenticated. This uses your Claude Code subscription which is much more cost-effective for heavy usage.
-
-**API Key**: For environments where Claude Code isn't installed. Get a key from [console.anthropic.com](https://console.anthropic.com/) and add to `.env`:
+### 3. Configure environment
 
 ```bash
-ANTHROPIC_API_KEY=sk-ant-api03-...
+cp .env.example .env
+# Edit .env with your values
 ```
 
-Note: API usage is billed per token and can get expensive quickly for heavy use.
+**Required:**
 
-## Configuration
+| Variable | Description |
+|---|---|
+| `TELEGRAM_BOT_TOKEN` | Bot token from BotFather |
+| `TELEGRAM_ALLOWED_USERS` | Comma-separated Telegram user IDs |
+| `CLAUDE_WORKING_DIR` | Working directory for Claude sessions |
 
-### 1. Create Your Bot
+**Recommended (warn on startup if missing):**
 
-1. Open [@BotFather](https://t.me/BotFather) on Telegram
-2. Send `/newbot` and follow the prompts to create your bot
-3. Copy the token (looks like `1234567890:ABC-DEF...`)
+| Variable | Description |
+|---|---|
+| `GATEWAY_API_KEY` | Memory Gateway (Cloudflare D1) API key |
+| `GAS_GMAIL_URL` | Google Apps Script Gmail web app URL |
+| `MEMORY_GATEWAY_URL` | Gateway base URL (has default) |
 
-Then send `/setcommands` to BotFather and paste this:
+**Finding your Telegram user ID:** Message [@userinfobot](https://t.me/userinfobot).
 
-```
-start - Show status and user ID
-new - Start a fresh session
-resume - Pick from recent sessions to resume
-stop - Interrupt current query
-status - Check what Claude is doing
-restart - Restart the bot
-```
-
-### 2. Configure Environment
-
-Create `.env` with your settings:
+### 4. LaunchAgents (macOS)
 
 ```bash
-# Required
-TELEGRAM_BOT_TOKEN=1234567890:ABC-DEF...   # From @BotFather
-TELEGRAM_ALLOWED_USERS=123456789           # Your Telegram user ID
+# Main bot
+cp launchd/com.claude-telegram-ts.plist ~/Library/LaunchAgents/
+launchctl load ~/Library/LaunchAgents/com.claude-telegram-ts.plist
 
-# Recommended
-CLAUDE_WORKING_DIR=/path/to/your/folder    # Where Claude runs (loads CLAUDE.md, skills, MCP)
-OPENAI_API_KEY=sk-...                      # For voice transcription
+# Task poller (independent — survives bot restarts)
+cp launchd/com.jarvis.task-poller.plist ~/Library/LaunchAgents/
+launchctl load ~/Library/LaunchAgents/com.jarvis.task-poller.plist
 ```
 
-**Finding your Telegram user ID:** Message [@userinfobot](https://t.me/userinfobot) on Telegram.
-
-**File access paths:** By default, Claude can access:
-
-- `CLAUDE_WORKING_DIR` (or home directory if not set)
-- `~/Documents`, `~/Downloads`, `~/Desktop`
-- `~/.claude` (for Claude Code plans and settings)
-
-To customize, set `ALLOWED_PATHS` in `.env` (comma-separated). Note: this **overrides** all defaults, so include `~/.claude` if you want plan mode to work:
-
+**Logs:**
 ```bash
-ALLOWED_PATHS=/your/project,/other/path,~/.claude
+tail -f /tmp/claude-telegram-bot-ts.log
+tail -f /tmp/claude-telegram-bot-ts.err
 ```
 
-### 3. Configure MCP Servers (Optional)
-
-Copy and edit the MCP config:
+### 5. MCP Servers (optional)
 
 ```bash
 cp mcp-config.ts mcp-config.local.ts
 # Edit mcp-config.local.ts with your MCP servers
 ```
 
-The bot includes a built-in `ask_user` MCP server that lets Claude present options as tappable inline keyboard buttons. Add your own MCP servers (Things, Notion, Typefully, etc.) to give Claude access to your tools.
+---
 
-## Bot Commands
+## Commands
 
-| Command    | Description                       |
-| ---------- | --------------------------------- |
-| `/start`   | Show status and your user ID      |
-| `/new`     | Start a fresh session             |
-| `/resume`  | Pick from last 5 sessions to resume (with recap) |
-| `/stop`    | Interrupt current query           |
-| `/status`  | Check what Claude is doing        |
-| `/restart` | Restart the bot                   |
+### Session
 
-## Running as a Service (macOS)
+| Command | Description |
+|---|---|
+| `/start` | Start or show session |
+| `/new` | New Claude session |
+| `/stop` | Stop current session |
+| `/status` | Session status |
+| `/resume` | Resume last session |
+| `/restart` | Restart bot |
+| `/retry` | Retry last message |
+| `/why` | Explain last response |
 
-```bash
-cp launchagent/com.claude-telegram-ts.plist.template ~/Library/LaunchAgents/com.claude-telegram-ts.plist
-# Edit the plist with your paths and env vars
-launchctl load ~/Library/LaunchAgents/com.claude-telegram-ts.plist
+### AI
+
+| Command | Description |
+|---|---|
+| `/ai` | AI session bridge |
+| `/code <task>` | Headless Claude Code (`claude -p`) |
+| `/gpt <msg>` | Ask ChatGPT |
+| `/gem <msg>` | Ask Gemini |
+| `/debate <topic>` | 3-AI council debate |
+| `/ask <query>` | Chrome-based query |
+
+### Task Orchestrator
+
+| Command | Description |
+|---|---|
+| `/task <desc>` | Create + run task |
+| `/taskstop` | Stop running task |
+| `/taskstatus` | Task queue status |
+| `/tasklog` | Task execution log |
+| `/task_start` / `/task_stop` / `/task_pause` | Task lifecycle |
+
+### Business Shortcuts
+
+| Command | Description |
+|---|---|
+| `/project <name>` | Open/create project |
+| `/customer <name>` | Customer record |
+| `/followup` | Log follow-up |
+| `/expense [amount] [desc]` | Log expense |
+| `/expense_report` | Generate expense report |
+| `/note <text>` | Quick note → Obsidian |
+| `/meeting [title]` | Start meeting notes |
+
+### Productivity
+
+| Command | Description |
+|---|---|
+| `/dashboard` | Morning dashboard |
+| `/quick <text>` | Quick capture |
+| `/morning` | Morning briefing |
+| `/todo <text>` | Add todo |
+| `/todos` | List todos |
+| `/focus` | Toggle focus mode |
+| `/alarm <time>` | Set alarm |
+| `/reminder <text>` | Set reminder |
+| `/recall <query>` | Search memories |
+| `/memory` | Show memories |
+| `/remember <text>` | Save memory |
+| `/forget <text>` | Delete memory |
+
+### Communication
+
+| Command | Description |
+|---|---|
+| `/mail <text>` | Send email via GAS |
+| `/imsg <text>` | Send iMessage |
+| `/line <text>` | Post to LINE |
+| `/lineschedule` | Schedule LINE post |
+| `/cal` | Calendar operations |
+
+### Claude.ai Integration
+
+| Command | Description |
+|---|---|
+| `/chat [msg]` | Send to claude.ai tab |
+| `/chats` | List claude.ai tabs |
+| `/post <text>` | Post to claude.ai |
+| `/findchat <q>` | Find claude.ai chat |
+| `/askuuid <uuid>` | Ask specific chat UUID |
+| `/newdomain <url>` | Register new domain |
+| `/refresh` | Refresh context |
+
+### System / Meta
+
+| Command | Description |
+|---|---|
+| `/help` | Help |
+| `/stats` | Bot statistics |
+| `/perf` | Handler performance (top 10 avg/max ms) |
+| `/audit` | Codebase audit |
+| `/spec <text>` | Write spec |
+| `/decide <text>` | Log decision |
+| `/decisions` | List decisions |
+| `/scout [N]` | Scout codebase |
+| `/search <query>` | Web search |
+| `/manual <cmd>` | Run manual command |
+| `/croppy [enable\|disable\|status]` | Auto-approval mode |
+| `/todoist` | Todoist sync |
+| `/timetimer [min]` | Time timer |
+| `/jarvisnotif` | JARVIS notifications |
+| `/bridge` / `/workers` | Croppy bridge |
+
+---
+
+## Project Structure
+
+```
+src/
+├── index.ts              # Entry point, handler registration, polling
+├── config.ts             # Env vars, constants, safety prompt, validation
+├── session.ts            # ClaudeSession — Agent SDK streaming
+├── security.ts           # RateLimiter, path validation, command safety
+├── formatting.ts         # Markdown → HTML for Telegram
+│
+├── handlers/             # 41 handler files
+│   ├── text.ts           # Message routing pipeline
+│   ├── streaming.ts      # Status callbacks, streaming state
+│   ├── media-commands.ts # FLUX/ComfyUI image generation
+│   ├── council.ts        # /debate 3-AI system
+│   ├── ai-router.ts      # AI provider routing
+│   ├── claude-chat.ts    # claude.ai Internal API
+│   ├── inbox.ts          # Inbox Zero actions
+│   ├── callback.ts       # Inline button callbacks
+│   └── ...
+│
+├── task/                 # Task orchestrator
+│   ├── orchestrate.ts    # Core orchestration
+│   ├── executor.ts       # Safe command execution
+│   └── validator.ts      # Banned patterns + tests
+│
+├── services/             # Background services
+│   ├── gateway-db.ts     # D1 queries via Memory Gateway
+│   ├── jarvis-memory.ts  # Vector memory
+│   ├── inbox-triage.ts   # Inbox Zero polling
+│   └── snooze.ts         # Snooze re-notification
+│
+├── utils/
+│   ├── logger.ts         # Structured JSON line logger
+│   ├── rate-limiter.ts   # Token bucket (Telegram 30/min, Gateway 10/min)
+│   ├── retry.ts          # Exponential backoff retry
+│   ├── perf-tracker.ts   # Handler timing (avg/max ms)
+│   ├── telegram-buffer.ts # High-load message buffer middleware
+│   ├── circuit-breaker.ts # Circuit breaker for Gateway
+│   └── fetch-with-timeout.ts
+│
+└── bin/                  # Independent LaunchAgent processes
+    ├── task-poller.ts    # Task queue poller
+    ├── nightly-agent.ts  # Nightly batch agent
+    └── line-schedule-poller.ts
 ```
 
-The bot will start automatically on login and restart if it crashes.
-
-**Prevent sleep:** To keep the bot running when your Mac is idle, go to **System Settings → Battery → Options** and enable **"Prevent automatic sleeping when the display is off"** (when on power adapter).
-
-**Logs:**
-
-```bash
-tail -f /tmp/claude-telegram-bot-ts.log   # stdout
-tail -f /tmp/claude-telegram-bot-ts.err   # stderr
-```
-
-**Shell aliases:** If running as a service, these aliases make it easy to manage the bot (add to `~/.zshrc` or `~/.bashrc`):
-
-```bash
-alias cbot='launchctl list | grep com.claude-telegram-ts'
-alias cbot-stop='launchctl bootout gui/$(id -u)/com.claude-telegram-ts 2>/dev/null && echo "Stopped"'
-alias cbot-start='launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.claude-telegram-ts.plist 2>/dev/null && echo "Started"'
-alias cbot-restart='launchctl kickstart -k gui/$(id -u)/com.claude-telegram-ts && echo "Restarted"'
-alias cbot-logs='tail -f /tmp/claude-telegram-bot-ts.log'
-```
-
-## Nightly Forge
-
-Autonomous nightly improvement agent that runs via Chrome Worker Tab on claude.ai.
-
-- **Task-driven**: Reads `nightly-tasks.md` for `[ ]` items, works through them sequentially
-- **Completion detection**: Monitors `[ ]` to `[x]` transitions in task list
-- **Research mode**: When no tasks remain, searches the web for improvements relevant to DJ workflow
-- **Safety**: Command blocklist (`is_blocked()`), max steps/runtime limits, stop flag kill switch
-- **Isolation**: Git branch per run, 3-file change limit, `bun test` required, git push forbidden
-- **Logging**: 5-line checkpoint per step + full log to Obsidian daily note
-
-Config: `scripts/nightly-forge-chrome.sh` | Schedule: 23:00 via LaunchAgent
+---
 
 ## Development
 
 ```bash
-# Run with auto-reload
-bun --watch run src/index.ts
-
-# Type check
-bun run typecheck
-
-# Or directly
-bun run --bun tsc --noEmit
+bun run start      # Run bot
+bun run dev        # Auto-reload (--watch)
+bun test           # Run all tests
+bun run typecheck  # TypeScript check
+bun install        # Install deps
 ```
+
+### Git hooks
+
+Husky pre-commit runs:
+1. BANNED keyword check — blocks API key literals and SDK direct imports
+2. `bun test` — all tests must pass before commit
+
+Use `--no-verify` only for automated Layer 2 commits.
+
+### Bot restart
+
+Always use the restart script to prevent 409 Conflict:
+
+```bash
+bash scripts/restart-bot.sh
+```
+
+### Adding a command
+
+1. Create handler function
+2. Register in `src/index.ts`: `bot.command("name", handler)`
+
+---
 
 ## Security
 
-> **⚠️ Important:** This bot runs Claude Code with **all permission prompts bypassed**. Claude can read, write, and execute commands without confirmation within the allowed paths. This is intentional for a seamless mobile experience, but you should understand the implications before deploying.
+6-layer defence in depth:
 
-**→ [Read the full Security Model](SECURITY.md)** for details on how permissions work and what protections are in place.
+1. **Allowlist** — only configured Telegram user IDs
+2. **Rate limit** — token bucket per user (20 req / 60s)
+3. **Path validation** — file ops restricted to `ALLOWED_PATHS`
+4. **Command safety** — blocks `rm -rf`, fork bombs, etc.
+5. **git pre-commit** — BANNED keyword check blocks API keys
+6. **Hookify** — SDK import + API key write blocking (local `.claude/hookify.*.local.md`)
 
-Multiple layers protect against misuse:
+**AI calls are CLI-only** — no paid API keys (`ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GEMINI_API_KEY`) are used directly.
 
-1. **User allowlist** - Only your Telegram IDs can use the bot
-2. **Intent classification** - AI filter blocks dangerous requests
-3. **Path validation** - File access restricted to `ALLOWED_PATHS`
-4. **Command safety** - Destructive patterns like `rm -rf /` are blocked
-5. **Rate limiting** - Prevents runaway usage
-6. **Audit logging** - All interactions logged to `/tmp/claude-telegram-audit.log`
+---
 
-## Troubleshooting
+## Runtime Files
 
-**Bot doesn't respond**
+| Path | Purpose |
+|---|---|
+| `/tmp/claude-telegram-session.json` | Active session state |
+| `/tmp/claude-telegram-audit.log` | Audit log |
+| `/tmp/telegram-bot/` | Temporary media files |
+| `/tmp/jarvis-bot.pid` | PID lock (409 prevention) |
+| `~/.jarvis/orchestrator/message-queue.json` | Chrome inject retry queue |
 
-- Verify your user ID is in `TELEGRAM_ALLOWED_USERS`
-- Check the bot token is correct
-- Look at logs: `tail -f /tmp/claude-telegram-bot-ts.err`
-- Ensure the bot process is running
-
-**Claude authentication issues**
-
-- For CLI auth: run `claude` in terminal and verify you're logged in
-- For API key: check `ANTHROPIC_API_KEY` is set and starts with `sk-ant-api03-`
-- Verify the API key has credits at [console.anthropic.com](https://console.anthropic.com/)
-
-**Voice messages fail**
-
-- Ensure `OPENAI_API_KEY` is set in `.env`
-- Verify the key is valid and has credits
-
-**Claude can't access files**
-
-- Check `CLAUDE_WORKING_DIR` points to an existing directory
-- Verify `ALLOWED_PATHS` includes directories you want Claude to access
-- Ensure the bot process has read/write permissions
-
-**MCP tools not working**
-
-- Verify `mcp-config.ts` exists and exports properly
-- Check that MCP server dependencies are installed
-- Look for MCP errors in the logs
+---
 
 ## License
 

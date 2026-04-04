@@ -16,6 +16,7 @@ import { handleAgentTask } from "./agent-task";
  */
 
 import type { Context } from "grammy";
+import { logger } from "../utils/logger";
 import { session } from "../session";
 import { ALLOWED_USERS } from "../config";
 import { isAuthorized, rateLimiter } from "../security";
@@ -81,7 +82,7 @@ async function sendRelayResponse(
       const chunks = splitTelegramMessage(text);
       for (const chunk of chunks) { await ctx.reply(chunk); }
     } catch (e) {
-      console.error("[Text] sendRelayResponse: all send attempts failed", e);
+      logger.error("text", "sendRelayResponse: all send attempts failed", e);
     }
   }
 }
@@ -133,7 +134,7 @@ export async function handleText(ctx: Context): Promise<void> {
       if (taskPrompt) {
         // Fire and forget - don't block other message handling
         handleAgentTask(taskPrompt, chatId, ctx.api).catch((e: any) =>
-          console.error('[Agent Task] Unhandled error:', e)
+          logger.error("text", "Agent Task unhandled error", e)
         );
         return;
       }
@@ -157,7 +158,7 @@ export async function handleText(ctx: Context): Promise<void> {
           return;  // No stopProcessing needed - session not started yet
         }
       } catch (e) {
-        console.error("[Text] Inbox reply error:", e);
+        logger.error("text", "Inbox reply error", e);
       }
     }
 

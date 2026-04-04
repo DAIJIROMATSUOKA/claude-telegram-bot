@@ -9,6 +9,7 @@ import {
   query,
   type Options,
 } from "@anthropic-ai/claude-agent-sdk";
+import { logger } from "./utils/logger";
 import { readFileSync } from "fs";
 import { buildMemoryContext } from "./services/jarvis-memory";
 import type { Context } from "grammy";
@@ -47,7 +48,7 @@ import type {
 async function fetchJarvisContext(): Promise<string> {
   try {
     const contextPath = `${WORKING_DIR}/claude-telegram-bot/jarvis_context`;
-    console.log(`[fetchJarvisContext] Reading fallback file: ${contextPath}`);
+    logger.info("session", "Reading jarvis_context fallback file", { path: contextPath });
     const content = readFileSync(contextPath, 'utf-8').trim();
     if (!content) {
       console.log("[fetchJarvisContext] File is empty");
@@ -77,7 +78,7 @@ async function fetchJarvisContext(): Promise<string> {
     console.log(`[fetchJarvisContext] Parsed ${parts.length} fields from fallback file`);
     return result;
   } catch (error) {
-    console.warn(`[fetchJarvisContext] Failed to read jarvis_context file: ${error}`);
+    logger.warn("session", "Failed to read jarvis_context file", error);
     return "";
   }
 }
@@ -238,14 +239,14 @@ class ClaudeSession {
     if (this.isQueryRunning && this.abortController) {
       this.stopRequested = true;
       this.abortController.abort();
-      console.log("Stop requested - aborting current query");
+      logger.info("session", "Stop requested - aborting current query");
       return "stopped";
     }
 
     // If processing but query not started yet
     if (this._isProcessing) {
       this.stopRequested = true;
-      console.log("Stop requested - will cancel before query starts");
+      logger.info("session", "Stop requested - will cancel before query starts");
       return "pending";
     }
 
@@ -397,14 +398,9 @@ class ClaudeSession {
     }
 
     if (this.sessionId && !isNewSession) {
-      console.log(
-        `RESUMING session ${this.sessionId.slice(
-          0,
-          8
-        )}... (thinking=${thinkingLabel})`
-      );
+      logger.info("session", `Resuming session ${this.sessionId.slice(0, 8)}...`, { thinking: thinkingLabel });
     } else {
-      console.log(`STARTING new Claude session (thinking=${thinkingLabel})`);
+      logger.info("session", "Starting new Claude session", { thinking: thinkingLabel });
       this.sessionId = null;
     }
 

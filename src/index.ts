@@ -93,6 +93,10 @@ import { handleFollowup } from "./handlers/followup-command";
 import { handleExpense, handleExpenseReport } from "./handlers/expense-command";
 import { handleNote } from "./handlers/note-command";
 import { handleMeeting } from "./handlers/meeting-command";
+import { gatewayQuery } from "./services/gateway-db";
+import { logger } from "./utils/logger";
+import { formatPerfStats } from "./utils/perf-tracker";
+import { telegramMessageBuffer } from "./utils/telegram-buffer";
 
 // ============== Global Context ==============
 // Bot起動時にCLAUDE.mdを読み込んでグローバルに保持
@@ -207,6 +211,9 @@ bot.api.config.use((prev, method, payload, signal) => {
   }
   return prev(method, payload, signal);
 });
+
+// High-load buffer: queue messages when >5 arrive within 1s from same chat
+bot.use(telegramMessageBuffer);
 
 // Sequentialize non-command messages per user (prevents race conditions)
 // Commands bypass sequentialization so they work immediately
@@ -334,6 +341,9 @@ bot.command("expense", handleExpense);
 bot.command("expense_report", handleExpenseReport);
 bot.command("note", handleNote);
 bot.command("meeting", handleMeeting);
+bot.command("perf", async (ctx) => {
+  await ctx.reply(formatPerfStats(), { parse_mode: "HTML" });
+});
 // Auto-delete "X pinned" service messages
 bot.on("message:pinned_message", async (ctx) => { try { await ctx.deleteMessage(); } catch {} });
 
@@ -364,16 +374,11 @@ bot.catch((err) => {
 
 // ============== Startup ==============
 
-console.log("=".repeat(50));
-console.log("Claude Telegram Bot - TypeScript Edition");
-console.log("=".repeat(50));
-console.log(`Working directory: ${WORKING_DIR}`);
-console.log(`Allowed users: ${ALLOWED_USERS.length}`);
-console.log("Starting bot...");
+logger.info("index", "Claude Telegram Bot - TypeScript Edition starting", { workingDir: WORKING_DIR, allowedUsers: ALLOWED_USERS.length });
 
 // Get bot info first
 const botInfo = await bot.api.getMe();
-console.log(`Bot started: @${botInfo.username}`);
+logger.info("index", "Bot started", { username: botInfo.username });
 
 // Check for pending restart message to update
 if (existsSync(RESTART_FILE)) {
@@ -426,6 +431,49 @@ async function clearStalePolling(): Promise<void> {
 
 await clearStalePolling();
 
+// ============== Graceful Shutdown ==============
+
+let inFlightHandlers = 0;
+let shutdownStarted = false;
+
+export function incInFlight() { inFlightHandlers++; }
+export function decInFlight() { inFlightHandlers = Math.max(0, inFlightHandlers - 1); }
+
+async function gracefulShutdown(signal: string): Promise<void> {
+  if (shutdownStarted) return;
+  shutdownStarted = true;
+  console.log(`[Shutdown] ${signal} received — stopping gracefully`);
+
+  // Stop accepting new messages
+  try { runner.abort(); } catch {}
+
+  // Wait up to 10s for in-flight handlers
+  const deadline = Date.now() + 10_000;
+  while (inFlightHandlers > 0 && Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 100));
+  }
+
+  // Log shutdown event to D1
+  try {
+    await gatewayQuery(
+      "INSERT INTO system_events (event_type, data, created_at) VALUES (?, ?, ?)",
+      ["graceful_shutdown", JSON.stringify({ signal, pid: process.pid }), new Date().toISOString()]
+    );
+  } catch {}
+
+  // Notify DJ
+  try {
+    if (ALLOWED_USERS[0]) {
+      await bot.api.sendMessage(ALLOWED_USERS[0], "🛑 Bot shutting down gracefully");
+    }
+  } catch {}
+
+  process.exit(0);
+}
+
+process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+
 // Start with concurrent runner (commands work immediately)
 const runner = run(bot);
 
@@ -462,7 +510,6 @@ Bun.serve({
     return new Response('Not found', { status: 404 });
   },
 });
-console.log(`[JARVIS] Agent Task endpoint: http://localhost:${AGENT_PORT}/agent-task`);
-
-console.log('[JARVIS] Bot started successfully');
+logger.info("index", `Agent Task endpoint: http://localhost:${AGENT_PORT}/agent-task`);
+logger.info("index", "Bot started successfully");
 await runner;

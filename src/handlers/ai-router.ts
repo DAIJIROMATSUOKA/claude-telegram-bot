@@ -14,6 +14,7 @@
  */
 
 import { CMD_TIMEOUT_LONG_MS, COUNCIL_TIMEOUT_MS } from "../constants";
+import { logger } from "../utils/logger";
 import { fetchWithTimeout } from "../utils/fetch-with-timeout";
 
 export type AIProvider = 'jarvis' | 'gpt' | 'gemini' | 'croppy' | 'all' | 'council';
@@ -57,7 +58,7 @@ export interface AIResponse {
 const MEMORY_GATEWAY_URL = process.env.MEMORY_GATEWAY_URL || 'https://jarvis-memory-gateway.jarvis-matsuoka.workers.dev';
 const GATEWAY_API_KEY = process.env.GATEWAY_API_KEY || '';
 if (!GATEWAY_API_KEY) {
-  console.warn('[AI Router] WARNING: GATEWAY_API_KEY is not set. Memory Gateway API calls will fail.');
+  logger.warn("ai-router", "GATEWAY_API_KEY is not set. Memory Gateway API calls will fail.");
 }
 
 /**
@@ -137,7 +138,7 @@ export async function getMemoryPack(
     const exists = await credentialsFile.exists();
     if (!exists) {
       const errorMsg = `認証情報ファイルが見つかりません: ${credentialsPath}`;
-      console.error('[AI Router]', errorMsg);
+      logger.error("ai-router", errorMsg);
       return `(AI_MEMORY取得失敗: ${errorMsg})`;
     }
 
@@ -169,7 +170,7 @@ export async function getMemoryPack(
     return content;
   } catch (error: any) {
     const errorMsg = error?.message || String(error);
-    console.error('[AI Router] Failed to get AI_MEMORY:', errorMsg);
+    logger.error("ai-router", "Failed to get AI_MEMORY", { error: errorMsg });
     if (error?.status === 404) {
       return `(AI_MEMORY取得失敗: ドキュメントが見つかりません。Doc ID: ${documentId})`;
     }
@@ -192,10 +193,7 @@ export async function callClaudeCLI(
   userId?: string | number
 ): Promise<AIResponse> {
   try {
-    console.log('[AI Router] 🦞 Calling Claude CLI...');
-    console.log('[AI Router] 🦞 memoryPack length:', memoryPack.length);
-    console.log('[AI Router] 🦞 memoryPack preview:', memoryPack.slice(0, 200));
-    console.log('[AI Router] 🦞 userId:', userId);
+    logger.info("ai-router", "Calling Claude CLI", { memoryPackLen: memoryPack.length, userId });
 
     // AGENTS.md（CLAUDE.md）をグローバル変数から取得
     const { AGENTS_MD_CONTENT } = await import('../index');
