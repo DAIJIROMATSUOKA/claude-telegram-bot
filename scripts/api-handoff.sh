@@ -292,14 +292,20 @@ else:
     print('W: handoff executed (no COMPRESSED section in summary)')
 " 2>/dev/null)
 
-{
-  echo ""
-  echo "## ${TODAY} seq:${TODAY_COUNT} (${DOMAIN})"
-  echo '```'
-  echo "$COMPRESSED"
-  echo '```'
-} >> "$HISTORY_FILE"
-log "History appended: $HISTORY_FILE"
+# Dedup: skip if this exact section header already exists
+SECTION_HEADER="## ${TODAY} seq:${TODAY_COUNT} (${DOMAIN})"
+if grep -qF "$SECTION_HEADER" "$HISTORY_FILE" 2>/dev/null; then
+  log "History dedup: '$SECTION_HEADER' already exists, skipping"
+else
+  {
+    echo ""
+    echo "$SECTION_HEADER"
+    echo '```'
+    echo "$COMPRESSED"
+    echo '```'
+  } >> "$HISTORY_FILE"
+  log "History appended: $HISTORY_FILE"
+fi
 
 # --- Step 8: Cleanup + notify ---
 rm -f "$LOCK_FILE"

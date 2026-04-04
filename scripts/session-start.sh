@@ -45,5 +45,26 @@ if [ -f "$NOTES" ]; then
   tail -40 "$NOTES"
 fi
 
+# 5. Compressed history health check
+KNOWLEDGE_BASE="$HOME/machinelab-knowledge"
+HISTORY_WARNINGS=""
+for hf in "$KNOWLEDGE_BASE"/*/history.compressed.md; do
+  [ -f "$hf" ] || continue
+  LINES=$(wc -l < "$hf" | tr -d ' ')
+  DNAME=$(basename "$(dirname "$hf")")
+  if [ "$LINES" -gt 80 ]; then
+    HISTORY_WARNINGS="${HISTORY_WARNINGS}⚠️ ${DNAME}: ${LINES}行(閾値80) — 古いエントリのローテーション推奨\n"
+  fi
+done
+TODAY_HANDOFFS=$(grep -c "^## $(date '+%Y-%m-%d')" "$KNOWLEDGE_BASE"/*/history.compressed.md 2>/dev/null | awk -F: '{s+=$NF}END{print s}')
+if [ "${TODAY_HANDOFFS:-0}" -gt 3 ]; then
+  HISTORY_WARNINGS="${HISTORY_WARNINGS}⚠️ 本日handoff ${TODAY_HANDOFFS}回 — セッション寿命に問題あり\n"
+fi
+if [ -n "$HISTORY_WARNINGS" ]; then
+  echo ''
+  echo '=== HEALTH CHECK ==='
+  printf "$HISTORY_WARNINGS"
+fi
+
 echo ''
 echo '=== END ==='
