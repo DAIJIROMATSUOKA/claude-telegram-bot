@@ -92,6 +92,8 @@ if [ "$DAY_OF_WEEK" -eq 7 ]; then
   add ""
   add "📅 Weekly Digest (last 7 days)"
   cd "$PROJECT_DIR" || exit 1
+
+  # Git stats
   WEEK_COMMITS=$(git log --since="7 days ago" --oneline 2>/dev/null | wc -l | tr -d ' ')
   add "  Commits: $WEEK_COMMITS"
   if [ "$WEEK_COMMITS" -gt 0 ]; then
@@ -99,20 +101,59 @@ if [ "$DAY_OF_WEEK" -eq 7 ]; then
     add "  Authors: $WEEK_AUTHORS"
     WEEK_FILES=$(git log --since="7 days ago" --name-only --pretty=format: 2>/dev/null | sort -u | grep -c '.' || echo '0')
     add "  Files changed: $WEEK_FILES"
-    add ""
-    add "  Top commits:"
-    git log --since="7 days ago" --oneline 2>/dev/null | head -10 | while IFS= read -r line; do
-      add "    $line"
-    done
   fi
+
+  # D1 triage stats
+  GATEWAY="${GATEWAY_URL:-https://jarvis-memory-gateway.jarvis-matsuoka.workers.dev}"
+  source "$HOME/claude-telegram-bot/.env" 2>/dev/null || true
+
+  TRIAGE_RESP=$(curl -s -X POST "$GATEWAY/v1/db/query" \
+    -H "Content-Type: application/json" \
+    -H "X-API-Key: ${GATEWAY_API_KEY:-}" \
+    -d '{"sql":"SELECT action, COUNT(*) as cnt FROM triage_items WHERE created_at > datetime('"'"'now'"'"','"'"'-7 days'"'"') GROUP BY action"}' 2>/dev/null)
+  TRIAGE_STATS=$(echo "$TRIAGE_RESP" | python3 -c "
+import json,sys
+try:
+    d = json.load(sys.stdin)
+    rows = d.get('results', [])
+    if rows:
+        print('  Triage: ' + ', '.join(f\"{r.get('action','?')}={r.get('cnt',0)}\" for r in rows))
+    else:
+        print('  Triage: no data')
+except:
+    print('  Triage: query failed')
+" 2>/dev/null || echo "  Triage: query failed")
+  add "$TRIAGE_STATS"
+
+  # D1 contact count
+  CONTACT_RESP=$(curl -s -X POST "$GATEWAY/v1/db/query" \
+    -H "Content-Type: application/json" \
+    -H "X-API-Key: ${GATEWAY_API_KEY:-}" \
+    -d '{"sql":"SELECT COUNT(*) as cnt FROM contacts WHERE created_at > datetime('"'"'now'"'"','"'"'-7 days'"'"')"}' 2>/dev/null)
+  CONTACT_COUNT=$(echo "$CONTACT_RESP" | python3 -c "
+import json,sys
+try:
+    d = json.load(sys.stdin)
+    rows = d.get('results', [])
+    cnt = rows[0].get('cnt', 0) if rows else 0
+    print(f'  New contacts: {cnt}')
+except:
+    print('  Contacts: query failed')
+" 2>/dev/null || echo "  Contacts: query failed")
+  add "$CONTACT_COUNT"
+
   # Send weekly digest as separate notification
-  WEEKLY_MSG=$(echo -e "$REPORT" | grep -A 999 "Weekly Digest")
-  if [ -n "$WEEKLY_MSG" ]; then
-    bash "$NOTIFY" "📅 Weekly Digest
-$WEEKLY_MSG" 2>/dev/null || true
-    log "Weekly digest sent"
-  fi
+  WEEKLY_MSG="📅 Weekly Digest (last 7 days)
+  Commits: $WEEK_COMMITS
+$TRIAGE_STATS
+$CONTACT_COUNT"
+  bash "$NOTIFY" "$WEEKLY_MSG" 2>/dev/null || true
+  log "Weekly digest sent"
 fi
+
+# 12. Nightly batch scheduler
+log "Running nightly batch scheduler..."
+bash "$(dirname "$0")/nightly-batch-scheduler.sh" 2>&1 | while IFS= read -r line; do log "$line"; done || true
 
 # Send report
 echo -e "$REPORT"

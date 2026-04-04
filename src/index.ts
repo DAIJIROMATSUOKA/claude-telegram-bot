@@ -97,6 +97,10 @@ import { gatewayQuery } from "./services/gateway-db";
 import { logger } from "./utils/logger";
 import { formatPerfStats } from "./utils/perf-tracker";
 import { telegramMessageBuffer } from "./utils/telegram-buffer";
+import { handleFind } from "./handlers/find-command";
+import { handleRecap } from "./handlers/recap-command";
+import { handleAlias } from "./handlers/alias-command";
+import { handleBatch } from "./handlers/batch-command";
 
 // ============== Global Context ==============
 // Bot起動時にCLAUDE.mdを読み込んでグローバルに保持
@@ -341,6 +345,10 @@ bot.command("expense", handleExpense);
 bot.command("expense_report", handleExpenseReport);
 bot.command("note", handleNote);
 bot.command("meeting", handleMeeting);
+bot.command("find", handleFind);
+bot.command("recap", handleRecap);
+bot.command("alias", handleAlias);
+bot.command("batch", handleBatch);
 bot.command("perf", async (ctx) => {
   await ctx.reply(formatPerfStats(), { parse_mode: "HTML" });
 });
