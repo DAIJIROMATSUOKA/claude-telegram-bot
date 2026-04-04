@@ -10,6 +10,8 @@ mkdir -p "$TASK_DIR"
 
 PROMPT_B64="${1:?Usage: claude-code-spawn.sh <base64_prompt> [cwd] [model]}"
 CWD="${2:-$HOME/claude-telegram-bot}"
+# Resolve container paths to M1 home
+CWD=$(echo "$CWD" | sed "s|^/root|$HOME|;s|^~|$HOME|")
 MODEL="${3:-sonnet}"
 
 # Decode prompt
