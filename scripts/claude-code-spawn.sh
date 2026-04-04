@@ -42,6 +42,18 @@ OUTPUT_LOG="$TASK_DIR/${TASK_ID}.log"
 RUNNER="$TASK_DIR/${TASK_ID}.runner.sh"
 RUNNER_LOG="$TASK_DIR/${TASK_ID}.runner.log"
 
+# Save task metadata
+python3 - "$TASK_ID" "$CWD" "$MODEL" "$OUTPUT_LOG" "$PROMPT_FILE" "$CURRENT" << 'PYMETA'
+import json, sys
+from datetime import datetime
+task_id, cwd, model, output_log, prompt_file, current = sys.argv[1:7]
+json.dump({
+    "task_id": task_id, "pid": 0, "cwd": cwd, "model": model,
+    "started_at": datetime.now().isoformat(), "status": "starting",
+    "output_log": output_log, "prompt_file": prompt_file,
+}, open(current, "w"), indent=2)
+PYMETA
+
 # Write .run.sh file then nohup (avoids bash -c quoting hell + poller pgid kill)
 RUNSH="$TASK_DIR/${TASK_ID}.run.sh"
 python3 - "$RUNSH" "$CWD" "$MODEL" "$PROMPT_FILE" "$OUTPUT_LOG" "$CURRENT" "$TASK_DIR" "$TASK_ID" "$NOTIFY" "$CLEANUP" << 'PYBLOCK'
