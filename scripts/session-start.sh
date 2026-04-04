@@ -52,8 +52,8 @@ for hf in "$KNOWLEDGE_BASE"/*/history.compressed.md; do
   [ -f "$hf" ] || continue
   LINES=$(wc -l < "$hf" | tr -d ' ')
   DNAME=$(basename "$(dirname "$hf")")
-  if [ "$LINES" -gt 80 ]; then
-    HISTORY_WARNINGS="${HISTORY_WARNINGS}⚠️ ${DNAME}: ${LINES}行(閾値80) — 古いエントリのローテーション推奨\n"
+  if [ "$LINES" -gt 150 ]; then
+    HISTORY_WARNINGS="${HISTORY_WARNINGS}⚠️ ${DNAME}: ${LINES}行(閾値150) — 古いエントリのローテーション推奨\n"
   fi
 done
 TODAY_HANDOFFS=$(grep -c "^## $(date '+%Y-%m-%d')" "$KNOWLEDGE_BASE"/*/history.compressed.md 2>/dev/null | awk -F: '{s+=$NF}END{print s}')
