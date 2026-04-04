@@ -274,9 +274,21 @@ domains:
     - id: dce25b44-0434-4145-add3-4ddb619d3622
       created: '2026-04-03'
       title: 2026-04-03_1811_PC操作_Mac設定
+    - id: a8f6ce07-03ca-466b-8c4c-6a8f3e34decc
+      created: '2026-04-04'
+      title: 2026-04-04_0638_PC操作_Mac設定
+    - id: 3860add0-b059-4aa4-b135-1f9e00eb5272
+      created: '2026-04-04'
+      title: 2026-04-04_0644_PC操作_Mac設定
+    - id: ad8a7d33-f0c1-41b8-86b1-cf781f7ae4bb
+      created: '2026-04-04'
+      title: 2026-04-04_0650_PC操作_Mac設定
+    - id: 2fb55bb8-a2da-49cd-af24-801376f3cc3d
+      created: '2026-04-04'
+      title: 2026-04-04_0957_PC操作_Mac設定
     keywords: []
     title_template: '{date}_PC操作_Mac設定'
-    url: https://claude.ai/chat/a8f6ce07-03ca-466b-8c4c-6a8f3e34decc
+    url: https://claude.ai/chat/84690b5c-4291-4456-84b2-c77d7bc3d9e3
   research:
     bootstrap: 'あなたはリサーチ・ニュース専門チャットです。
 
