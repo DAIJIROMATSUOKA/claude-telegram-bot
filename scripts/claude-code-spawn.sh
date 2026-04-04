@@ -62,7 +62,7 @@ runsh, cwd, model, prompt, output, current, task_dir, task_id, notify, cleanup =
 script = f"""#!/bin/bash
 cd "{cwd}" || exit 1
 PROMPT=$(cat "{prompt}")
-claude -p "$PROMPT" \
+claude -p --bare "$PROMPT" \
   --dangerously-skip-permissions --output-format json --model "{model}" \
   < /dev/null > "{output}" 2>&1
 CC_EXIT=$?
