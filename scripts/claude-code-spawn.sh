@@ -42,38 +42,16 @@ OUTPUT_LOG="$TASK_DIR/${TASK_ID}.log"
 RUNNER="$TASK_DIR/${TASK_ID}.runner.sh"
 RUNNER_LOG="$TASK_DIR/${TASK_ID}.runner.log"
 
-# Generate runner via python3 (avoids heredoc escaping — DESIGN-RULES sect.6)
-python3 - "$RUNNER" "$CWD" "$MODEL" "$PROMPT_FILE" "$OUTPUT_LOG" "$CURRENT" "$TASK_DIR" "$TASK_ID" "$NOTIFY" "$CLEANUP" << 'PYEOF'
-import sys, os, stat
-runner, cwd, model, prompt, output, current, task_dir, task_id, notify, cleanup = sys.argv[1:11]
-script = (
-    "#!/bin/bash\n"
-    f"# Auto-generated runner for {task_id}\n"
-    f'trap \'python3 "{cleanup}" "{current}" "{task_dir}" "{task_id}" "$?" "{notify}"\' EXIT\n'
-    f'cd "{cwd}" || exit 1\n'
-    f'claude -p "Execute all tasks and instructions provided in the appended system prompt." --append-system-prompt-file "{prompt}" --dangerously-skip-permissions --output-format json --model "{model}" < /dev/null > "{output}" 2>&1\n'
-    "CC_EXIT=$?\n"
-    "exit $CC_EXIT\n"
-)
-with open(runner, "w") as f:
-    f.write(script)
-os.chmod(runner, os.stat(runner).st_mode | stat.S_IEXEC)
-PYEOF
-
-# Save task metadata
-python3 - "$TASK_ID" "$CWD" "$MODEL" "$OUTPUT_LOG" "$PROMPT_FILE" "$CURRENT" << 'PYEOF'
-import json, sys
-from datetime import datetime
-task_id, cwd, model, output_log, prompt_file, current = sys.argv[1:7]
-json.dump({
-    "task_id": task_id, "pid": 0, "cwd": cwd, "model": model,
-    "started_at": datetime.now().isoformat(), "status": "starting",
-    "output_log": output_log, "prompt_file": prompt_file,
-}, open(current, "w"), indent=2)
-PYEOF
-
-# Spawn (nohup = independent from Poller process tree)
-nohup bash "$RUNNER" > "$RUNNER_LOG" 2>&1 &
+# Direct nohup spawn (no runner.sh — avoids process group issues)
+nohup bash -c "
+  cd \"$CWD\" || exit 1
+  claude -p \"Execute all tasks and instructions provided in the appended system prompt.\" \
+    --append-system-prompt-file \"$PROMPT_FILE\" \
+    --dangerously-skip-permissions --output-format json --model \"$MODEL\" \
+    < /dev/null > \"$OUTPUT_LOG\" 2>&1
+  CC_EXIT=\$?
+  python3 \"$CLEANUP\" \"$CURRENT\" \"$TASK_DIR\" \"$TASK_ID\" \"\$CC_EXIT\" \"$NOTIFY\"
+" > "$TASK_DIR/${TASK_ID}.runner.log" 2>&1 &
 PID=$!
 
 # Update PID
