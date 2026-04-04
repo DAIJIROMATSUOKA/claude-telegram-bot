@@ -60,6 +60,7 @@ python3 - "$RUNSH" "$CWD" "$MODEL" "$PROMPT_FILE" "$OUTPUT_LOG" "$CURRENT" "$TAS
 import sys, os, stat
 runsh, cwd, model, prompt, output, current, task_dir, task_id, notify, cleanup = sys.argv[1:11]
 script = f"""#!/bin/bash
+trap '' TERM HUP  # Survive SIGTERM from poller process group cleanup
 cd "{cwd}" || exit 1
 
 # Temporarily disable project hooks for headless execution
