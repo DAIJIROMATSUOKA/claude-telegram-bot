@@ -8,11 +8,27 @@ CLEANUP="$SCRIPTS_DIR/claude-code-cleanup.py"
 TASK_DIR="/tmp/claude-code-tasks"
 mkdir -p "$TASK_DIR"
 
-PROMPT_B64="${1:?Usage: claude-code-spawn.sh <base64_prompt> [cwd] [model]}"
-CWD="${2:-$HOME/claude-telegram-bot}"
+RESUME_SESSION=""
+# Parse --resume flag
+ARGS=()
+for arg in "$@"; do
+  if [[ "$arg" == --resume=* ]]; then
+    RESUME_TASK_ID="${arg#--resume=}"
+    # Look up session_id from that task's done.json
+    RESUME_DONE="$TASK_DIR/${RESUME_TASK_ID}.done.json"
+    if [ -f "$RESUME_DONE" ]; then
+      RESUME_SESSION=$(python3 -c "import json; print(json.load(open('$RESUME_DONE')).get('session_id',''))" 2>/dev/null)
+    fi
+  else
+    ARGS+=("$arg")
+  fi
+done
+
+PROMPT_B64="${ARGS[0]:?Usage: claude-code-spawn.sh <base64_prompt> [cwd] [model] [--resume=task_id]}"
+CWD="${ARGS[1]:-$HOME/claude-telegram-bot}"
 # Resolve container paths to M1 home
 CWD=$(echo "$CWD" | sed "s|^/root|$HOME|;s|^~|$HOME|")
-MODEL="${3:-sonnet}"
+MODEL="${ARGS[2]:-sonnet}"
 
 # Decode prompt
 PROMPT_FILE="$TASK_DIR/prompt-$$.txt"
@@ -51,40 +67,30 @@ json.dump({
     "task_id": task_id, "pid": 0, "cwd": cwd, "model": model,
     "started_at": datetime.now().isoformat(), "status": "starting",
     "output_log": output_log, "prompt_file": prompt_file,
+    "resume_session": "",
 }, open(current, "w"), indent=2)
 PYMETA
 
 # Write .run.sh file then nohup (avoids bash -c quoting hell + poller pgid kill)
 RUNSH="$TASK_DIR/${TASK_ID}.run.sh"
-python3 - "$RUNSH" "$CWD" "$MODEL" "$PROMPT_FILE" "$OUTPUT_LOG" "$CURRENT" "$TASK_DIR" "$TASK_ID" "$NOTIFY" "$CLEANUP" << 'PYBLOCK'
+python3 - "$RUNSH" "$CWD" "$MODEL" "$PROMPT_FILE" "$OUTPUT_LOG" "$CURRENT" "$TASK_DIR" "$TASK_ID" "$NOTIFY" "$CLEANUP" "$RESUME_SESSION" << 'PYBLOCK'
 import sys, os, stat
 runsh, cwd, model, prompt, output, current, task_dir, task_id, notify, cleanup = sys.argv[1:11]
+resume_session = sys.argv[11] if len(sys.argv) > 11 else ""
 script = f"""#!/bin/bash
 trap '' TERM HUP  # Survive SIGTERM from poller process group cleanup
+RESUME_SESSION="{resume_session}"
 cd "{cwd}" || exit 1
 
-# Temporarily disable project hooks for headless execution
-SETTINGS="{cwd}/.claude/settings.json"
-if [ -f "$SETTINGS" ]; then
-  cp "$SETTINGS" "$SETTINGS.spawn-bak"
-  python3 -c "
-import json
-d = json.load(open('$SETTINGS'))
-d.pop('hooks', None)
-json.dump(d, open('$SETTINGS', 'w'), indent=2)
-" 2>/dev/null
-fi
-
 # Workaround: claude-code issue #7263 — long prompt as arg causes 0-byte output
+RESUME_FLAG=""
+if [ -n "${{RESUME_SESSION:-}}" ]; then
+  RESUME_FLAG="--continue ${{RESUME_SESSION}}"
+fi
 claude -p "Read the file {prompt} and follow every instruction in it exactly." \
-  --dangerously-skip-permissions --model "{model}" \
+  --dangerously-skip-permissions --model "{model}" $RESUME_FLAG \
   < /dev/null > "{output}" 2>&1
 CC_EXIT=$?
-
-# Restore settings
-if [ -f "$SETTINGS.spawn-bak" ]; then
-  mv "$SETTINGS.spawn-bak" "$SETTINGS"
-fi
 
 python3 "{cleanup}" "{current}" "{task_dir}" "{task_id}" "$CC_EXIT" "{notify}"
 """
