@@ -76,7 +76,7 @@ fi
 
 PROMPT=$(cat "{prompt}")
 claude -p "$PROMPT" \
-  --dangerously-skip-permissions --output-format json --model "{model}" \
+  --dangerously-skip-permissions --model "{model}" \
   < /dev/null > "{output}" 2>&1
 CC_EXIT=$?
 
