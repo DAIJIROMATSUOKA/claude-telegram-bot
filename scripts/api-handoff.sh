@@ -240,11 +240,29 @@ for item in items:
     if not any(kw in item.lower() for kw in ['script', 'file', 'cmd', 'api', 'url', 'path', '/', 'exec', 'bash', 'python', 'commit', 'pr', 'deploy', 'test', 'verify', 'check', 'run', 'status', 'pending', 'done', 'fail', 'ok', 'error', 'waiting', 'running', 'blocked']):
         warnings.append(f'  NO_HOW: {item}')
 
+# Check COMPRESSED for E: entries without boundary conditions
+compressed_section = []
+in_compressed = False
+for line in lines:
+    if line.strip().startswith('## COMPRESSED'):
+        in_compressed = True
+        continue
+    if in_compressed and line.strip().startswith('## '):
+        break
+    if in_compressed:
+        compressed_section.append(line.strip())
+
+error_entries = [l for l in compressed_section if l.startswith('E:')]
+for entry in error_entries:
+    has_boundary = any(kw in entry.lower() for kw in ['ok', 'ng', 'works', 'fails', 'when', '<', '>', 'char', 'byte', 'line', 'short', 'long'])
+    if not has_boundary:
+        warnings.append(f'  NO_BOUNDARY: {entry}  ← 動作/不動作の境界条件を含めてください')
+
 if warnings:
     print('⚠️ REMAINING items lack detail (what/how/status):')
     for w in warnings:
         print(w)
-    print('次セッションが自力で判断できるよう、各項目にスクリプト名・現在の状態を含めてください。')
+    print('次セッションが自力で判断できるよう、各項目にスクリプト名・現在の状態・境界条件を含めてください。')
 else:
     print('OK')
 " 2>/dev/null)

@@ -343,3 +343,14 @@ IDLE → RUNNING → DONE/FAILED/WAITING
 - SDKResultMessage は subtype で分岐: `"success"` → `result: string`、`"error_max_turns"` → `errors: string[]`
 - `systemPrompt` でモード別の指示を与える（SDK公式機能）
 - 根本解決: SDK公式ドキュメントを読んでから実装。場当たり的パッチ禁止
+
+### Handoff品質ルール (2026-04-05 DECIDED)
+- デバッグ中の問題は「動作/不動作の境界条件」をCOMPRESSEDに必ず含める
+  - 例: `E: claude-p 0byte when >200char prompt, OK when <150char read-only 2-task`
+  - 次セッションが「何が動いて何が動かないか」を即座に判断できること
+- COMPRESSEDのE:エントリには必ず「何を試して、どこまで動いたか」を1行に含める
+  - NG例: `E: claude -p multi-task prompt 0-byte output`
+  - OK例: `E: claude-p 0byte: 150char-read=OK, 350char-write=NG, hooks-off+text+$PROMPT=still-NG`
+- 外部から得た分析フレームワーク（ChatGPT等）もCOMPRESSEDに`Q:`で記録
+  - 例: `Q: 0byte-root-cause: 3 candidates: arg-expansion, env-diff, output-path`
+
