@@ -264,7 +264,7 @@ export async function handleInboxCallback(ctx: Context): Promise<boolean> {
           const res = await fetch("https://api.todoist.com/api/v1/tasks", {
             method: "POST",
             headers: { "Authorization": `Bearer ${apiToken}`, "Content-Type": "application/json" },
-            body: JSON.stringify({ content: taskContent, due_string: dueString }),
+            body: JSON.stringify({ content: taskContent, due_datetime: dueString.replace(" ", "T") + ":00+09:00" }),
           });
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
