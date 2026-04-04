@@ -87,6 +87,12 @@ import { handleAgentTask } from "./handlers/agent-task";
 import { handleDashboard } from "./handlers/dashboard-command";
 import { handleQuick, handleQuickCallback } from "./handlers/quick-command";
 import { handleMorning } from "./handlers/morning-command";
+import { handleProject } from "./handlers/project-command";
+import { handleCustomer } from "./handlers/customer-command";
+import { handleFollowup } from "./handlers/followup-command";
+import { handleExpense, handleExpenseReport } from "./handlers/expense-command";
+import { handleNote } from "./handlers/note-command";
+import { handleMeeting } from "./handlers/meeting-command";
 
 // ============== Global Context ==============
 // Bot起動時にCLAUDE.mdを読み込んでグローバルに保持
@@ -321,6 +327,13 @@ bot.command("help", handleHelp);
 bot.command("dashboard", handleDashboard);
 bot.command("quick", handleQuick);
 bot.command("morning", handleMorning);
+bot.command("project", handleProject);
+bot.command("customer", handleCustomer);
+bot.command("followup", handleFollowup);
+bot.command("expense", handleExpense);
+bot.command("expense_report", handleExpenseReport);
+bot.command("note", handleNote);
+bot.command("meeting", handleMeeting);
 // Auto-delete "X pinned" service messages
 bot.on("message:pinned_message", async (ctx) => { try { await ctx.deleteMessage(); } catch {} });
 

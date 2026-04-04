@@ -8,6 +8,7 @@
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { existsSync } from 'fs';
+import { gatewayQuery } from './gateway-db';
 
 const execAsync = promisify(exec);
 
@@ -590,6 +591,31 @@ async function executeAction(item: TriageItem, judgment: TriageJudgment): Promis
 }
 
 // ============================================================
+// Contact auto-log
+// ============================================================
+
+async function autoLogContact(item: TriageItem, summary: string): Promise<void> {
+  try {
+    await gatewayQuery(
+      `CREATE TABLE IF NOT EXISTS contact_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        source TEXT NOT NULL,
+        contact_name TEXT NOT NULL,
+        direction TEXT NOT NULL,
+        summary TEXT,
+        created_at TEXT NOT NULL
+      )`
+    );
+    await gatewayQuery(
+      `INSERT INTO contact_log (source, contact_name, direction, summary, created_at) VALUES (?, ?, ?, ?, ?)`,
+      [item.source, item.sender_name || 'unknown', 'inbound', summary.substring(0, 500), new Date().toISOString()]
+    );
+  } catch (e) {
+    console.error('[Triage] autoLogContact error:', e);
+  }
+}
+
+// ============================================================
 // Main triage loop
 // ============================================================
 
@@ -648,6 +674,13 @@ async function triageCycle(): Promise<void> {
       // Execute action
       const autoExecute = judgment.action === 'ignore' || judgment.action === 'bug_fix';
       await executeAction(item, judgment);
+
+      // Auto-log contact to D1
+      if (item.source === 'gmail' || item.source === 'line') {
+        const logSummary = `${item.subject ? item.subject + ' — ' : ''}${judgment.reason}`;
+        autoLogContact(item, logSummary).catch(() => {});
+      }
+
       await reportResult(
         item.id,
         judgment.action,
