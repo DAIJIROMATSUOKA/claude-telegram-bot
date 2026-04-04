@@ -94,7 +94,7 @@ os.chmod(runsh, os.stat(runsh).st_mode | stat.S_IEXEC)
 PYBLOCK
 
 # setsid detaches from poller process group; nohup survives HUP
-nohup bash "$RUNSH" > "$TASK_DIR/${TASK_ID}.runner.log" 2>&1 &
+nohup python3 -c "import os,sys; os.setsid(); os.execvp('bash', ['bash', sys.argv[1]])" "$RUNSH" > "$TASK_DIR/${TASK_ID}.runner.log" 2>&1 &
 PID=$!
 
 # Update PID
