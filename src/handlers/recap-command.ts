@@ -48,7 +48,7 @@ export async function handleRecap(ctx: Context): Promise<void> {
       ),
       // Escalations
       gatewayQuery(
-        `SELECT COUNT(*) as cnt FROM triage_items WHERE action = 'escalate' AND created_at BETWEEN ? AND ?`,
+        `SELECT COUNT(*) as cnt FROM inbox_triage_queue WHERE action = 'escalate' AND created_at BETWEEN ? AND ?`,
         [dayStart, dayEnd]
       ),
       // Completed tasks
@@ -58,7 +58,7 @@ export async function handleRecap(ctx: Context): Promise<void> {
       ),
       // Triage actions breakdown
       gatewayQuery(
-        `SELECT action, COUNT(*) as cnt FROM triage_items WHERE created_at BETWEEN ? AND ? GROUP BY action`,
+        `SELECT action, COUNT(*) as cnt FROM inbox_triage_queue WHERE created_at BETWEEN ? AND ? GROUP BY action`,
         [dayStart, dayEnd]
       ),
     ]);

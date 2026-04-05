@@ -24,7 +24,7 @@ export async function handleDashboard(ctx: Context): Promise<void> {
   // Today triage count
   try {
     const triageRes = await gatewayQuery(
-      "SELECT COUNT(*) as cnt FROM triage_items WHERE date(created_at) = date('now')"
+      "SELECT COUNT(*) as cnt FROM inbox_triage_queue WHERE date(created_at) = date('now')"
     );
     const cnt = triageRes?.results?.[0]?.cnt ?? "?";
     lines.push(`📬 Today triage: ${cnt}`);
