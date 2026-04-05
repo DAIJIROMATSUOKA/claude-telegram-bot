@@ -7,6 +7,7 @@
  */
 
 import { existsSync, readFileSync } from "node:fs";
+import { loadConfig } from "../utils/config-loader";
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
 import type { Context } from "grammy";
@@ -54,8 +55,7 @@ export async function handleTaskCommand(ctx: Context): Promise<void> {
 
   // Validate JSON content
   try {
-    const content = readFileSync(planPath, "utf-8");
-    const plan = JSON.parse(content);
+    const plan = loadConfig(planPath);
     if (!plan.micro_tasks || !Array.isArray(plan.micro_tasks)) {
       await ctx.reply("❌ TaskPlan JSONにmicro_tasksがありません");
       return;

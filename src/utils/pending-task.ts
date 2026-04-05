@@ -11,8 +11,9 @@
  *   4. 起動時: getPendingTask() で検出 → 自動再送
  */
 
-import { existsSync, readFileSync, unlinkSync, writeFileSync } from "fs";
+import { existsSync, unlinkSync, writeFileSync } from "fs";
 import { PENDING_TASK_FILE } from "../config";
+import { loadConfig, invalidateConfig } from "./config-loader";
 
 export interface PendingTask {
   /** ユーザーID */
@@ -41,6 +42,7 @@ export function savePendingTask(task: Omit<PendingTask, "saved_at">): void {
       saved_at: Date.now(),
     };
     writeFileSync(PENDING_TASK_FILE, JSON.stringify(data, null, 2));
+    invalidateConfig(PENDING_TASK_FILE);
     console.log("[PendingTask] Saved:", task.original_message.slice(0, 50));
   } catch (error) {
     console.error("[PendingTask] Failed to save:", error);
@@ -54,6 +56,7 @@ export function clearPendingTask(): void {
   try {
     if (existsSync(PENDING_TASK_FILE)) {
       unlinkSync(PENDING_TASK_FILE);
+      invalidateConfig(PENDING_TASK_FILE);
       console.log("[PendingTask] Cleared");
     }
   } catch (error) {
@@ -71,8 +74,7 @@ export function getPendingTask(): PendingTask | null {
       return null;
     }
 
-    const raw = readFileSync(PENDING_TASK_FILE, "utf-8");
-    const task = JSON.parse(raw) as PendingTask;
+    const task = loadConfig<PendingTask>(PENDING_TASK_FILE);
 
     // 24時間以上前のタスクは無視（十分な余裕を持たせる）
     const age = Date.now() - task.saved_at;
@@ -98,10 +100,10 @@ export function updatePendingTaskSessionId(sessionId: string): void {
   try {
     if (!existsSync(PENDING_TASK_FILE)) return;
 
-    const raw = readFileSync(PENDING_TASK_FILE, "utf-8");
-    const task = JSON.parse(raw) as PendingTask;
+    const task = loadConfig<PendingTask>(PENDING_TASK_FILE);
     task.session_id = sessionId;
     writeFileSync(PENDING_TASK_FILE, JSON.stringify(task, null, 2));
+    invalidateConfig(PENDING_TASK_FILE);
     console.log("[PendingTask] Updated session_id:", sessionId.slice(0, 8));
   } catch (error) {
     console.error("[PendingTask] Failed to update session_id:", error);

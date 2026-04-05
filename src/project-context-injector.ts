@@ -15,9 +15,10 @@
  *   await injectMessage(chatUrl, userMessage);  // then inject user message
  */
 
-import { readFileSync, existsSync, writeFileSync, mkdirSync } from 'fs';
+import { existsSync, writeFileSync, mkdirSync } from 'fs';
 import { resolve } from 'path';
 import { loadJsonFile } from './utils/json-loader';
+import { loadConfig } from './utils/config-loader';
 
 
 
@@ -70,8 +71,7 @@ function loadCache(): CacheData | null {
   }
   if (!existsSync(CACHE_FILE)) return null;
   try {
-    const raw = readFileSync(CACHE_FILE, 'utf-8');
-    cachedData = JSON.parse(raw);
+    cachedData = loadConfig<CacheData>(CACHE_FILE);
     cacheReadAt = Date.now();
     return cachedData;
   } catch {

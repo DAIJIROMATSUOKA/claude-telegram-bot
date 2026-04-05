@@ -13,10 +13,12 @@ import {
   updatePendingTaskSessionId,
   type PendingTask,
 } from "../utils/pending-task";
+import { invalidateConfig } from "../utils/config-loader";
 
 function cleanup() {
   try {
     if (existsSync(PENDING_TASK_FILE)) unlinkSync(PENDING_TASK_FILE);
+    invalidateConfig(PENDING_TASK_FILE);
   } catch {}
 }
 
@@ -65,6 +67,7 @@ describe("PendingTask", () => {
       saved_at: Date.now() - 25 * 60 * 60 * 1000, // 25 hours ago
     };
     writeFileSync(PENDING_TASK_FILE, JSON.stringify(expired));
+    invalidateConfig(PENDING_TASK_FILE);
     const task = getPendingTask();
     expect(task).toBeNull();
     expect(existsSync(PENDING_TASK_FILE)).toBe(false);
@@ -76,6 +79,7 @@ describe("PendingTask", () => {
       saved_at: Date.now() - 60 * 1000, // 1 minute ago
     };
     writeFileSync(PENDING_TASK_FILE, JSON.stringify(recent));
+    invalidateConfig(PENDING_TASK_FILE);
     const task = getPendingTask();
     expect(task).not.toBeNull();
     expect(task!.user_id).toBe(12345);
@@ -83,6 +87,7 @@ describe("PendingTask", () => {
 
   test("handles corrupt JSON gracefully", () => {
     writeFileSync(PENDING_TASK_FILE, "not valid json{{{");
+    invalidateConfig(PENDING_TASK_FILE);
     const task = getPendingTask();
     expect(task).toBeNull();
     // Should also clean up corrupt file

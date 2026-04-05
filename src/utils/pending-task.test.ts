@@ -1,5 +1,6 @@
 import { describe, test, expect, mock, beforeEach, afterEach } from "bun:test";
 import { existsSync, readFileSync, writeFileSync, unlinkSync } from "fs";
+import { invalidateConfig } from "./config-loader";
 
 // Use a unique temp file for tests to avoid collision with real pending task
 const TEST_PENDING_FILE = "/tmp/claude-telegram-pending-task-TEST.json";
@@ -18,6 +19,7 @@ import {
 function cleanup() {
   try {
     if (existsSync(TEST_PENDING_FILE)) unlinkSync(TEST_PENDING_FILE);
+    invalidateConfig(TEST_PENDING_FILE);
   } catch {}
 }
 
@@ -100,6 +102,7 @@ describe("pending-task", () => {
         saved_at: Date.now(),
       };
       writeFileSync(TEST_PENDING_FILE, JSON.stringify(task));
+      invalidateConfig(TEST_PENDING_FILE);
       const result = getPendingTask();
       expect(result).not.toBeNull();
       expect(result!.user_id).toBe(123);
@@ -117,6 +120,7 @@ describe("pending-task", () => {
         saved_at: Date.now() - 25 * 60 * 60 * 1000, // 25 hours ago
       };
       writeFileSync(TEST_PENDING_FILE, JSON.stringify(task));
+      invalidateConfig(TEST_PENDING_FILE);
       const result = getPendingTask();
       expect(result).toBeNull();
       expect(existsSync(TEST_PENDING_FILE)).toBe(false);
@@ -124,6 +128,7 @@ describe("pending-task", () => {
 
     test("handles corrupted JSON gracefully", () => {
       writeFileSync(TEST_PENDING_FILE, "not valid json {{{");
+      invalidateConfig(TEST_PENDING_FILE);
       const result = getPendingTask();
       expect(result).toBeNull();
       // Should have cleaned up the corrupted file
@@ -141,6 +146,7 @@ describe("pending-task", () => {
         saved_at: Date.now() - 23 * 60 * 60 * 1000, // 23 hours ago
       };
       writeFileSync(TEST_PENDING_FILE, JSON.stringify(task));
+      invalidateConfig(TEST_PENDING_FILE);
       const result = getPendingTask();
       expect(result).not.toBeNull();
       expect(result!.original_message).toBe("borderline task");
@@ -159,6 +165,7 @@ describe("pending-task", () => {
         saved_at: Date.now(),
       };
       writeFileSync(TEST_PENDING_FILE, JSON.stringify(task));
+      invalidateConfig(TEST_PENDING_FILE);
       updatePendingTaskSessionId("new-session-id-xyz");
       const data = JSON.parse(readFileSync(TEST_PENDING_FILE, "utf-8"));
       expect(data.session_id).toBe("new-session-id-xyz");

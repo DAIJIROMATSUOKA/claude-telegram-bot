@@ -11,6 +11,7 @@ import {
 } from "@anthropic-ai/claude-agent-sdk";
 import { logger } from "./utils/logger";
 import { readFileSync } from "fs";
+import { loadConfig } from "./utils/config-loader";
 import { buildMemoryContext } from "./services/jarvis-memory";
 import type { Context } from "grammy";
 import {
@@ -728,8 +729,7 @@ class ClaudeSession {
         return { sessions: [] };
       }
 
-      const text = readFileSync(SESSION_FILE, "utf-8");
-      return JSON.parse(text) as SessionHistory;
+      return loadConfig<SessionHistory>(SESSION_FILE);
     } catch {
       return { sessions: [] };
     }

@@ -4,7 +4,8 @@
  * Run: bun run scripts/slack-telegram-bridge.ts
  */
 
-import { readFileSync, writeFileSync, existsSync } from "fs";
+import { writeFileSync, existsSync } from "fs";
+import { loadConfig } from "../src/utils/config-loader";
 
 const SLACK_BOT_TOKEN = process.env.SLACK_BOT_TOKEN || "";
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
@@ -21,7 +22,7 @@ interface ChannelState {
 function loadState(): ChannelState {
   try {
     if (existsSync(STATE_FILE))
-      return JSON.parse(readFileSync(STATE_FILE, "utf-8"));
+      return loadConfig<ChannelState>(STATE_FILE);
   } catch {}
   return {};
 }

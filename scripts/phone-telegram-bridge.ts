@@ -8,6 +8,7 @@
  */
 
 import { Database } from "bun:sqlite";
+import { loadConfig } from "../src/utils/config-loader";
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_ALLOWED_USERS || "";
@@ -83,12 +84,8 @@ interface State {
 }
 
 function loadState(): State {
-  try {
-    const data = JSON.parse(require("fs").readFileSync(STATE_FILE, "utf-8"));
-    return { lastPk: data.lastPk || 0 };
-  } catch {
-    return { lastPk: 0 };
-  }
+  const data = loadConfig<State>(STATE_FILE, { lastPk: 0 });
+  return { lastPk: data.lastPk || 0 };
 }
 
 function saveState(state: State): void {

@@ -14,7 +14,8 @@
  *   4. 全作業完了 → clearWorkState()
  */
 
-import { existsSync, readFileSync, writeFileSync, unlinkSync } from "fs";
+import { existsSync, writeFileSync, unlinkSync } from "fs";
+import { loadConfig, invalidateConfig } from "./config-loader";
 import { resolve } from "path";
 
 // プロジェクトディレクトリ内に保存（/tmp ではなく）
@@ -70,6 +71,7 @@ export function setWorkState(state: Omit<WorkState, "created_at" | "updated_at" 
       expires_at: Date.now() + 48 * 60 * 60 * 1000, // 48時間
     };
     writeFileSync(WORK_STATE_FILE, JSON.stringify(data, null, 2));
+    invalidateConfig(WORK_STATE_FILE);
     console.log(`[WorkState] Saved: ${state.tasks.length} tasks, directive: "${state.directive.slice(0, 50)}"`);
   } catch (error) {
     console.error("[WorkState] Failed to save:", error);
@@ -85,8 +87,7 @@ export function getWorkState(): WorkState | null {
       return null;
     }
 
-    const raw = readFileSync(WORK_STATE_FILE, "utf-8");
-    const state = JSON.parse(raw) as WorkState;
+    const state = loadConfig<WorkState>(WORK_STATE_FILE);
 
     // 期限切れチェック
     if (Date.now() > state.expires_at) {
@@ -129,6 +130,7 @@ export function updateWorkProgress(
     }
 
     writeFileSync(WORK_STATE_FILE, JSON.stringify(state, null, 2));
+    invalidateConfig(WORK_STATE_FILE);
     console.log(`[WorkState] Updated task ${taskId}: ${status}${notes ? ` (${notes})` : ""}`);
   } catch (error) {
     console.error("[WorkState] Failed to update:", error);
@@ -146,6 +148,7 @@ export function updateWorkStateSessionId(sessionId: string): void {
     state.session_id = sessionId;
     state.updated_at = new Date().toISOString();
     writeFileSync(WORK_STATE_FILE, JSON.stringify(state, null, 2));
+    invalidateConfig(WORK_STATE_FILE);
     console.log(`[WorkState] Updated session_id: ${sessionId.slice(0, 8)}...`);
   } catch (error) {
     console.error("[WorkState] Failed to update session_id:", error);
@@ -159,6 +162,7 @@ export function clearWorkState(): void {
   try {
     if (existsSync(WORK_STATE_FILE)) {
       unlinkSync(WORK_STATE_FILE);
+      invalidateConfig(WORK_STATE_FILE);
       console.log("[WorkState] Cleared");
     }
   } catch (error) {
