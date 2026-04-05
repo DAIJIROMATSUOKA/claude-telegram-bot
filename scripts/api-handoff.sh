@@ -367,6 +367,65 @@ print('YES' if last_block == compressed else 'NO')
   fi
 fi
 
+
+# --- Step 7.5: Update M1.md state (仕組み化 — handoff時に必ず最新化) ---
+M1_STATE="$SCRIPTS_DIR/../autonomous/state/M1.md"
+if [ -f "$SUMMARY_FILE" ]; then
+  python3 -c "
+import datetime, os, sys
+
+summary_file = '$SUMMARY_FILE'
+m1_file = '$M1_STATE'
+domain = '$DOMAIN'
+
+with open(summary_file, 'r') as f:
+    text = f.read()
+
+# Extract W: lines from COMPRESSED section
+lines = text.split('\n')
+in_compressed = False
+work_items = []
+for line in lines:
+    if line.strip().startswith('## COMPRESSED'):
+        in_compressed = True
+        continue
+    if in_compressed and line.strip().startswith('## '):
+        break
+    if in_compressed and line.strip().startswith('W:'):
+        work_items.append('- ' + line.strip()[2:].strip())
+
+now = datetime.datetime.now().strftime('%Y-%m-%dT%H:%M+09:00')
+today = datetime.datetime.now().strftime('%Y-%m-%d')
+
+work_section = '\n'.join(work_items) if work_items else '- (handoff executed, no W: entries in COMPRESSED)'
+
+m1_content = f'''# M1 State
+STATUS: IDLE
+UPDATED: {now}
+OPERATOR: croppy (claude.ai)
+
+## SESSION SUMMARY ({today})
+
+### Session work
+{work_section}
+
+### Task State
+# Task State (Updated {today})
+## Active
+- (none)
+## Blocked
+- (none)
+
+## NEXT_ACTION
+Ask DJ
+'''
+
+with open(m1_file, 'w') as f:
+    f.write(m1_content)
+print(f'M1.md updated: {now}')
+" 2>/dev/null && log "M1.md state updated" || log "WARNING: M1.md update failed"
+fi
+
 # --- Step 8: Cleanup + notify ---
 rm -f "$LOCK_FILE"
 rm -f "/tmp/handoff-full-${DOMAIN}.md"
