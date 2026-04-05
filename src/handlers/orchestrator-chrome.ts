@@ -11,6 +11,7 @@ import { exec } from "child_process";
 import { enqueueMessage, dequeueForProject } from "../utils/message-queue";
 import { promisify } from "util";
 import { appendFileSync, existsSync, mkdirSync, writeFileSync, unlinkSync, readFileSync } from "fs";
+import { loadJsonFile } from "../utils/json-loader";
 import { extractMachineNo, getProjectContext } from "../project-context-injector";
 import { homedir } from "os";
 
@@ -19,12 +20,7 @@ import { waitAndRelayResponse } from "./croppy-bridge";
 
 // ─── Constants ────────────────────────────────────────────────
 
-const SCRIPTS_DIR = `${homedir()}/claude-telegram-bot/scripts`;
-const TAB_ROUTER = `${SCRIPTS_DIR}/project-tab-router.sh`;
-const TAB_RELAY = `${SCRIPTS_DIR}/tab-relay.sh`;
-const TAB_MANAGER = `${SCRIPTS_DIR}/croppy-tab-manager.sh`;
-const AUDIT_DIR = `${homedir()}/.jarvis/orchestrator`;
-const AUDIT_FILE = `${AUDIT_DIR}/audit.jsonl`;
+import { SCRIPTS_DIR, PROJECT_TAB_ROUTER as TAB_ROUTER, TAB_RELAY, CROPPY_TAB_MANAGER as TAB_MANAGER, ORCHESTRATOR_AUDIT_DIR as AUDIT_DIR, ORCHESTRATOR_AUDIT_FILE as AUDIT_FILE } from '../constants';
 
 
 // ─── Periodic State Snapshot (Defense Line 1) ──────────────
@@ -265,7 +261,7 @@ interface InboxConfig {
 function loadInboxConfig(): InboxConfig {
   try {
     if (existsSync(INBOX_CONFIG_PATH)) {
-      return JSON.parse(readFileSync(INBOX_CONFIG_PATH, "utf-8"));
+      return loadJsonFile<InboxConfig>(INBOX_CONFIG_PATH);
     }
   } catch {}
   return { inbox_tab_wt: null, inbox_tab_url: null };
@@ -428,7 +424,7 @@ async function checkAndHandoff(
     const CONFIG = `${homedir()}/claude-telegram-bot/.croppy-workers.json`;
     let projectUrl = "https://claude.ai/project/019c15f4-3d2d-7263-a308-e7f6ccd6b3f8";
     try {
-      const cfg = JSON.parse(readFileSync(CONFIG, "utf-8"));
+      const cfg = loadJsonFile<any>(CONFIG);
       projectUrl = cfg.workers?.[0]?.url || projectUrl;
     } catch {}
 
@@ -490,7 +486,7 @@ async function checkAndHandoff(
     // Fallback: update local JSON
     try {
       const localPath = `${homedir()}/.croppy-project-tabs.json`;
-      const localData = existsSync(localPath) ? JSON.parse(readFileSync(localPath, "utf-8")) : {};
+      const localData = loadJsonFile<Record<string, any>>(localPath, {});
       localData[projectId] = { conv_url: newConvUrl, wt: newWT, updated_at: new Date().toISOString() };
       writeFileSync(localPath, JSON.stringify(localData, null, 2), "utf-8");
     } catch {}

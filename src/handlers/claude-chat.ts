@@ -1,4 +1,5 @@
-import { readFileSync, writeFileSync, existsSync } from "fs";
+import { writeFileSync, existsSync } from "fs";
+import { loadJsonFile } from "../utils/json-loader";
 import type { Context } from "grammy";
 import { execAsync } from "../utils/exec-async";
 
@@ -37,7 +38,7 @@ function formatTitle(createdAt: string, autoTitle: string): string {
 function loadChatMap(): void {
   try {
     if (existsSync(CHAT_MAP_FILE)) {
-      const data = JSON.parse(readFileSync(CHAT_MAP_FILE, "utf-8")) as Record<string, any>;
+      const data = loadJsonFile<Record<string, any>>(CHAT_MAP_FILE, {});
       for (const [k, v] of Object.entries(data)) {
         if (typeof v === "string") {
           chatReplyMap.set(Number(k), { wt: "", createdAt: "", title: v, notifMsgId: Number(k) });

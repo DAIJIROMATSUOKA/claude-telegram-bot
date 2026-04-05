@@ -8,6 +8,7 @@
  */
 import { spawn } from "child_process";
 import { readFileSync, writeFileSync, appendFileSync, unlinkSync, existsSync, readdirSync } from "fs";
+import { loadJsonFile } from "../utils/json-loader";
 
 export const MAX_BUFFER = 10;
 const LOCK_DIR = "/tmp";
@@ -45,7 +46,7 @@ function bufferPath(domain: string): string {
 function getGlobalRelayLock(): GlobalRelayLock | null {
   try {
     if (!existsSync(GLOBAL_RELAY_LOCK)) return null;
-    const data = JSON.parse(readFileSync(GLOBAL_RELAY_LOCK, "utf-8"));
+    const data = loadJsonFile<GlobalRelayLock>(GLOBAL_RELAY_LOCK);
     const age = Date.now() - new Date(data.since).getTime();
     if (age > 600_000) {
       // Absolute max 10min - always stale
@@ -87,7 +88,7 @@ export function getLock(domain: string): DomainLock | null {
   try {
     const p = lockPath(domain);
     if (!existsSync(p)) return null;
-    const data = JSON.parse(readFileSync(p, "utf-8"));
+    const data = loadJsonFile<DomainLock>(p);
     const age = Date.now() - new Date(data.since).getTime();
     const maxAge = data.type === "handoff" ? 600_000 : 120_000;
     if (age > maxAge) {

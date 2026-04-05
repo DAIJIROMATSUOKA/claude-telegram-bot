@@ -17,6 +17,7 @@
 
 import { readFileSync, existsSync } from 'fs';
 import { resolve } from 'path';
+import { loadJsonFile } from './utils/json-loader';
 
 
 
@@ -79,12 +80,7 @@ function loadCache(): CacheData | null {
 }
 
 function loadInjectedHashes(): Record<string, string> {
-  if (!existsSync(HASH_STORE_FILE)) return {};
-  try {
-    return JSON.parse(readFileSync(HASH_STORE_FILE, 'utf-8'));
-  } catch {
-    return {};
-  }
+  return loadJsonFile<Record<string, string>>(HASH_STORE_FILE, {});
 }
 
 function saveInjectedHash(machineKey: string, hash: string): void {

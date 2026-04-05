@@ -16,10 +16,7 @@ import { escapeHtml } from '../formatting';
 
 const execAsync = promisify(exec);
 
-const SCRIPTS_DIR = `${process.env.HOME}/claude-telegram-bot/scripts`;
-const TAB_MANAGER = `${SCRIPTS_DIR}/croppy-tab-manager.sh`;
-const NIGHTSHIFT = `${SCRIPTS_DIR}/nightshift.sh`;
-const SUPERVISOR = `${SCRIPTS_DIR}/croppy-supervisor.sh`;
+import { CROPPY_TAB_MANAGER as TAB_MANAGER, CROPPY_NIGHTSHIFT as NIGHTSHIFT, CROPPY_SUPERVISOR as SUPERVISOR } from '../constants';
 
 const DATE_PREFIX_RE = /^\d{4}-\d{2}-\d{2}_\d{4}/;
 const HANDOFF_PREFIX_RE = /^\d{5,6}_/;  // MMDD{seq}_ from api-handoff.sh
@@ -47,9 +44,8 @@ setInterval(() => {
 function isProjectTab(wt: string): boolean {
   try {
     const mapPath = `${process.env.HOME}/.croppy-project-tabs.json`;
-    const { existsSync, readFileSync } = require('fs');
-    if (!existsSync(mapPath)) return false;
-    const map = JSON.parse(readFileSync(mapPath, 'utf-8'));
+    const { loadJsonFile: loadJson } = require('../utils/json-loader');
+    const map = loadJson(mapPath, {});
     return Object.values(map).some((v: any) => typeof v === 'string' && v.includes(`|${wt}`));
   } catch { return false; }
 }

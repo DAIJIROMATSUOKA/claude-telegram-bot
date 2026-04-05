@@ -11,6 +11,8 @@ import { isAuthorized } from "../security";
 import { archiveToObsidian } from "../services/obsidian-writer";
 import { notifyError } from "../utils/error-notify";
 import { fetchWithTimeout } from "../utils/fetch-with-timeout";
+import { dispatchInboxCallback } from "./inbox/index";
+import type { CallbackContext } from "./inbox/index";
 
 // ============================================================
 // Batch Action Queue - 3s debounce for all destructive actions
@@ -184,132 +186,33 @@ export async function handleInboxCallback(ctx: Context): Promise<boolean> {
   const chatId = ctx.chat?.id;
 
   try {
-    switch (action) {
-      case "archive": {
-        if (chatId && msgId) {
-          const count = queueBatchAction(chatId, { action: "archive", msgId, sourceId, msgText: ctx.callbackQuery?.message?.text || "", msgDate: ctx.callbackQuery?.message?.date }, ctx.api);
-          try { await ctx.answerCallbackQuery({ text: "✉ アーカイブ予約 (" + count + "件)", show_alert: false }); } catch {}
-        }
-        break;
-      }
-      case "trash": {
-        if (chatId && msgId) {
-          const count = queueBatchAction(chatId, { action: "trash", msgId, sourceId, msgText: ctx.callbackQuery?.message?.text || "", msgDate: ctx.callbackQuery?.message?.date }, ctx.api);
-          try { await ctx.answerCallbackQuery({ text: "🗑 ゴミ箱予約 (" + count + "件)", show_alert: false }); } catch {}
-        }
-        break;
-      }
-      case "full":
-        await handleFullText(ctx, sourceId);
-        break;
-      case "attach":
-        await handleAttachments(ctx, sourceId);
-        break;
-      case "reply":
-        await handleReplyPrompt(ctx, sourceId, msgId);
-        break;
-      case "lnrpl":
-        await handleLineReplyPrompt(ctx, sourceId, msgId);
-        break;
-      case "imrpl":
-        await handleImessageReplyPrompt(ctx, sourceId, msgId);
-        break;
-      case "draft":
-        await handleAiDraft(ctx, sourceId, msgId);
-        break;
-      case "del": {
-        if (chatId && msgId) {
-          const count = queueBatchAction(chatId, { action: "del", msgId, sourceId, msgText: "" }, ctx.api);
-          try { await ctx.answerCallbackQuery({ text: "🗑 削除予約 (" + count + "件)", show_alert: false }); } catch {}
-        }
-        break;
-      }
-      case "delmemo": {
-        if (chatId && msgId) {
-          const replyTo = ctx.callbackQuery?.message?.reply_to_message?.message_id;
-          const count = queueBatchAction(chatId, { action: "delmemo", msgId, sourceId, msgText: "", replyToMsgId: replyTo }, ctx.api);
-          try { await ctx.answerCallbackQuery({ text: "🗑 削除予約 (" + count + "件)", show_alert: false }); } catch {}
-        }
-        break;
-      }
-      case "todo": {
-        // 1-click Todoist task creation from Telegram notification
-        try {
-          const msgText = ctx.callbackQuery?.message?.text || "";
-          const taskContent = msgText || "Telegram task";
+    // Direct handler actions (not batch-queued)
+    const directActions: Record<string, () => Promise<void>> = {
+      full: () => handleFullText(ctx, sourceId),
+      attach: () => handleAttachments(ctx, sourceId),
+      reply: () => handleReplyPrompt(ctx, sourceId, msgId),
+      lnrpl: () => handleLineReplyPrompt(ctx, sourceId, msgId),
+      imrpl: () => handleImessageReplyPrompt(ctx, sourceId, msgId),
+      draft: () => handleAiDraft(ctx, sourceId, msgId),
+    };
 
-          // Calculate next :00 or :30 in JST
-          const now = new Date();
-          const jstMs = now.getTime() + 9 * 60 * 60 * 1000;
-          const jst = new Date(jstMs);
-          const min = jst.getUTCMinutes();
-          if (min < 30) {
-            jst.setUTCMinutes(30, 0, 0);
-          } else {
-            jst.setUTCMinutes(0, 0, 0);
-            jst.setUTCHours(jst.getUTCHours() + 1);
-          }
-          const y = jst.getUTCFullYear();
-          const mo = String(jst.getUTCMonth() + 1).padStart(2, "0");
-          const d = String(jst.getUTCDate()).padStart(2, "0");
-          const h = String(jst.getUTCHours()).padStart(2, "0");
-          const mi = String(jst.getUTCMinutes()).padStart(2, "0");
-          const dueString = `${y}-${mo}-${d} ${h}:${mi}`;
-
-          const os = await import("os");
-          const fs = await import("fs");
-          const { join } = await import("path");
-          const configPath = join(os.homedir(), ".claude", "jarvis_config.json");
-          const config = JSON.parse(fs.readFileSync(configPath, "utf-8"));
-          const apiToken = config.rules?.todoist?.api_token;
-          if (!apiToken) throw new Error("Todoist token not found");
-
-          const res = await fetchWithTimeout("https://api.todoist.com/api/v1/tasks", {
-            method: "POST",
-            headers: { "Authorization": `Bearer ${apiToken}`, "Content-Type": "application/json" },
-            body: JSON.stringify({ content: taskContent, due_datetime: dueString.replace(" ", "T") + ":00+09:00" }),
-          });
-          if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
-          if (chatId && msgId) {
-            try { await ctx.api.deleteMessage(chatId, msgId); } catch {}
-          }
-          await ctx.answerCallbackQuery({ text: `\u{1F4CB} ${h}:${mi} \u30BF\u30B9\u30AF\u5316`, show_alert: false });
-        } catch (e: any) {
-          await ctx.answerCallbackQuery({ text: `\u274C ${(e as Error).message || "\u30BF\u30B9\u30AF\u5316\u5931\u6557"}`, show_alert: true });
-        }
-        break;
-      }
-
-            case "snz1h": {
-        if (chatId && msgId) {
-          const origMsg = ctx.callbackQuery?.message;
-          const rm = origMsg && "reply_markup" in origMsg ? JSON.stringify((origMsg as any).reply_markup) : null;
-          const count = queueBatchAction(chatId, { action: "snz1h", msgId, sourceId, msgText: origMsg?.text || "", msgDate: origMsg?.date, replyMarkup: rm || undefined, hours: 1 }, ctx.api);
-          try { await ctx.answerCallbackQuery({ text: "⏰ 1hスヌーズ予約 (" + count + "件)", show_alert: false }); } catch {}
-        }
-        break;
-      }
-      case "snz3h": {
-        if (chatId && msgId) {
-          const origMsg = ctx.callbackQuery?.message;
-          const rm = origMsg && "reply_markup" in origMsg ? JSON.stringify((origMsg as any).reply_markup) : null;
-          const count = queueBatchAction(chatId, { action: "snz3h", msgId, sourceId, msgText: origMsg?.text || "", msgDate: origMsg?.date, replyMarkup: rm || undefined, hours: 3 }, ctx.api);
-          try { await ctx.answerCallbackQuery({ text: "⏰ 3hスヌーズ予約 (" + count + "件)", show_alert: false }); } catch {}
-        }
-        break;
-      }
-      case "snzam": {
-        if (chatId && msgId) {
-          const origMsg = ctx.callbackQuery?.message;
-          const rm = origMsg && "reply_markup" in origMsg ? JSON.stringify((origMsg as any).reply_markup) : null;
-          const count = queueBatchAction(chatId, { action: "snzam", msgId, sourceId, msgText: origMsg?.text || "", msgDate: origMsg?.date, replyMarkup: rm || undefined }, ctx.api);
-          try { await ctx.answerCallbackQuery({ text: "⏰ 明朝スヌーズ予約 (" + count + "件)", show_alert: false }); } catch {}
-        }
-        break;
-      }
-      default:
+    const directHandler = directActions[action];
+    if (directHandler) {
+      await directHandler();
+    } else {
+      // Dispatch to strategy-pattern batch/complex handlers
+      const handler = dispatchInboxCallback(action);
+      if (handler) {
+        const cc: CallbackContext = {
+          ctx, action, sourceId, msgId, chatId,
+          queueBatchAction,
+          handleFullText, handleAttachments, handleReplyPrompt,
+          handleLineReplyPrompt, handleImessageReplyPrompt, handleAiDraft,
+        };
+        await handler(cc);
+      } else {
         await ctx.answerCallbackQuery({ text: `Unknown action: ${action}` });
+      }
     }
   } catch (error) {
     logger.error("inbox", "Callback error", error);

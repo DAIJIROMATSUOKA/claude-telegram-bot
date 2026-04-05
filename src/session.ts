@@ -41,6 +41,43 @@ import type {
 } from "./types";
 
 /**
+ * Validate a tool use for safety. Returns { allowed: true } or { allowed: false, reason: string }.
+ */
+function validateToolUse(
+  toolName: string,
+  toolInput: Record<string, unknown>
+): { allowed: boolean; reason?: string } {
+  // Bash command safety
+  if (toolName === "Bash") {
+    const command = String(toolInput.command || "");
+    const [isSafe, reason] = checkCommandSafety(command);
+    if (!isSafe) return { allowed: false, reason: `Unsafe command blocked: ${reason}` };
+  }
+
+  // File operation path validation
+  if (["Read", "Write", "Edit"].includes(toolName)) {
+    const filePath = String(toolInput.file_path || "");
+    if (filePath && !isFilePathAllowed(toolName, filePath)) {
+      return { allowed: false, reason: `File access blocked: ${filePath}` };
+    }
+  }
+
+  return { allowed: true };
+}
+
+/**
+ * Check if a file path is allowed for the given tool operation.
+ */
+function isFilePathAllowed(toolName: string, filePath: string): boolean {
+  // Allow reads from temp paths and .claude directories
+  if (toolName === "Read") {
+    const isTmpRead = TEMP_PATHS.some((p) => filePath.startsWith(p)) || filePath.includes("/.claude/");
+    if (isTmpRead) return true;
+  }
+  return isPathAllowed(filePath);
+}
+
+/**
  * Fetch context from local jarvis_context file.
  * (Previously tried /api/memory/jarvis_context on MemoryGateway, but that endpoint
  *  doesn't exist and caused recurring 404 errors. Local file works fine.)
@@ -485,35 +522,12 @@ class ClaudeSession {
               const toolName = block.name;
               const toolInput = block.input as Record<string, unknown>;
 
-              // Safety check for Bash commands
-              if (toolName === "Bash") {
-                const command = String(toolInput.command || "");
-                const [isSafe, reason] = checkCommandSafety(command);
-                if (!isSafe) {
-                  console.warn(`BLOCKED: ${reason}`);
-                  await statusCallback("tool", `BLOCKED: ${reason}`);
-                  throw new Error(`Unsafe command blocked: ${reason}`);
-                }
-              }
-
-              // Safety check for file operations
-              if (["Read", "Write", "Edit"].includes(toolName)) {
-                const filePath = String(toolInput.file_path || "");
-                if (filePath) {
-                  // Allow reads from temp paths and .claude directories
-                  const isTmpRead =
-                    toolName === "Read" &&
-                    (TEMP_PATHS.some((p) => filePath.startsWith(p)) ||
-                      filePath.includes("/.claude/"));
-
-                  if (!isTmpRead && !isPathAllowed(filePath)) {
-                    console.warn(
-                      `BLOCKED: File access outside allowed paths: ${filePath}`
-                    );
-                    await statusCallback("tool", `Access denied: ${filePath}`);
-                    throw new Error(`File access blocked: ${filePath}`);
-                  }
-                }
+              // Validate tool safety (extracted to reduce nesting)
+              const validation = validateToolUse(toolName, toolInput);
+              if (!validation.allowed) {
+                console.warn(`BLOCKED: ${validation.reason}`);
+                await statusCallback("tool", `BLOCKED: ${validation.reason}`);
+                throw new Error(validation.reason);
               }
 
               // Segment ends when tool starts
@@ -540,10 +554,8 @@ class ClaudeSession {
 
               // Check for pending ask_user requests after ask-user MCP tool
               if (toolName.startsWith("mcp__ask-user") && ctx && chatId) {
-                // Small delay to let MCP server write the file
                 await new Promise((resolve) => setTimeout(resolve, 200));
 
-                // Retry a few times in case of timing issues
                 for (let attempt = 0; attempt < 3; attempt++) {
                   const buttonsSent = await checkPendingAskUserRequests(
                     ctx,

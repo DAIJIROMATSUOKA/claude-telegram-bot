@@ -4,7 +4,8 @@ import { isAuthorized } from "../security";
 import { ALLOWED_USERS } from "../config";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
-import { existsSync, readFileSync } from "fs";
+import { existsSync } from "fs";
+import { loadJsonFile } from "../utils/json-loader";
 
 const REPO_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const TASK_DIR = "/tmp/claude-code-tasks";
@@ -51,7 +52,7 @@ export async function handleCode(ctx: Context): Promise<void> {
       return;
     }
     try {
-      const data = JSON.parse(readFileSync(currentFile, "utf-8"));
+      const data = loadJsonFile<any>(currentFile);
       const pid = data.pid;
       if (pid) {
         process.kill(pid, "SIGTERM");

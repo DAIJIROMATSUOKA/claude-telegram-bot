@@ -13,7 +13,8 @@
  *   logger.writeSummary(completionReport);
  */
 
-import { mkdirSync, appendFileSync, writeFileSync, existsSync, readdirSync, readFileSync } from "node:fs";
+import { mkdirSync, appendFileSync, writeFileSync, existsSync, readdirSync } from "node:fs";
+import { loadJsonFile } from "../utils/json-loader";
 import { join } from "node:path";
 
 // === Types ===
@@ -176,10 +177,5 @@ export function readRunEvents(runId: string): RunEvent[] {
  */
 export function readRunSummary(runId: string): RunSummary | null {
   const summaryPath = join(getLogsDir(), `${runId}.summary.json`);
-  if (!existsSync(summaryPath)) return null;
-  try {
-    return JSON.parse(readFileSync(summaryPath, "utf-8"));
-  } catch {
-    return null;
-  }
+  return loadJsonFile<RunSummary | null>(summaryPath, null);
 }

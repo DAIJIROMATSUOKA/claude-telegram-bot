@@ -37,12 +37,8 @@ async function withMediaQueue<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 // Config
-const AI_MEDIA_SCRIPT = join(process.env.HOME || "~", "claude-telegram-bot", "scripts", "ai-media.py");
-const MFLUX_VENV_PYTHON = join(process.env.HOME || "~", "ai-tools", "mflux-env", "bin", "python3");
-const PYTHON = existsSync(MFLUX_VENV_PYTHON) ? MFLUX_VENV_PYTHON : "python3";
+import { AI_MEDIA_SCRIPT, PYTHON, TIMEOUT_IMAGE, TIMEOUT_VIDEO } from "../constants";
 const WORKING_DIR = "/tmp/ai-media";
-const TIMEOUT_IMAGE = 25 * 60 * 1000;  // 25 min for image
-const TIMEOUT_VIDEO = 45 * 60 * 1000;  // 45 min for video
 
 // Ensure working directory exists
 if (!existsSync(WORKING_DIR)) {

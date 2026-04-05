@@ -17,6 +17,7 @@ import { Bot } from "grammy";
 import { run, sequentialize } from "@grammyjs/runner";
 import { TELEGRAM_TOKEN, WORKING_DIR, ALLOWED_USERS, RESTART_FILE } from "./config";
 import { unlinkSync, readFileSync, writeFileSync, existsSync } from "fs";
+import { loadJsonFile } from "./utils/json-loader";
 import {
   handleStart,
   handleNew,
@@ -391,7 +392,7 @@ logger.info("index", "Bot started", { username: botInfo.username });
 // Check for pending restart message to update
 if (existsSync(RESTART_FILE)) {
   try {
-    const data = JSON.parse(readFileSync(RESTART_FILE, "utf-8"));
+    const data = loadJsonFile<any>(RESTART_FILE);
     const age = Date.now() - data.timestamp;
 
     // Only update if restart was recent (within 30 seconds)

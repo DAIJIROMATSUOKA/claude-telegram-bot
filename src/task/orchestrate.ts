@@ -13,6 +13,7 @@
 
 import { execSync } from "node:child_process";
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
+import { loadJsonFile } from "../utils/json-loader";
 import { join, resolve } from "node:path";
 import type {
   TaskPlan,
@@ -281,7 +282,7 @@ async function main(): Promise<void> {
   // Read TaskPlan
   let plan: TaskPlan;
   try {
-    plan = JSON.parse(readFileSync(planPath, "utf-8"));
+    plan = loadJsonFile<TaskPlan>(planPath);
   } catch (err) {
     console.error("[Orchestrator] Failed to read TaskPlan:", err);
     process.exit(1);

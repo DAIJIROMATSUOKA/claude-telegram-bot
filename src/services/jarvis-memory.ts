@@ -16,8 +16,7 @@
 
 import { callMemoryGateway } from '../handlers/ai-router';
 
-const EMBED_SERVER = process.env.EMBED_SERVER_URL || 'http://127.0.0.1:19823';
-const EMBED_TIMEOUT = 5000;
+import { EMBED_SERVER, EMBED_TIMEOUT } from '../constants';
 const PENDING_CONFIDENCE_THRESHOLD = 0.7;
 
 // ─── D1 Schema Initialization ───

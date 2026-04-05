@@ -5,7 +5,8 @@
  * messages are saved here and retried on next successful route.
  */
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
+import { writeFileSync, existsSync, mkdirSync } from "fs";
+import { loadJsonFile } from "./json-loader";
 import { homedir } from "os";
 import { join } from "path";
 
@@ -30,12 +31,7 @@ function ensureDir(): void {
 }
 
 function loadQueue(): QueuedMessage[] {
-  try {
-    if (existsSync(QUEUE_FILE)) {
-      return JSON.parse(readFileSync(QUEUE_FILE, "utf-8"));
-    }
-  } catch {}
-  return [];
+  return loadJsonFile<QueuedMessage[]>(QUEUE_FILE, []);
 }
 
 function saveQueue(queue: QueuedMessage[]): void {

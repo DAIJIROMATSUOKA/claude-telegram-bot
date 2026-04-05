@@ -7,7 +7,8 @@
 import type { Context } from "grammy";
 import { isAuthorized } from "../security";
 import { ALLOWED_USERS } from "../config";
-import { readFileSync, existsSync } from "fs";
+import { existsSync } from "fs";
+import { loadJsonFile } from "../utils/json-loader";
 import { exec } from "child_process";
 import { promisify } from "util";
 
@@ -22,12 +23,7 @@ interface ScoutAction {
 }
 
 function loadActions(): ScoutAction[] {
-  try {
-    if (!existsSync(ACTIONS_FILE)) return [];
-    return JSON.parse(readFileSync(ACTIONS_FILE, "utf-8"));
-  } catch {
-    return [];
-  }
+  return loadJsonFile<ScoutAction[]>(ACTIONS_FILE, []);
 }
 
 export async function handleScout(ctx: Context): Promise<void> {
