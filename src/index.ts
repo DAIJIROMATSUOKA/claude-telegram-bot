@@ -242,6 +242,20 @@ bot.use(
   })
 );
 
+// Auto-delete user command message after handler responds
+bot.use(async (ctx, next) => {
+  if (ctx.message?.text?.startsWith('/')) {
+    const chatId = ctx.chat?.id;
+    const msgId = ctx.message?.message_id;
+    await next();
+    if (chatId && msgId) {
+      ctx.api.deleteMessage(chatId, msgId).catch(() => {});
+    }
+  } else {
+    await next();
+  }
+});
+
 // ============== Command Handlers ==============
 
 bot.command("start", handleStart);
