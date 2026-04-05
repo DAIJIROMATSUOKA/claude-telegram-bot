@@ -110,6 +110,14 @@ bash ~/claude-telegram-bot/scripts/time-travel.sh <chat_id> "質問"
 
 **After code changes**: Restart with `bash scripts/restart-bot.sh`
 
+## Compaction
+
+Claude Code handles context compaction internally (server-side summarization for long conversations). This reduces the need for manual handoff in long sessions. See `docs/compaction.md` for details. Auto-handoff (`scripts/auto-handoff.py`) remains for between-session context transfer.
+
+## Agent Teams
+
+`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` is exported in `scripts/claude-code-spawn.sh`. Agent definitions in `.claude/agents/`: batch-leader, test-runner, code-reviewer, batch-worker. See `docs/agent-teams.md`.
+
 ## Commit Style
 
 Do not add "Generated with Claude Code" footers or "Co-Authored-By" trailers.

@@ -82,6 +82,9 @@ trap '' TERM HUP  # Survive SIGTERM from poller process group cleanup
 RESUME_SESSION="{resume_session}"
 cd "{cwd}" || exit 1
 
+# Enable Agent Teams for batch coordination
+export CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1
+
 # Workaround: claude-code issue #7263 — long prompt as arg causes 0-byte output
 RESUME_FLAG=""
 if [ -n "${{RESUME_SESSION:-}}" ]; then
