@@ -37,7 +37,8 @@ if [[ ! -d "$PROMPT_DIR" ]]; then
 fi
 
 # Collect prompt files
-mapfile -t PROMPT_FILES < <(find "$PROMPT_DIR" -maxdepth 1 -name '*.txt' -type f | sort)
+PROMPT_FILES=()
+while IFS= read -r f; do PROMPT_FILES+=("$f"); done < <(find "$PROMPT_DIR" -maxdepth 1 -name '*.txt' -type f | sort)
 TOTAL=${#PROMPT_FILES[@]}
 if [[ $TOTAL -eq 0 ]]; then
   echo "No .txt files found in $PROMPT_DIR"
