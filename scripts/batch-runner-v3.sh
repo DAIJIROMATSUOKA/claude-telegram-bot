@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # batch-runner-v3.sh — Batch runner with setsid, PID lock, Telegram notify, skip-completed
 # Usage: batch-runner-v3.sh <prompt-directory>
-set -euo pipefail
+# set -euo pipefail  # disabled: kills batch on any non-zero
 
 PID_FILE="/tmp/batch-runner.pid"
 LOG_FILE="/tmp/batch-runner.log"
