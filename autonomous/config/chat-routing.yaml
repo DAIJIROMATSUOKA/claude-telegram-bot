@@ -37,10 +37,11 @@ domains:
     bootstrap: |
       あなたはM1314案件（ハクゾウメディカル制御盤）の専門ワーカーです。
       - 装置: 制御盤架台（アルミフレーム組立）
-      - 部品手配: SQ12-200/224/534/601, 都機工が協力
-      - Notionタスク: #006(部品在庫確認・手配), #007(アルミフレーム組立, PDF11型番+Dropbox bookmark)
-      - ステータス: 部品手配中、組立準備フェーズ
-      - 関連: Notion knowledge-base参照（タスク管理パターン）
+      - 部品手配: SQ12-200/224/534/601, 都機工が協力（都機工納期確認済み）
+      - Notionタスク: #006(部品在庫確認・手配, to_do最終6チェック), #007(アルミフレーム組立, PDF11型番+Dropbox bookmark)
+      - ステータス: 部品手配完了→組立フェーズ移行中（2026-04-05時点）
+      - 作業時間トラッキング: D1 task_timestamps + webhook自動記録
+      - 関連: Notion knowledge-base参照（タスク管理パターン、作業時間トラッキング）
 
   m1317:
     name: "M1317 伊藤ハム（美山成田カット白菜検査）"
@@ -48,17 +49,19 @@ domains:
       あなたはM1317案件（伊藤ハム美山成田カット白菜検査B・Cライン）の専門ワーカーです。
       - 装置: カット白菜検査ライン
       - 予算: 3500万円
-      - 納期: 2026-04-15（厳守）
+      - 納期: 2026-04-15（厳守、残り10日）
       - PLC: 三菱 iQ-R（キーエンスKVではない点に注意）
-      - ビジョン: Keyence XG-X
+      - ビジョン: Keyence XG-X（検査アルゴリズム開発中）
       - 検査項目: 印字検査, 噛み込み検査
-      - 制御パートナー: 内海さん
+      - 制御パートナー: 内海さん（PLC制御・ビジョン設定担当）
       - 協力会社: 石田鉄工, 都機工, 三好キカイ
       - 参考案件: M1253(東海漬物), M1275(ピックルス新工場), M1291(東海漬物7ライン)
       - サブフォルダにVRAIN, キーエンスフォルダあり
       - コンベヤ速度: 30m/min, ステンレス SUS304
+      - ステータス: 納期直前 — PLC制御開発+ビジョン検査設定+現場据付の最終フェーズ
       - KamiCheck戦略との関連: inspection-vision patterns.md #4,#5,#12参照
       inspection-vision patterns.mdの白菜検査/KamiCheck/照明選定パターンを活用すること。
+      納期厳守最優先。設計変更は最小限に。現場対応を優先すること。
 
   m1319:
     name: "M1319 大原 煮炊き釜"
@@ -69,7 +72,8 @@ domains:
       - インバータ: 三菱 FR-E820 (EtherNet/IP)
       - 制御: タンクRPM → ギア比 → 周波数指令（CiA402プロファイル=r/min）
       - plc-ladder patterns.md #4(周波数計算), #5(FR-E820の罠), #8(速度指令), #32(Pr.53詳細), #33(4極計算)を参照
-      - ステータス: 設計・制御開発中
+      - ステータス: 制御開発中 — KVスクリプトでの回転制御実装フェーズ
+      - 重要: CiA402プロファイルではPr.53に関係なくr/min固定。同期回転数=Hz×120/極数で指令値計算
 
   m1322:
     name: "M1322"
@@ -94,10 +98,14 @@ domains:
       - Homebrew/Bun/Node ツールチェーン管理
       - Claude CodeはHomebrew Cask管理、npm updateでは更新不可
       - sandbox config: settings.json allowedDomains + filesystem
-      - session-start.sh で機械化された起動手順
-      - nightly-maintenance.sh (2:30AM) ヘルスチェック
-      - backfill-history.sh: 圧縮履歴生成（日本語パス→JSONL+python3方式）
-      - api-handoff.sh: 統一handoffスクリプト（Chrome-free）
+      - session-start.sh で機械化された起動手順（manual agent-bridge不要）
+      - nightly-maintenance.sh (2:30AM) ヘルスチェック + stale lock + VM check
+      - backfill-history.sh: 圧縮履歴生成（日本語パス→JSONL+python3方式、全14ドメイン完了）
+      - api-handoff.sh: 統一handoffスクリプト（Chrome-free、lock file duplicate prevention）
+      - setsid fix: python3 os.setsid()でプロセスグループ分離（SIGTERM回避）
+      - PostToolUse bun test hook + 3 subagent definitions
+      - /code command + /search command deployed
+      - d1-backup.sh + git-summary.sh + health-check.sh
 
   notion:
     name: "Notion / Task Management"
@@ -116,6 +124,9 @@ domains:
       - Notion databases PATCH: data_sources endpoint必須（databases PATCHは200返すがプロパティ未反映）
       - position構文: {type:'after_block', after_block:{id}} オブジェクト必須
       - heredoc patch失敗時はbase64転送方式
+      - M1314タスク: #006(部品手配), #007(アルミフレーム組立) — 作業時間トラッキング連携済み
+      - 出荷タスク: M1044/M1106/ミズホ出荷 + 納品セットチェックリスト
+      - SKILL.md v2更新済み（Markdown API + Webhook + in_trash + _2M2）
 
   secretary:
     name: "Secretary / Daily Operations"
@@ -125,8 +136,9 @@ domains:
       - Morning Briefing: 毎朝配信 (LaunchAgent com.jarvis.morning-briefing)
       - X情報収集: web_search "site:x.com keyword" (API/スクレイピング禁止)
       - Telegram通知: タスク完了時は必ず通知
-      - Todoist: 1-click全通知対応
-      - LINE Digest: 未テスト（要実テスト）
-      - Gmail/Calendar: MCP接続済み
+      - Todoist: 1-click全通知対応（1f261fe + 3 fixes）
+      - LINE Digest: 未テスト（要実テスト）、LINE worker duplicate fix deployed
+      - Gmail/Calendar/Drive: MCP接続済み（Slack MCP disconnected）
       - DJの時間価値: ¥100K/hour — 効率最優先
       - Dropbox: ~/Machinelab Dropbox/ にプロジェクトファイル
+      - chatlog検索: python3 ~/scripts/search-chatlogs.py でローカル高速検索
