@@ -8,8 +8,10 @@ PASS=0
 FAIL=0
 FAILED_FILES=()
 
-# Find all test files (src/ and tests/)
-FILES=$(find src tests -name '*.test.ts' 2>/dev/null | sort)
+# Find all test files (src/ and tests/ if it exists)
+DIRS="src"
+[ -d tests ] && DIRS="$DIRS tests"
+FILES=$(find $DIRS -name '*.test.ts' 2>/dev/null | sort)
 
 for f in $FILES; do
   if output=$(bun test "$f" 2>&1); then
