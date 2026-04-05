@@ -10,7 +10,7 @@ import {
   type Options,
 } from "@anthropic-ai/claude-agent-sdk";
 import { logger } from "./utils/logger";
-import { readFileSync } from "fs";
+import { readFile } from "fs/promises";
 import { loadConfig } from "./utils/config-loader";
 import { buildMemoryContext } from "./services/jarvis-memory";
 import type { Context } from "grammy";
@@ -87,7 +87,7 @@ async function fetchJarvisContext(): Promise<string> {
   try {
     const contextPath = `${WORKING_DIR}/claude-telegram-bot/jarvis_context`;
     logger.info("session", "Reading jarvis_context fallback file", { path: contextPath });
-    const content = readFileSync(contextPath, 'utf-8').trim();
+    const content = (await readFile(contextPath, 'utf-8')).trim();
     if (!content) {
       console.log("[fetchJarvisContext] File is empty");
       return "";
