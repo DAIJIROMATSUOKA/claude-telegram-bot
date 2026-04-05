@@ -15,7 +15,7 @@ This file provides guidance to Claude Code when working with this repository.
 2. **Bot再起動は `scripts/restart-bot.sh`** — pkill/bun/launchctl直接実行禁止（409競合防止）
 3. **コミット前に `bun test`** — Husky pre-commitが自動実行（Layer 2は `--no-verify`）
 4. **コードを書く前に深く考える** — 急がない。「なぜ？」を3回繰り返す
-5. **躓いたらまずWebSearchで調べろ** — エラー、未知のAPI、ライブラリの使い方で詰まったらWebSearch/WebFetchで公式ドキュメントを検索してから対処。推測で試行錯誤するな
+5. **コード変更の前にWebSearchで調べろ** — OS固有API(setsid,flock等)、外部ライブラリ、新しいパターンを使う前に必ずWebSearchで公式ドキュメントとベストプラクティスを確認。エラー時も同様。推測実装は禁止
 
 ---
 
