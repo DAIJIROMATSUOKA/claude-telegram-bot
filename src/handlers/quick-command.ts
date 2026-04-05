@@ -89,7 +89,7 @@ export async function handleQuickCallback(ctx: Context): Promise<boolean> {
       }
       case "inbox": {
         const res = await gatewayQuery(
-          "SELECT COUNT(*) as cnt FROM triage_items WHERE status = 'pending'"
+          "SELECT COUNT(*) as cnt FROM inbox_triage_queue WHERE status = 'pending'"
         );
         const cnt = res?.results?.[0]?.cnt ?? "?";
         result = `📬 Pending inbox: ${cnt}`;
