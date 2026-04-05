@@ -12,8 +12,12 @@
  * 6. All PASS → OK / Any FAIL → rollback
  */
 
-import { execSync } from "node:child_process";
+import { exec } from "node:child_process";
+import { promisify } from "node:util";
 import { readFileSync, existsSync } from "node:fs";
+import { readFile } from "node:fs/promises";
+
+const execAsync = promisify(exec);
 import { join } from "node:path";
 import {
   DEFAULT_ALLOWED_IMPORTS,
@@ -34,16 +38,16 @@ import {
  * New files created by Claude CLI are UNTRACKED and invisible to git diff.
  * Must also run git ls-files --others to catch new files.
  */
-function getChangedFiles(worktreePath: string, baseCommit?: string): string[] {
+async function getChangedFiles(worktreePath: string, baseCommit?: string): Promise<string[]> {
   const files = new Set<string>();
 
   // 1. Modified tracked files
   try {
-    const out = execSync("git diff --name-only HEAD", {
+    const { stdout } = await execAsync("git diff --name-only HEAD", {
       cwd: worktreePath,
-      encoding: "utf-8",
       timeout: 10_000,
-    }).trim();
+    });
+    const out = stdout.trim();
     if (out) {
       for (const f of out.split("\n")) if (f) files.add(f);
     }
@@ -51,11 +55,11 @@ function getChangedFiles(worktreePath: string, baseCommit?: string): string[] {
 
   // 2. New untracked files (CRITICAL: Claude CLI often creates new files)
   try {
-    const out = execSync("git ls-files --others --exclude-standard", {
+    const { stdout } = await execAsync("git ls-files --others --exclude-standard", {
       cwd: worktreePath,
-      encoding: "utf-8",
       timeout: 10_000,
-    }).trim();
+    });
+    const out = stdout.trim();
     if (out) {
       for (const f of out.split("\n")) if (f) files.add(f);
     }
@@ -64,11 +68,11 @@ function getChangedFiles(worktreePath: string, baseCommit?: string): string[] {
   // 3. Files committed by Claude CLI (auto-commit via --dangerously-skip-permissions)
   if (baseCommit) {
     try {
-      const out = execSync(`git diff ${baseCommit}..HEAD --name-only`, {
+      const { stdout } = await execAsync(`git diff ${baseCommit}..HEAD --name-only`, {
         cwd: worktreePath,
-        encoding: "utf-8",
         timeout: 10_000,
-      }).trim();
+      });
+      const out = stdout.trim();
       if (out) {
         for (const f of out.split("\n")) if (f) files.add(f);
       }
@@ -84,14 +88,13 @@ function getChangedFiles(worktreePath: string, baseCommit?: string): string[] {
  * CRITICAL: git diff only shows changes to TRACKED files.
  * New files must be read in full — every line is "added".
  */
-function getAddedLines(worktreePath: string, baseCommit?: string): Map<string, string[]> {
+async function getAddedLines(worktreePath: string, baseCommit?: string): Promise<Map<string, string[]>> {
   const result = new Map<string, string[]>();
 
   // 1. Modified tracked files: parse git diff +lines
   try {
-    const diff = execSync("git diff -U0 HEAD", {
+    const { stdout: diff } = await execAsync("git diff -U0 HEAD", {
       cwd: worktreePath,
-      encoding: "utf-8",
       timeout: 10_000,
     });
     let currentFile = "";
@@ -107,16 +110,16 @@ function getAddedLines(worktreePath: string, baseCommit?: string): Map<string, s
 
   // 2. New untracked files: ALL lines are "added"
   try {
-    const untracked = execSync("git ls-files --others --exclude-standard", {
+    const { stdout } = await execAsync("git ls-files --others --exclude-standard", {
       cwd: worktreePath,
-      encoding: "utf-8",
       timeout: 10_000,
-    }).trim();
+    });
+    const untracked = stdout.trim();
     if (untracked) {
       for (const file of untracked.split("\n")) {
         if (!file) continue;
         try {
-          const content = readFileSync(join(worktreePath, file), "utf-8");
+          const content = await readFile(join(worktreePath, file), "utf-8");
           result.set(file, content.split("\n"));
         } catch {}
       }
@@ -326,10 +329,10 @@ function checkDockerBlock(
  * Check 5: Test file line count validation (warning only)
  * Checks *.test.ts files: <10 lines = too few, >1000 lines = too many
  */
-function checkTestFileLines(
+async function checkTestFileLines(
   changedFiles: string[],
   worktreePath: string,
-): { ok: boolean; warnings: string[] } {
+): Promise<{ ok: boolean; warnings: string[] }> {
   const warnings: string[] = [];
   const testFiles = changedFiles.filter((f) => f.endsWith(".test.ts"));
 
@@ -342,7 +345,7 @@ function checkTestFileLines(
     if (!existsSync(filePath)) continue;
 
     try {
-      const content = readFileSync(filePath, "utf-8");
+      const content = await readFile(filePath, "utf-8");
       const lineCount = content.split("\n").length;
 
       if (lineCount < 10) {
@@ -365,10 +368,10 @@ function checkTestFileLines(
 /**
  * Check 6: Run test command
  */
-function runTestCommand(
+async function runTestCommand(
   testCommand: string,
   worktreePath: string,
-): { passed: boolean; output: string } {
+): Promise<{ passed: boolean; output: string }> {
   // Prevent bun test substring matching (e.g. runner.test.ts also matching golden-test-runner.test.ts)
   // Prefix relative file paths with ./ for exact match
   const safeCommand = testCommand.replace(
@@ -376,16 +379,15 @@ function runTestCommand(
     (_, prefix, file) => file.startsWith("./") || file.startsWith("/") ? prefix + file : prefix + "./" + file
   );
   try {
-    const output = execSync(safeCommand, {
+    const { stdout } = await execAsync(safeCommand, {
       cwd: worktreePath,
-      encoding: "utf-8",
       timeout: 60_000, // テスト60秒上限
       env: {
         ...process.env,
         PATH: `${process.env.HOME}/.bun/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin`,
       },
     });
-    return { passed: true, output: output.slice(0, 10_000) };
+    return { passed: true, output: stdout.slice(0, 10_000) };
   } catch (err: any) {
     const output = (err.stdout || "") + "\n" + (err.stderr || err.message || "");
     return { passed: false, output: output.slice(0, 10_000) };
@@ -395,10 +397,10 @@ function runTestCommand(
 /**
  * Rollback all uncommitted changes in worktree
  */
-export function rollback(worktreePath: string): void {
+export async function rollback(worktreePath: string): Promise<void> {
   try {
-    execSync("git checkout -- .", { cwd: worktreePath, timeout: 10_000 });
-    execSync("git clean -fd", { cwd: worktreePath, timeout: 10_000 });
+    await execAsync("git checkout -- .", { cwd: worktreePath, timeout: 10_000 });
+    await execAsync("git clean -fd", { cwd: worktreePath, timeout: 10_000 });
   } catch {}
 }
 
@@ -409,14 +411,14 @@ export function rollback(worktreePath: string): void {
  * (but reports all violations within that category).
  * If any check fails → automatic rollback.
  */
-export function validate(
+export async function validate(
   task: MicroTask,
   plan: TaskPlan,
   worktreePath: string,
   mainRepoPath: string,
   baseCommit?: string,
   mode: ValidatorMode = 'host',
-): ValidationResult {
+): Promise<ValidationResult> {
   const result: ValidationResult = {
     passed: false,
     changed_files: [],
@@ -431,7 +433,7 @@ export function validate(
   };
 
   // 1. Changed files
-  result.changed_files = getChangedFiles(worktreePath, baseCommit);
+  result.changed_files = await getChangedFiles(worktreePath, baseCommit);
   const fileCheck = checkFileCount(
     result.changed_files,
     plan.max_changed_files_per_task,
@@ -439,7 +441,7 @@ export function validate(
   result.file_count_ok = fileCheck.ok;
   if (!fileCheck.ok) {
     result.violations.push(...fileCheck.violations);
-    rollback(worktreePath);
+    await rollback(worktreePath);
     return result;
   }
 
@@ -447,7 +449,7 @@ export function validate(
   const forbiddenCheck = checkForbiddenFiles(result.changed_files);
   if (!forbiddenCheck.ok) {
     result.violations.push(...forbiddenCheck.violations);
-    rollback(worktreePath);
+    await rollback(worktreePath);
     return result;
   }
 
@@ -458,7 +460,7 @@ export function validate(
   }
 
   // Get added lines for checks 2 and 4
-  const addedLines = getAddedLines(worktreePath, baseCommit);
+  const addedLines = await getAddedLines(worktreePath, baseCommit);
 
   // 2. Banned patterns
   const bannedCheck = checkBannedPatterns(
@@ -469,7 +471,7 @@ export function validate(
   result.banned_check_ok = bannedCheck.ok;
   if (!bannedCheck.ok) {
     result.violations.push(...bannedCheck.violations);
-    rollback(worktreePath);
+    await rollback(worktreePath);
     return result;
   }
 
@@ -483,7 +485,7 @@ export function validate(
   result.import_check_ok = importCheck.ok;
   if (!importCheck.ok) {
     result.violations.push(...importCheck.violations);
-    rollback(worktreePath);
+    await rollback(worktreePath);
     return result;
   }
 
@@ -492,7 +494,7 @@ export function validate(
   if (!alwaysCheck.ok) {
     result.symbol_check_ok = false;
     result.violations.push(...alwaysCheck.violations);
-    rollback(worktreePath);
+    await rollback(worktreePath);
     return result;
   }
 
@@ -502,7 +504,7 @@ export function validate(
     if (!dockerCheck.ok) {
       result.symbol_check_ok = false;
       result.violations.push(...dockerCheck.violations);
-      rollback(worktreePath);
+      await rollback(worktreePath);
       return result;
     }
   }
@@ -513,7 +515,7 @@ export function validate(
     result.symbol_check_ok = symbolCheck.ok;
     if (!symbolCheck.ok) {
       result.violations.push(...symbolCheck.violations);
-      rollback(worktreePath);
+      await rollback(worktreePath);
       return result;
     }
   } else {
@@ -522,7 +524,7 @@ export function validate(
   }
 
   // 5. Test file line count (warning only, does NOT fail validation)
-  const testLineCheck = checkTestFileLines(result.changed_files, worktreePath);
+  const testLineCheck = await checkTestFileLines(result.changed_files, worktreePath);
   result.test_line_check_ok = testLineCheck.ok;
   if (!testLineCheck.ok) {
     result.violations.push(...testLineCheck.warnings);
@@ -530,12 +532,12 @@ export function validate(
   }
 
   // 6. Run tests (only if all static checks passed)
-  const testResult = runTestCommand(task.test_command, worktreePath);
+  const testResult = await runTestCommand(task.test_command, worktreePath);
   result.test_passed = testResult.passed;
   result.test_output = testResult.output;
   if (!testResult.passed) {
     result.violations.push(`テスト失敗: ${task.test_command}`);
-    rollback(worktreePath);
+    await rollback(worktreePath);
     return result;
   }
 

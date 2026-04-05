@@ -8,7 +8,10 @@ import { ALLOWED_USERS } from "../config";
 import { isAuthorized } from "../security";
 import { getUptime } from "../utils/uptime";
 import { gatewayQuery } from "../services/gateway-db";
-import { execSync } from "child_process";
+import { exec } from "child_process";
+import { promisify } from "util";
+
+const execAsync = promisify(exec);
 
 const QUICK_KEYBOARD = {
   inline_keyboard: [
@@ -56,28 +59,24 @@ export async function handleQuickCallback(ctx: Context): Promise<boolean> {
   try {
     switch (action) {
       case "git": {
-        const out = execSync("git status --short", {
+        const { stdout: gitOut } = await execAsync("git status --short", {
           cwd: "/Users/daijiromatsuokam1/claude-telegram-bot",
           timeout: 5000,
-          encoding: "utf-8",
-        }).trim();
-        result = out || "（変更なし）";
+        });
+        result = gitOut.trim() || "（変更なし）";
         break;
       }
       case "disk": {
-        result = execSync("df -h", {
-          timeout: 5000,
-          encoding: "utf-8",
-        }).trim();
+        const { stdout: diskOut } = await execAsync("df -h", { timeout: 5000 });
+        result = diskOut.trim();
         break;
       }
       case "poller": {
         try {
-          const pid = execSync("pgrep -f task-poller 2>/dev/null || echo ''", {
+          const { stdout: pid } = await execAsync("pgrep -f task-poller 2>/dev/null || echo ''", {
             timeout: 5000,
-            encoding: "utf-8",
-          }).trim();
-          result = pid ? `✅ Poller running (PID: ${pid.split("\n")[0]})` : "⚠️ Poller not running";
+          });
+          result = pid.trim() ? `✅ Poller running (PID: ${pid.trim().split("\n")[0]})` : "⚠️ Poller not running";
         } catch {
           result = "⚠️ Poller check failed";
         }
@@ -96,10 +95,8 @@ export async function handleQuickCallback(ctx: Context): Promise<boolean> {
         break;
       }
       case "load": {
-        result = execSync("uptime", {
-          timeout: 5000,
-          encoding: "utf-8",
-        }).trim();
+        const { stdout: loadOut } = await execAsync("uptime", { timeout: 5000 });
+        result = loadOut.trim();
         break;
       }
       default:

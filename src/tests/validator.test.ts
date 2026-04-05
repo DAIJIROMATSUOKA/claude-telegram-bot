@@ -91,7 +91,7 @@ function cleanup(env: TestEnv): void {
 
 // === Tests ===
 
-describe("validator", () => {
+describe("validator", async () => {
   let env: TestEnv;
 
   beforeEach(() => {
@@ -102,8 +102,8 @@ describe("validator", () => {
     cleanup(env);
   });
 
-  test("no changes → violation", () => {
-    const result = validate(
+  test("no changes → violation", async () => {
+    const result = await validate(
       makeTask(),
       makePlan(),
       env.worktreePath,
@@ -114,13 +114,13 @@ describe("validator", () => {
     expect(result.violations.some((v) => v.includes("変更なし"))).toBe(true);
   });
 
-  test("file count exceeded → violation", () => {
+  test("file count exceeded → violation", async () => {
     // Create 4 files (max is 3)
     for (let i = 0; i < 4; i++) {
       writeFileSync(join(env.worktreePath, `file${i}.ts`), `// file ${i}`);
     }
 
-    const result = validate(
+    const result = await validate(
       makeTask(),
       makePlan({ max_changed_files_per_task: 3 }),
       env.worktreePath,
@@ -133,14 +133,14 @@ describe("validator", () => {
     );
   });
 
-  test("banned pattern detected → violation", () => {
+  test("banned pattern detected → violation", async () => {
     // Write file containing banned string (constructed via concat)
     writeFileSync(
       join(env.worktreePath, "config.ts"),
       `const key = "${BANNED_1}";\n`,
     );
 
-    const result = validate(
+    const result = await validate(
       makeTask(),
       makePlan(),
       env.worktreePath,
@@ -154,14 +154,14 @@ describe("validator", () => {
     ).toBe(true);
   });
 
-  test("dangerous symbol in code → violation", () => {
+  test("dangerous symbol in code → violation", async () => {
     // Write file with dangerous symbol (constructed via concat)
     writeFileSync(
       join(env.worktreePath, "danger.ts"),
       `import { rmSync } from "fs";\n${DANGER_RM}("/tmp/x");\n`,
     );
 
-    const result = validate(
+    const result = await validate(
       makeTask(),
       makePlan(),
       env.worktreePath,
@@ -175,14 +175,14 @@ describe("validator", () => {
     ).toBe(true);
   });
 
-  test("dangerous symbol in comment → no violation for that check", () => {
+  test("dangerous symbol in comment → no violation for that check", async () => {
     // Dangerous symbol only in comment line
     writeFileSync(
       join(env.worktreePath, "safe.ts"),
       `// ${DANGER_RM} is dangerous but this is a comment\nconst x = 1;\n`,
     );
 
-    const result = validate(
+    const result = await validate(
       makeTask(),
       makePlan(),
       env.worktreePath,
@@ -193,7 +193,7 @@ describe("validator", () => {
     expect(result.symbol_check_ok).toBe(true);
   });
 
-  test("disallowed import → violation", () => {
+  test("disallowed import → violation", async () => {
     // Write file importing child_process (not in allowed_imports)
     const importLine = `import { exec } from "node:${DANGER_CHILD}";\n`;
     writeFileSync(
@@ -201,7 +201,7 @@ describe("validator", () => {
       importLine + "exec('ls');\n",
     );
 
-    const result = validate(
+    const result = await validate(
       makeTask(),
       makePlan({ allowed_imports: ["bun:test"] }),
       env.worktreePath,
@@ -215,10 +215,10 @@ describe("validator", () => {
     ).toBe(true);
   });
 
-  test("test command failure → test_passed false", () => {
+  test("test command failure → test_passed false", async () => {
     writeFileSync(join(env.worktreePath, "ok.ts"), "const x = 1;\n");
 
-    const result = validate(
+    const result = await validate(
       makeTask({ test_command: "exit 1" }),
       makePlan(),
       env.worktreePath,
@@ -232,13 +232,13 @@ describe("validator", () => {
     ).toBe(true);
   });
 
-  test("all checks pass → passed true", () => {
+  test("all checks pass → passed true", async () => {
     writeFileSync(
       join(env.worktreePath, "hello.ts"),
       'export const greeting = "hello";\n',
     );
 
-    const result = validate(
+    const result = await validate(
       makeTask({ test_command: "echo ok" }),
       makePlan(),
       env.worktreePath,
@@ -255,14 +255,14 @@ describe("validator", () => {
     expect(result.violations).toHaveLength(0);
   });
 
-  test("test file line check: no test files → ok", () => {
+  test("test file line check: no test files → ok", async () => {
     // テストファイル以外の変更のみ
     writeFileSync(
       join(env.worktreePath, "normal.ts"),
       'export const x = 1;\n',
     );
 
-    const result = validate(
+    const result = await validate(
       makeTask({ test_command: "echo ok" }),
       makePlan(),
       env.worktreePath,
@@ -273,12 +273,12 @@ describe("validator", () => {
     expect(result.passed).toBe(true);
   });
 
-  test("test file line check: 50 lines → ok", () => {
+  test("test file line check: 50 lines → ok", async () => {
     // 50行のテストファイル
-    const lines = Array(50).fill('test("x", () => {});').join("\n");
+    const lines = Array(50).fill('test("x", async () => {});').join("\n");
     writeFileSync(join(env.worktreePath, "good.test.ts"), lines);
 
-    const result = validate(
+    const result = await validate(
       makeTask({ test_command: "echo ok" }),
       makePlan(),
       env.worktreePath,
@@ -289,12 +289,12 @@ describe("validator", () => {
     expect(result.passed).toBe(true);
   });
 
-  test("test file line check: 5 lines → warning but passed still true", () => {
+  test("test file line check: 5 lines → warning but passed still true", async () => {
     // 5行の短すぎるテストファイル
     const lines = "// test\n// 2\n// 3\n// 4\n// 5";
     writeFileSync(join(env.worktreePath, "short.test.ts"), lines);
 
-    const result = validate(
+    const result = await validate(
       makeTask({ test_command: "echo ok" }),
       makePlan(),
       env.worktreePath,
@@ -306,10 +306,10 @@ describe("validator", () => {
     expect(result.violations.some((v) => v.includes("short.test.ts") && v.includes("5行"))).toBe(true);
   });
 
-  test("rollback cleans worktree", () => {
+  test("rollback cleans worktree", async () => {
     writeFileSync(join(env.worktreePath, "dirty.ts"), "const x = 1;\n");
 
-    rollback(env.worktreePath);
+    await rollback(env.worktreePath);
 
     const status = execSync("git status --porcelain", {
       cwd: env.worktreePath,
@@ -321,30 +321,30 @@ describe("validator", () => {
   // === 禁止ファイルチェック (NOTE: validator.tsの173行にバグあり - violations.push()が空) ===
   // 現状の実装では禁止ファイルチェックが機能していない（バグ）
   // 修正されるまでは現状動作をテスト
-  test("forbidden file: package.json → BUG: passes due to empty push", () => {
+  test("forbidden file: package.json → BUG: passes due to empty push", async () => {
     writeFileSync(join(env.worktreePath, "package.json"), '{"name":"test"}');
-    const result = validate(makeTask(), makePlan(), env.worktreePath, env.mainRepoPath, env.baseCommit);
+    const result = await validate(makeTask(), makePlan(), env.worktreePath, env.mainRepoPath, env.baseCommit);
     // バグ: violations.push()が引数なしで呼ばれているため機能しない
     expect(result.passed).toBe(true);
   });
 
-  test("forbidden file: bun.lock → BUG: passes due to empty push", () => {
+  test("forbidden file: bun.lock → BUG: passes due to empty push", async () => {
     writeFileSync(join(env.worktreePath, "bun.lock"), "lockfile");
-    const result = validate(makeTask(), makePlan(), env.worktreePath, env.mainRepoPath, env.baseCommit);
+    const result = await validate(makeTask(), makePlan(), env.worktreePath, env.mainRepoPath, env.baseCommit);
     expect(result.passed).toBe(true);
   });
 
-  test("allowed file: foo.ts → no forbidden violation", () => {
+  test("allowed file: foo.ts → no forbidden violation", async () => {
     writeFileSync(join(env.worktreePath, "foo.ts"), "export const x = 1;");
-    const result = validate(makeTask(), makePlan(), env.worktreePath, env.mainRepoPath, env.baseCommit);
+    const result = await validate(makeTask(), makePlan(), env.worktreePath, env.mainRepoPath, env.baseCommit);
     expect(result.violations.every((v) => !v.includes("package.json") && !v.includes("bun.lock"))).toBe(true);
   });
 
   // === テスト行数チェック ===
-  test("test file >1000 lines → warning", () => {
-    const lines = Array(1005).fill('test("x", () => {});').join("\n");
+  test("test file >1000 lines → warning", async () => {
+    const lines = Array(1005).fill('test("x", async () => {});').join("\n");
     writeFileSync(join(env.worktreePath, "huge.test.ts"), lines);
-    const result = validate(makeTask({ test_command: "echo ok" }), makePlan(), env.worktreePath, env.mainRepoPath, env.baseCommit);
+    const result = await validate(makeTask({ test_command: "echo ok" }), makePlan(), env.worktreePath, env.mainRepoPath, env.baseCommit);
     expect(result.test_line_check_ok).toBe(false);
     expect(result.violations.some((v) => v.includes("huge.test.ts") && v.includes("1000行以下"))).toBe(true);
   });

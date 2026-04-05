@@ -11,8 +11,12 @@
  * 5. Cleanup worktree (keep if DJ wants to inspect)
  */
 
-import { execSync } from "node:child_process";
-import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
+import { exec } from "node:child_process";
+import { promisify } from "node:util";
+import { existsSync } from "node:fs";
+import { readFile, writeFile, mkdir, readdir, stat, unlink } from "node:fs/promises";
+
+const execAsync = promisify(exec);
 import { loadJsonFile } from "../utils/json-loader";
 import { join, resolve } from "node:path";
 import type {
@@ -65,10 +69,10 @@ process.on("SIGINT", () => {
 /**
  * Load .env file manually (standalone script, no dotenv)
  */
-function loadEnv(): void {
+async function loadEnv(): Promise<void> {
   const envPath = join(MAIN_REPO, ".env");
   if (!existsSync(envPath)) return;
-  const content = readFileSync(envPath, "utf-8");
+  const content = await readFile(envPath, "utf-8");
   for (const line of content.split("\n")) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith("#")) continue;
@@ -105,20 +109,20 @@ function maskSecrets(text: string): string {
 /**
  * Create git worktree for isolated execution
  */
-function createWorktree(planId: string): { path: string; baseCommit: string } {
+async function createWorktree(planId: string): Promise<{ path: string; baseCommit: string }> {
   const worktreePath = join(WORKTREE_BASE, planId);
   // Clean up any stale worktree (previous run, crash, etc.)
   try {
-    execSync(`git worktree remove --force "${worktreePath}" 2>/dev/null; rm -rf "${worktreePath}"; git worktree prune`, {
+    await execAsync(`git worktree remove --force "${worktreePath}" 2>/dev/null; rm -rf "${worktreePath}"; git worktree prune`, {
       cwd: MAIN_REPO,
       timeout: 10_000,
     });
   } catch {}
 
-  mkdirSync(WORKTREE_BASE, { recursive: true });
+  await mkdir(WORKTREE_BASE, { recursive: true });
 
   // Create worktree from current branch
-  execSync(`git worktree add "${worktreePath}" HEAD`, {
+  await execAsync(`git worktree add "${worktreePath}" HEAD`, {
     cwd: MAIN_REPO,
     timeout: 30_000,
   });
@@ -127,14 +131,15 @@ function createWorktree(planId: string): { path: string; baseCommit: string } {
   const nmMain = join(MAIN_REPO, "node_modules");
   const nmWorktree = join(worktreePath, "node_modules");
   try {
-    execSync(`ln -s "${nmMain}" "${nmWorktree}"`, { timeout: 5_000 });
+    await execAsync(`ln -s "${nmMain}" "${nmWorktree}"`, { timeout: 5_000 });
     console.log(`[Orchestrator] node_modules symlinked`);
   } catch {}
 
   // Record base commit for validator (Claude CLI may auto-commit)
   let baseCommit = "";
   try {
-    baseCommit = execSync("git rev-parse HEAD", { cwd: worktreePath, encoding: "utf-8", timeout: 5_000 }).trim();
+    const { stdout } = await execAsync("git rev-parse HEAD", { cwd: worktreePath });
+    baseCommit = stdout.trim();
     console.log(`[Orchestrator] Base commit: ${baseCommit.slice(0, 8)}`);
   } catch {}
 
@@ -145,10 +150,10 @@ function createWorktree(planId: string): { path: string; baseCommit: string } {
 /**
  * Git commit in worktree
  */
-function gitCommit(worktreePath: string, taskId: string, goal: string): void {
+async function gitCommit(worktreePath: string, taskId: string, goal: string): Promise<void> {
   try {
-    execSync("git add -A", { cwd: worktreePath, timeout: 10_000 });
-    execSync(
+    await execAsync("git add -A", { cwd: worktreePath, timeout: 10_000 });
+    await execAsync(
       `git commit -m "task(${taskId}): ${goal}" --no-verify`,
       { cwd: worktreePath, timeout: 10_000 },
     );
@@ -160,22 +165,20 @@ function gitCommit(worktreePath: string, taskId: string, goal: string): void {
 /**
  * Generate changes summary for next task context
  */
-function generateChangesSummary(
+async function generateChangesSummary(
   worktreePath: string,
-): string {
+): Promise<string> {
   try {
-    const stat = execSync("git diff HEAD~1 --stat", {
+    const { stdout: statOut } = await execAsync("git diff HEAD~1 --stat", {
       cwd: worktreePath,
-      encoding: "utf-8",
       timeout: 10_000,
     });
-    const diff = execSync("git diff HEAD~1 --no-color", {
+    const { stdout: diff } = await execAsync("git diff HEAD~1 --no-color", {
       cwd: worktreePath,
-      encoding: "utf-8",
       timeout: 10_000,
     });
     // Keep summary short for context injection
-    return `変更概要:\n${stat.trim()}\n\n主な変更:\n${diff.slice(0, 3000)}`;
+    return `変更概要:\n${statOut.trim()}\n\n主な変更:\n${diff.slice(0, 3000)}`;
   } catch {
     return "(変更サマリー生成失敗)";
   }
@@ -191,19 +194,19 @@ function isStopRequested(): boolean {
 /**
  * Clean worktrees older than maxAgeMs
  */
-function cleanOldWorktrees(basePath: string, maxAgeMs: number): void {
+async function cleanOldWorktrees(basePath: string, maxAgeMs: number): Promise<void> {
   try {
     if (!existsSync(basePath)) return;
-    const entries = readdirSync(basePath);
+    const entries = await readdir(basePath);
     const now = Date.now();
     for (const entry of entries) {
       const fullPath = join(basePath, entry);
       try {
-        const stat = statSync(fullPath);
-        if (stat.isDirectory() && (now - stat.mtimeMs) > maxAgeMs) {
+        const statResult = await stat(fullPath);
+        if (statResult.isDirectory() && (now - statResult.mtimeMs) > maxAgeMs) {
           console.log(`[Orchestrator] Removing stale worktree: ${entry}`);
           try {
-            execSync(`git worktree remove --force "${fullPath}" 2>/dev/null; rm -rf "${fullPath}"`, {
+            await execAsync(`git worktree remove --force "${fullPath}" 2>/dev/null; rm -rf "${fullPath}"`, {
               cwd: MAIN_REPO, timeout: 10_000,
             });
           } catch {}
@@ -218,11 +221,12 @@ function cleanOldWorktrees(basePath: string, maxAgeMs: number): void {
 /**
  * Get git diff output for resource limits check
  */
-function getDiffOutput(worktreePath: string, baseCommit: string): string {
+async function getDiffOutput(worktreePath: string, baseCommit: string): Promise<string> {
   try {
-    return execSync(`git diff ${baseCommit} --no-color`, {
-      cwd: worktreePath, encoding: "utf-8", timeout: 10_000,
+    const { stdout } = await execAsync(`git diff ${baseCommit} --no-color`, {
+      cwd: worktreePath, timeout: 10_000,
     });
+    return stdout;
   } catch {
     return "";
   }
@@ -242,38 +246,41 @@ async function main(): Promise<void> {
   }
 
   // Load env and init
-  loadEnv();
+  await loadEnv();
   initReporter();
 
   // === PID Exclusive Lock ===
-  if (existsSync(PID_FILE)) {
-    try {
-      const existingPid = parseInt(readFileSync(PID_FILE, "utf-8").trim(), 10);
-      if (existingPid) {
+  try {
+    const existingPidStr = await readFile(PID_FILE, "utf-8");
+    const existingPid = parseInt(existingPidStr.trim(), 10);
+    if (existingPid) {
+      try {
         process.kill(existingPid, 0); // throws if not alive
         console.error(`[Orchestrator] ABORT: Another instance running (PID ${existingPid})`);
         process.exit(1);
+      } catch (e: any) {
+        if (e.code !== "ESRCH") {
+          console.error(`[Orchestrator] ABORT: PID check failed:`, e);
+          process.exit(1);
+        }
+        console.log("[Orchestrator] Stale PID file found, cleaning up");
       }
-    } catch (e: any) {
-      if (e.code !== "ESRCH") {
-        // ESRCH = process not found = stale PID, safe to continue
-        console.error(`[Orchestrator] ABORT: PID check failed:`, e);
-        process.exit(1);
-      }
-      console.log("[Orchestrator] Stale PID file found, cleaning up");
+    }
+  } catch (e: any) {
+    if (e.code !== "ENOENT") {
+      console.error(`[Orchestrator] ABORT: PID file read failed:`, e);
+      process.exit(1);
     }
   }
-  writeFileSync(PID_FILE, String(process.pid));
+  await writeFile(PID_FILE, String(process.pid));
 
   // Clean stop file from previous run
-  if (existsSync(STOP_FILE)) {
-    try { execSync(`rm -f "${STOP_FILE}"`); } catch {}
-  }
+  try { await unlink(STOP_FILE); } catch {}
 
   // Worktree cleanup (Phase 2a)
   try {
-    execSync("git worktree prune", { cwd: MAIN_REPO, timeout: 10_000 });
-    cleanOldWorktrees(WORKTREE_BASE, 24 * 60 * 60 * 1000); // 24h
+    await execAsync("git worktree prune", { cwd: MAIN_REPO, timeout: 10_000 });
+    await cleanOldWorktrees(WORKTREE_BASE, 24 * 60 * 60 * 1000); // 24h
     console.log("[Orchestrator] Worktree cleanup done");
   } catch (err) {
     console.warn("[Orchestrator] Worktree cleanup warning:", err);
@@ -326,7 +333,7 @@ async function main(): Promise<void> {
   let worktreePath: string;
   let baseCommit = "";
   try {
-    const wt = createWorktree(plan.plan_id);
+    const wt = await createWorktree(plan.plan_id);
     worktreePath = wt.path;
     baseCommit = wt.baseCommit;
   } catch (err) {
@@ -403,13 +410,13 @@ async function main(): Promise<void> {
     // Timeout → failed
     if (execResult.timed_out) {
       taskResult.status = "timeout";
-      rollback(worktreePath);
+      await rollback(worktreePath);
       consecutiveFailures++;
       runLogger.logEvent("task_rollback", { task_id: task.id, reason: "timeout" });
       await notifyTaskFailed(task, taskResult, i, plan.micro_tasks.length, runLogger.runId);
     } else if (isStopRequested()) {
       taskResult.status = "blocked";
-      rollback(worktreePath);
+      await rollback(worktreePath);
       runLogger.logEvent("run_stopped", { task_id: task.id, reason: "/stop" });
       await notifyOrchestratorStopped(plan, runLogger.runId);
       runLogger.logEvent("task_done", {
@@ -422,7 +429,7 @@ async function main(): Promise<void> {
       break;
     } else {
       // Validate
-      let validation = validate(task, plan, worktreePath, mainRepoPath, baseCommit, validatorMode);
+      let validation = await validate(task, plan, worktreePath, mainRepoPath, baseCommit, validatorMode);
       taskResult.validation = validation;
 
       console.log(`[Orchestrator] Validation: passed=${validation.passed} files=${validation.changed_files.length} violations=${validation.violations.join('; ')}`);
@@ -436,7 +443,7 @@ async function main(): Promise<void> {
       // Resource limits check (Phase 2a)
       if (validation.passed) {
         const limits = plan.resource_limits ?? DEFAULT_RESOURCE_LIMITS;
-        const diffOutput = getDiffOutput(worktreePath, baseCommit);
+        const diffOutput = await getDiffOutput(worktreePath, baseCommit);
         const resourceChecks = checkAllLimits({
           changedFiles: validation.changed_files,
           diffOutput,
@@ -464,10 +471,10 @@ async function main(): Promise<void> {
 
       if (validation.passed) {
         taskResult.status = "success";
-        gitCommit(worktreePath, task.id, task.goal);
+        await gitCommit(worktreePath, task.id, task.goal);
         // Update baseCommit so next task's diff is per-task, not cumulative
-        baseCommit = execSync("git rev-parse HEAD", { cwd: worktreePath, encoding: "utf-8", timeout: 5_000 }).trim();
-        taskResult.changes_summary = generateChangesSummary(worktreePath);
+        baseCommit = (await execAsync("git rev-parse HEAD", { cwd: worktreePath })).stdout.trim();
+        taskResult.changes_summary = await generateChangesSummary(worktreePath);
         consecutiveFailures = 0;
         runLogger.logEvent("task_committed", {
           task_id: task.id,
@@ -483,7 +490,7 @@ async function main(): Promise<void> {
           failure_reason: failureReason,
         });
 
-        rollback(worktreePath);
+        await rollback(worktreePath);
 
         const retryPrompt = buildRetryPrompt(
           task.prompt,
@@ -496,12 +503,12 @@ async function main(): Promise<void> {
         const retryExecResult = await executeMicroTask(retryTask, worktreePath, abortController.signal);
 
         if (!retryExecResult.timed_out && !isStopRequested()) {
-          let retryValidation = validate(retryTask, plan, worktreePath, mainRepoPath, baseCommit, validatorMode);
+          let retryValidation = await validate(retryTask, plan, worktreePath, mainRepoPath, baseCommit, validatorMode);
 
           // Resource limits on retry too
           if (retryValidation.passed) {
             const limits = plan.resource_limits ?? DEFAULT_RESOURCE_LIMITS;
-            const retryDiff = getDiffOutput(worktreePath, baseCommit);
+            const retryDiff = await getDiffOutput(worktreePath, baseCommit);
             const retryResourceChecks = checkAllLimits({
               changedFiles: retryValidation.changed_files,
               diffOutput: retryDiff,
@@ -521,17 +528,17 @@ async function main(): Promise<void> {
           if (retryValidation.passed) {
             taskResult.status = "success";
             taskResult.validation = retryValidation;
-            gitCommit(worktreePath, task.id, task.goal);
+            await gitCommit(worktreePath, task.id, task.goal);
             // Update baseCommit so next task's diff is per-task, not cumulative
-            baseCommit = execSync("git rev-parse HEAD", { cwd: worktreePath, encoding: "utf-8", timeout: 5_000 }).trim();
-            taskResult.changes_summary = generateChangesSummary(worktreePath);
+            baseCommit = (await execAsync("git rev-parse HEAD", { cwd: worktreePath })).stdout.trim();
+            taskResult.changes_summary = await generateChangesSummary(worktreePath);
             consecutiveFailures = 0;
             runLogger.logEvent("task_retry_success", { task_id: task.id });
             await notifyTaskPassed(task, taskResult, i, plan.micro_tasks.length, runLogger.runId);
           } else {
             taskResult.status = "failed";
             taskResult.validation = retryValidation;
-            rollback(worktreePath);
+            await rollback(worktreePath);
             consecutiveFailures++;
             runLogger.logEvent("task_retry_failed", {
               task_id: task.id,
@@ -541,7 +548,7 @@ async function main(): Promise<void> {
           }
         } else {
           taskResult.status = retryExecResult.timed_out ? "timeout" : "blocked";
-          rollback(worktreePath);
+          await rollback(worktreePath);
           consecutiveFailures++;
           runLogger.logEvent("task_retry_failed", {
             task_id: task.id,
@@ -631,11 +638,11 @@ async function main(): Promise<void> {
   console.log(`[Orchestrator] To merge: cd ${MAIN_REPO} && git merge --ff-only $(cd ${worktreePath} && git rev-parse HEAD)`);
 
   // Cleanup PID file
-  try { execSync(`rm -f "${PID_FILE}"`); } catch {}
+  try { await unlink(PID_FILE); } catch {}
 }
 
-main().catch((err) => {
+main().catch(async (err) => {
   console.error("[Orchestrator] Fatal:", err);
-  try { execSync(`rm -f "${PID_FILE}"`); } catch {}
+  try { await unlink(PID_FILE); } catch {}
   process.exit(1);
 });

@@ -12,7 +12,8 @@
 
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import { writeFileSync, readFileSync, unlinkSync, existsSync, renameSync, readdirSync } from 'fs';
+import { readFileSync, unlinkSync, existsSync } from 'fs';
+import { readFile, writeFile, rename } from 'fs/promises';
 
 const execAsync = promisify(exec);
 
@@ -48,10 +49,10 @@ function logError(msg: string): void {
 }
 
 // === Lockfile ===
-function acquireLock(): boolean {
+async function acquireLock(): Promise<boolean> {
   if (existsSync(LOCK_PATH)) {
     try {
-      const lockData = readFileSync(LOCK_PATH, 'utf-8').trim().split('\n');
+      const lockData = (await readFile(LOCK_PATH, 'utf-8')).trim().split('\n');
       const pid = parseInt(lockData[0] || '0', 10);
       if (pid && pid !== process.pid) {
         // Check if PID is alive
@@ -73,8 +74,8 @@ function acquireLock(): boolean {
   // Write lock atomically
   const tmpLock = LOCK_PATH + '.tmp';
   const lockContent = `${process.pid}\n${Date.now()}\n${instanceToken}`;
-  writeFileSync(tmpLock, lockContent);
-  renameSync(tmpLock, LOCK_PATH);
+  await writeFile(tmpLock, lockContent);
+  await rename(tmpLock, LOCK_PATH);
   log(`Lock acquired (PID ${process.pid}, token ${instanceToken})`);
   return true;
 }
@@ -247,7 +248,7 @@ async function executeAndComplete(task: any): Promise<void> {
     }
   } finally {
     activeTasks--;
-    try { writeFileSync("/tmp/poller-heartbeat", String(Date.now())); } catch {}
+    writeFile("/tmp/poller-heartbeat", String(Date.now())).catch(() => {});
   }
 }
 
@@ -288,7 +289,7 @@ async function pollAndExecute(): Promise<void> {
     }
   }
   // Heartbeat (poll-level, not task-level)
-  try { writeFileSync("/tmp/poller-heartbeat", String(Date.now())); } catch {}
+  writeFile("/tmp/poller-heartbeat", String(Date.now())).catch(() => {});
 }
 
 
@@ -326,7 +327,7 @@ async function main(): Promise<void> {
   log('Starting independent task poller...');
 
   // Acquire lock
-  if (!acquireLock()) {
+  if (!await acquireLock()) {
     process.exit(0); // Another instance running, don't restart
   }
 

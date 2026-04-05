@@ -7,7 +7,10 @@ import { ALLOWED_USERS } from "../config";
 import { isAuthorized } from "../security";
 import { getUptime } from "../utils/uptime";
 import { gatewayQuery } from "../services/gateway-db";
-import { execSync } from "child_process";
+import { exec } from "child_process";
+import { promisify } from "util";
+
+const execAsync = promisify(exec);
 
 export async function handleDashboard(ctx: Context): Promise<void> {
   const userId = ctx.from?.id;
@@ -45,22 +48,19 @@ export async function handleDashboard(ctx: Context): Promise<void> {
 
   // Git unpushed count
   try {
-    const unpushed = execSync("git rev-list @{u}..HEAD --count 2>/dev/null || echo 0", {
+    const { stdout: unpushed } = await execAsync("git rev-list @{u}..HEAD --count 2>/dev/null || echo 0", {
       cwd: "/Users/daijiromatsuokam1/claude-telegram-bot",
       timeout: 5000,
-      encoding: "utf-8",
-    }).trim();
-    lines.push(`📦 Unpushed commits: ${unpushed}`);
+    });
+    lines.push(`📦 Unpushed commits: ${unpushed.trim()}`);
   } catch {
     lines.push("📦 Unpushed commits: —");
   }
 
   // Disk usage
   try {
-    const disk = execSync("df -h / | tail -1", {
-      timeout: 5000,
-      encoding: "utf-8",
-    }).trim();
+    const { stdout: diskOut } = await execAsync("df -h / | tail -1", { timeout: 5000 });
+    const disk = diskOut.trim();
     // Format: Filesystem Size Used Avail Use% Mounted
     const parts = disk.split(/\s+/);
     if (parts.length >= 5) {
