@@ -344,8 +344,7 @@ export async function dispatchToWorker(ctx: Context, task: string, options?: { r
 
     if (health.includes('BUSY')) {
       if (taskQueue.length >= TASK_QUEUE_MAX) {
-        await ctx.reply(`❌ Queue full (${TASK_QUEUE_MAX}/${TASK_QUEUE_MAX}). Try again later.`);
-        return;
+        taskQueue.shift(); // drop oldest to make room
       }
       taskQueue.push({ task, ctx, raw: options?.raw, queuedAt: Date.now() });
       await ctx.reply(`🟡 All workers busy. Queued (#${taskQueue.length}/${TASK_QUEUE_MAX}). Will auto-dispatch when a worker is free.`);
