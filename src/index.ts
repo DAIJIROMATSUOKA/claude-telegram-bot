@@ -64,7 +64,7 @@ import { handleScout } from "./handlers/scout-command";
 import { handleManual } from "./handlers/manual-command";
 import { handleSearch } from "./handlers/search-command";
 import { handleVoice } from "./handlers/voice-chat";
-import { registerMediaCommands } from "./handlers/media-commands";
+import { registerMediaCommands } from "./handlers/media";
 import { handleCal } from "./handlers/cal-command";
 import { handleTaskCommand, handleStopCommand as handleOrchestratorStop, handleTaskStatusCommand } from "./task/task-command";
 import { handleTaskLogCommand } from "./task/tasklog-command";
