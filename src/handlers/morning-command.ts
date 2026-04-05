@@ -7,6 +7,7 @@ import { ALLOWED_USERS } from "../config";
 import { isAuthorized } from "../security";
 import { gatewayQuery } from "../services/gateway-db";
 import { execSync } from "child_process";
+import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync } from "fs";
 
 const GAS_GMAIL_URL = process.env.GAS_GMAIL_URL || "";
 const GAS_GMAIL_KEY = process.env.GAS_GMAIL_KEY || "";
@@ -87,4 +88,28 @@ export async function handleMorning(ctx: Context): Promise<void> {
   }
 
   await ctx.reply(lines.join("\n"), { parse_mode: "HTML" });
+
+  // Write to Obsidian daily note
+  try {
+    const jst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+    const y = jst.getUTCFullYear();
+    const mo = String(jst.getUTCMonth() + 1).padStart(2, "0");
+    const dd = String(jst.getUTCDate()).padStart(2, "0");
+    const obsDir = `${process.env.HOME}/Library/Mobile Documents/iCloud~md~obsidian/Documents/MyObsidian/${y}/${mo}`;
+    const obsFile = `${obsDir}/${y}-${mo}-${dd}.md`;
+    const plainText = lines.join("\n").replace(/<[^>]+>/g, "");
+    const section = `\n## 朝ブリーフィング\n\n${plainText}\n`;
+
+    mkdirSync(obsDir, { recursive: true });
+    if (existsSync(obsFile)) {
+      const content = readFileSync(obsFile, "utf-8");
+      if (!content.includes("## 朝ブリーフィング")) {
+        appendFileSync(obsFile, section);
+      }
+    } else {
+      writeFileSync(obsFile, `# ${y}-${mo}-${dd}\n${section}`);
+    }
+  } catch (e) {
+    console.error("[Morning] Obsidian write error:", e);
+  }
 }

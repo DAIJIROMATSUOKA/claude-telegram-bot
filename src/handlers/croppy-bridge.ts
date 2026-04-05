@@ -28,6 +28,50 @@ const BRIDGE_REPLY_MAP_MAX = 100;
 
 // Worker-level lock: prevents concurrent inject to same worker
 const lockedWorkers = new Set<string>();
+
+// ============================================================
+// FIFO Task Queue - queues tasks when all workers are busy
+// ============================================================
+interface QueuedTask {
+  task: string;
+  ctx: Context;
+  raw?: boolean;
+  queuedAt: number;
+}
+const taskQueue: QueuedTask[] = [];
+const TASK_QUEUE_MAX = 10;
+const TASK_QUEUE_POLL_INTERVAL = 15_000; // 15s
+
+/** Get current queue status. */
+export function getTaskQueueStatus(): { size: number; max: number; items: { task: string; age: number }[] } {
+  const now = Date.now();
+  return {
+    size: taskQueue.length,
+    max: TASK_QUEUE_MAX,
+    items: taskQueue.map(t => ({ task: t.task.slice(0, 60), age: Math.floor((now - t.queuedAt) / 1000) })),
+  };
+}
+
+/** Try to dequeue and dispatch the next queued task. */
+async function processQueue(): Promise<void> {
+  if (taskQueue.length === 0) return;
+  const allReadyRaw = await runLocal(`bash ${TAB_MANAGER} ready`);
+  const readyWT = (allReadyRaw && !allReadyRaw.includes('ERROR'))
+    ? (allReadyRaw.split('\n').map(l => l.trim()).find(l => l && !lockedWorkers.has(l)) || '')
+    : '';
+  if (!readyWT) return;
+  const next = taskQueue.shift();
+  if (!next) return;
+  try {
+    await next.ctx.reply(`📤 Dequeued task (was queued ${Math.floor((Date.now() - next.queuedAt) / 1000)}s)`);
+    await injectAndNotify(next.ctx, readyWT.trim(), next.task, next.raw);
+  } catch (e) {
+    console.error('[Bridge] Queue dispatch error:', e);
+  }
+}
+
+// Poll queue periodically
+setInterval(() => { processQueue().catch(() => {}); }, TASK_QUEUE_POLL_INTERVAL).unref();
 const lockedWorkersTimestamps = new Map<string, number>();
 const LOCKED_WORKERS_TTL = 60 * 60 * 1000; // 1 hour (stale lock eviction)
 setInterval(() => {
@@ -259,6 +303,17 @@ async function handleBridgeStatus(ctx: Context): Promise<void> {
     }
   }
 
+  // Task queue status
+  const qs = getTaskQueueStatus();
+  if (qs.size > 0) {
+    msg += `\n📋 <b>Queue:</b> ${qs.size}/${qs.max}\n`;
+    for (const item of qs.items) {
+      msg += `  ⏳ ${escapeHtml(item.task)}... (${item.age}s ago)\n`;
+    }
+  } else {
+    msg += '\n📋 Queue: empty\n';
+  }
+
   msg += '\n' + nightStatus.split('\n').map(l => `<code>${escapeHtml(l)}</code>`).join('\n');
 
   await ctx.reply(msg, { parse_mode: 'HTML' });
@@ -296,19 +351,12 @@ export async function dispatchToWorker(ctx: Context, task: string, options?: { r
     const health = await runLocal(`bash ${TAB_MANAGER} health`);
 
     if (health.includes('BUSY')) {
-      await ctx.reply('🟡 All workers busy. Task queued for retry...');
-      // TODO: implement task queue
-      // For now, wait and retry once
-      await new Promise(r => setTimeout(r, 30000));
-      const retryAllRaw = await runLocal(`bash ${TAB_MANAGER} ready`);
-      const retryWT = (retryAllRaw && !retryAllRaw.includes('ERROR'))
-        ? (retryAllRaw.split('\n').map(l => l.trim()).find(l => l && !lockedWorkers.has(l)) || '')
-        : '';
-      if (!retryWT) {
-        await ctx.reply('❌ Workers still busy after 30s. Try again later.');
+      if (taskQueue.length >= TASK_QUEUE_MAX) {
+        await ctx.reply(`❌ Queue full (${TASK_QUEUE_MAX}/${TASK_QUEUE_MAX}). Try again later.`);
         return;
       }
-      await injectAndNotify(ctx, retryWT.trim(), task, options?.raw);
+      taskQueue.push({ task, ctx, raw: options?.raw, queuedAt: Date.now() });
+      await ctx.reply(`🟡 All workers busy. Queued (#${taskQueue.length}/${TASK_QUEUE_MAX}). Will auto-dispatch when a worker is free.`);
     } else if (health.includes('NO_WORKERS') || health.includes('CHROME_NOT_RUNNING')) {
       // Auto-recover: restore worker tabs from config
       console.log('[Bridge] No workers found, attempting auto-recover...');

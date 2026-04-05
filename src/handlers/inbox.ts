@@ -82,6 +82,20 @@ async function executeBatch(chatId: number): Promise<void> {
           break;
         }
 
+        case "untrash": {
+          // GAS untrashThread: move thread back to inbox
+          const untrashUrl = `${GAS_GMAIL_URL}?action=untrash&gmail_id=${e.sourceId}&key=${GAS_GMAIL_KEY}`;
+          const untrashRes = await fetchWithTimeout(untrashUrl, { redirect: "follow" });
+          const untrashResult: any = await untrashRes.json();
+          if (untrashResult.ok) {
+            logInboxAction("untrash", e.sourceId, "gmail", e.msgDate);
+            if (e.msgId) await q.botApi.editMessageText(chatId, e.msgId, "📥 受信トレイに戻しました").catch(() => {});
+          } else {
+            logger.error("inbox", "Untrash failed", { sourceId: e.sourceId });
+          }
+          break;
+        }
+
         case "snz1h":
         case "snz3h":
         case "snzam": {

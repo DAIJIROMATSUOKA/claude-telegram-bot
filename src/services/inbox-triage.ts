@@ -829,13 +829,56 @@ export async function handleTriageCallback(
       break;
     }
 
-    case 'send':
-      // TODO: Actually send the reply via LINE/Gmail
-      await reportFeedback(itemId, 'approved', 'manual-send');
+    case 'send': {
+      // Look up the triage item to get source + reply body
+      let sendOk = false;
+      try {
+        const lookupRes = await fetch(`${GATEWAY_URL}/v1/db/query`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sql: `SELECT source, source_id, reply_body, subject FROM inbox_triage_queue WHERE id = ?`,
+            params: [itemId],
+          }),
+        });
+        const lookupData: any = await lookupRes.json();
+        const row = lookupData?.results?.[0];
+
+        if (row?.reply_body) {
+          if (row.source === 'gmail' && GAS_GMAIL_URL) {
+            // Send via GAS endpoint: action=reply, threadId=source_id, body=reply_body
+            const gasUrl = `${GAS_GMAIL_URL}?action=reply&gmail_id=${encodeURIComponent(row.source_id)}&body=${encodeURIComponent(row.reply_body)}&key=${GAS_GMAIL_KEY}`;
+            const gasRes = await fetchWithTimeout(gasUrl, { redirect: 'follow' });
+            const gasData: any = await gasRes.json();
+            sendOk = !!gasData?.ok;
+          } else if (row.source === 'line') {
+            // Send via LINE Worker URL (same infrastructure as line-post.ts)
+            const lineWorkerUrl = process.env.LINE_WORKER_URL || '';
+            if (lineWorkerUrl) {
+              const lineRes = await fetchWithTimeout(lineWorkerUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  to: row.source_id,
+                  messages: [{ type: 'text', text: row.reply_body }],
+                }),
+              });
+              const lineData: any = await lineRes.json();
+              sendOk = lineData?.ok || lineData?.status === 200;
+            }
+          }
+        }
+      } catch (e) {
+        console.error('[Triage] Send reply error:', e);
+      }
+
+      await reportFeedback(itemId, sendOk ? 'approved' : 'failed', 'manual-send');
       if (botApi && chatId && msgId) {
-        await botApi.editMessageText(chatId, msgId, '📤 送信済み').catch(() => {});
+        const statusText = sendOk ? '📤 送信済み' : '❌ 送信失敗';
+        await botApi.editMessageText(chatId, msgId, statusText).catch(() => {});
       }
       break;
+    }
 
     default:
       return false;

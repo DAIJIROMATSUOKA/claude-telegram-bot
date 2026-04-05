@@ -1,0 +1,46 @@
+# X Research Query Configuration
+# Used by nightly research scripts to search for relevant topics.
+
+queries:
+  # FA (Factory Automation) business intelligence
+  - topic: "食品機械 自動化"
+    keywords: ["食品機械", "自動化", "FA", "factory automation"]
+    category: "FA-business"
+    priority: high
+
+  - topic: "検査装置 AI"
+    keywords: ["検査装置", "AI検査", "vision inspection", "画像検査"]
+    category: "FA-business"
+    priority: high
+
+  - topic: "PLC 三菱 iQ-R"
+    keywords: ["PLC", "三菱電機", "iQ-R", "MELSEC"]
+    category: "FA-tech"
+    priority: medium
+
+  - topic: "Keyence 画像処理"
+    keywords: ["Keyence", "キーエンス", "XG-X", "画像処理"]
+    category: "FA-tech"
+    priority: medium
+
+  # AI/Tech trends
+  - topic: "Claude AI updates"
+    keywords: ["Claude", "Anthropic", "claude.ai"]
+    category: "AI-tech"
+    priority: high
+
+  - topic: "LLM coding agents"
+    keywords: ["coding agent", "AI coding", "Claude Code", "Cursor"]
+    category: "AI-tech"
+    priority: medium
+
+  # Competitor watch
+  - topic: "食品包装 ロボット"
+    keywords: ["食品包装", "ロボット", "packaging robot"]
+    category: "competitor"
+    priority: low
+
+settings:
+  max_results_per_query: 10
+  dedup_window_hours: 72
+  summary_max_items: 20

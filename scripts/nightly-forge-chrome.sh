@@ -437,14 +437,33 @@ if [ "$ACTIVE_COUNT" -eq 0 ]; then
 
   RESEARCH_PROMPT_FILE="/tmp/nightly-forge-research-$$.txt"
 RESEARCH_TOPICS_FILE="$HOME/claude-telegram-bot/autonomous/state/research-topics.md"
+RESEARCH_YAML="$HOME/claude-telegram-bot/scripts/x-research-queries.yaml"
 CROPPY_NOTES="$HOME/Machinelab Dropbox/Matsuoka Daijiro/JARVIS-Journal/croppy-notes.md"
+RESEARCH_DEDUP_FILE="/tmp/nightly-research-seen.txt"
 
-  if [ ! -f "$RESEARCH_TOPICS_FILE" ]; then
-    log "ABORT: research-topics.md not found"
+  # Load topics from YAML if available, fallback to markdown
+  if [ -f "$RESEARCH_YAML" ]; then
+    TOPICS=$(python3 -c "
+import yaml, sys
+with open('$RESEARCH_YAML') as f:
+    data = yaml.safe_load(f)
+queries = data.get('queries', [])
+for q in sorted(queries, key=lambda x: {'high':0,'medium':1,'low':2}.get(x.get('priority','low'),3)):
+    kw = ', '.join(q.get('keywords', []))
+    print(f\"- [{q.get('category','')}] {q['topic']}: {kw}\")
+" 2>/dev/null || cat "$RESEARCH_TOPICS_FILE")
+    log "Loaded research queries from YAML ($(echo "$TOPICS" | wc -l | tr -d ' ') queries)"
+  elif [ -f "$RESEARCH_TOPICS_FILE" ]; then
+    TOPICS=$(cat "$RESEARCH_TOPICS_FILE")
+  else
+    log "ABORT: no research topics found (neither YAML nor MD)"
     exit 0
   fi
 
-  TOPICS=$(cat "$RESEARCH_TOPICS_FILE")
+  # Load dedup history (URLs/titles seen in last 72h)
+  touch "$RESEARCH_DEDUP_FILE"
+  find "$RESEARCH_DEDUP_FILE" -mmin +4320 -delete 2>/dev/null || true
+  SEEN_ITEMS=$(cat "$RESEARCH_DEDUP_FILE" 2>/dev/null || echo "")
   DATE_DOW=$(date +%u)  # 1=Mon..7=Sun
   EXISTING_NOTES=$(tail -50 "$CROPPY_NOTES" 2>/dev/null || echo "")
 
@@ -458,17 +477,23 @@ $TOPICS
 ## 既存のcroppy-notes末尾（重複回避用）
 $EXISTING_NOTES
 
+## 既に発見済み（重複回避）
+$SEEN_ITEMS
+
 ## ルール
 1. 固定テーマ3つ + 回転テーマ1つ(今日は曜日${DATE_DOW}番目)を検索
 2. 各テーマ1-2回のWeb検索で効率よく情報収集
 3. DJ運用(FA設計/JARVIS/Nightly Forge/Claude Code)に直接適用可能なものだけ抽出
 4. 既にcroppy-notesにある内容は重複追記しない
-5. 発見があったらObsidian NightlyForge/に記録（Bashツールで直接書き込み）:
+5. 上記「既に発見済み」リストのURLやタイトルと重複する結果はスキップ
+6. 発見があったらObsidian NightlyForge/に記録（Bashツールで直接書き込み）:
    パス: $HOME/Library/Mobile Documents/iCloud~md~obsidian/Documents/MyObsidian/90_System/NightlyForge/
    ※croppy-notesには書かない（肥大化防止）
    形式: ## YYYY-MM-DD Nightly Research\n- [発見タイトル]: 概要（URL）
-6. 検索結果が既知の情報ばかりなら「NIGHTLY_DONE: 新規発見なし」と報告
-7. 最大3テーマ検索したら NIGHTLY_DONE と出力
+7. 検索結果が既知の情報ばかりなら「NIGHTLY_DONE: 新規発見なし」と報告
+8. 最大3テーマ検索したら NIGHTLY_DONE と出力
+9. **アクショナブルサマリー**: 最後に「## FA事業アクション」セクションを追加し、FA事業に直接適用可能な発見を箇条書きで要約
+10. 発見したURLとタイトルを $RESEARCH_DEDUP_FILE に追記（次回dedup用）
 RESEARCH_EOF
 
   RESPONSE=$(inject_and_wait "$RESEARCH_PROMPT_FILE" "$WAIT_TIMEOUT")

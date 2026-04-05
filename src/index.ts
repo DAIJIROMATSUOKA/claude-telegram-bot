@@ -102,6 +102,7 @@ import { handleFind } from "./handlers/find-command";
 import { handleRecap } from "./handlers/recap-command";
 import { handleAlias } from "./handlers/alias-command";
 import { handleBatch } from "./handlers/batch-command";
+import { handleBulkDelete } from "./handlers/bulk-delete-command";
 
 // ============== Global Context ==============
 // Bot起動時にCLAUDE.mdを読み込んでグローバルに保持
@@ -350,6 +351,7 @@ bot.command("find", handleFind);
 bot.command("recap", handleRecap);
 bot.command("alias", handleAlias);
 bot.command("batch", handleBatch);
+bot.command("bulkdel", handleBulkDelete);
 bot.command("perf", async (ctx) => {
   await ctx.reply(formatPerfStats(), { parse_mode: "HTML" });
 });

@@ -11,6 +11,7 @@ import { formatMetricsForStatus } from "../../utils/metrics";
 import { getUptime } from "../../utils/uptime";
 import { memoryGatewayBreaker, geminiBreaker } from "../../utils/circuit-breaker";
 import { getBgTaskSummary } from "../../utils/bg-task-manager";
+import { gatewayQuery } from "../../services/gateway-db";
 
 /**
  * /status - Show detailed status.
@@ -157,6 +158,25 @@ export async function handleStats(ctx: Context): Promise<void> {
     const totalOutput = session.lastUsage.output_tokens || 0;
     lines.push(`\n📈 Last query tokens: ${totalInput.toLocaleString()} in / ${totalOutput.toLocaleString()} out`);
   }
+
+  // D1 table row counts
+  const tables = [
+    "inbox_triage_queue", "message_mappings", "tasks", "contact_log",
+    "expenses", "aliases", "nightly_tasks", "snooze_queue",
+  ];
+  try {
+    const counts: string[] = ["\n📦 <b>D1 Tables</b>"];
+    for (const table of tables) {
+      try {
+        const res = await gatewayQuery(`SELECT COUNT(*) as cnt FROM ${table}`);
+        const cnt = res?.results?.[0]?.cnt ?? "?";
+        counts.push(`  ${table}: ${cnt}`);
+      } catch {
+        counts.push(`  ${table}: —`);
+      }
+    }
+    lines.push(counts.join("\n"));
+  } catch {}
 
   await ctx.reply(lines.join("\n"), { parse_mode: "HTML" });
 }
