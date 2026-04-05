@@ -21,7 +21,7 @@
 
 import { callMemoryGateway } from '../handlers/ai-router';
 
-import { MAX_LEARNED_MEMORIES, LEARNED_MEMORY_EXPIRE_DAYS, LEARNED_MEMORY_MIN_CONFIDENCE, SESSION_SUMMARY_EXPIRE_DAYS, SESSION_SUMMARY_KEEP_RECENT } from '../constants';
+import { MAX_LEARNED_MEMORIES, LEARNED_MEMORY_EXPIRE_DAYS, LEARNED_MEMORY_MIN_CONFIDENCE, SESSION_SUMMARY_EXPIRE_DAYS, SESSION_SUMMARY_KEEP_RECENT, PERMANENT_PURGE_AGE_DAYS } from '../constants';
 
 /**
  * learned_memoryのGC
@@ -88,13 +88,13 @@ async function gcLearnedMemory(): Promise<{ deactivated: number; message: string
     const purgeResult = await callMemoryGateway('/v1/db/query', 'POST', {
       sql: `DELETE FROM jarvis_learned_memory
             WHERE active = 0
-              AND created_at < datetime('now', '-180 days')`,
+              AND created_at < datetime('now', '-${PERMANENT_PURGE_AGE_DAYS} days')`,
       params: [],
     });
 
     const purgedCount = purgeResult.data?.meta?.changes || 0;
     if (purgedCount > 0) {
-      console.log(`[Memory GC] learned_memory: ${purgedCount}件を物理削除（180日超え非アクティブ）`);
+      console.log(`[Memory GC] learned_memory: ${purgedCount}件を物理削除（${PERMANENT_PURGE_AGE_DAYS}日超え非アクティブ）`);
     }
 
     return {

@@ -21,14 +21,12 @@ import { waitAndRelayResponse } from "./croppy-bridge";
 
 // ─── Constants ────────────────────────────────────────────────
 
-import { SCRIPTS_DIR, PROJECT_TAB_ROUTER as TAB_ROUTER, TAB_RELAY, CROPPY_TAB_MANAGER as TAB_MANAGER, ORCHESTRATOR_AUDIT_DIR as AUDIT_DIR, ORCHESTRATOR_AUDIT_FILE as AUDIT_FILE } from '../constants';
+import { SCRIPTS_DIR, PROJECT_TAB_ROUTER as TAB_ROUTER, TAB_RELAY, CROPPY_TAB_MANAGER as TAB_MANAGER, ORCHESTRATOR_AUDIT_DIR as AUDIT_DIR, ORCHESTRATOR_AUDIT_FILE as AUDIT_FILE, PROJECT_INJECT_MAX, PROJECT_INJECT_TTL, SNAPSHOT_INTERVAL, AUTO_HANDOFF_TOKEN_PCT, AUTO_HANDOFF_INJECT_COUNT } from '../constants';
 
 
 // ─── Periodic State Snapshot (Defense Line 1) ──────────────
 const projectInjectCounts: Map<string, number> = new Map();
 const projectInjectCountsTimestamps: Map<string, number> = new Map();
-const PROJECT_INJECT_MAX = 1000;
-const PROJECT_INJECT_TTL = 60 * 60 * 1000; // 1 hour
 setInterval(() => {
   const now = Date.now();
   for (const [key, ts] of projectInjectCountsTimestamps) {
@@ -38,8 +36,6 @@ setInterval(() => {
     }
   }
 }, 60_000).unref();
-const SNAPSHOT_INTERVAL = 15;
-
 async function saveProjectSnapshot(
   projectId: string,
   tabWT: string
@@ -365,16 +361,16 @@ async function checkAndHandoff(
       10000
     );
     const pct = parseInt(estRaw) || 0;
-    if (pct >= 70) {
-      console.log(`[AutoHandoff] ${projectId}: token ${pct}% >= 70% → handoff`);
+    if (pct >= AUTO_HANDOFF_TOKEN_PCT) {
+      console.log(`[AutoHandoff] ${projectId}: token ${pct}% >= ${AUTO_HANDOFF_TOKEN_PCT}% → handoff`);
       shouldHandoff = true;
     }
   } catch (e: any) {
     console.error(`[AutoHandoff] ${projectId}: token-estimate failed, falling back to count`);
   }
 
-  if (!shouldHandoff && injectCount >= 40) {
-    console.log(`[AutoHandoff] ${projectId}: ${injectCount} injects >= 40 → handoff`);
+  if (!shouldHandoff && injectCount >= AUTO_HANDOFF_INJECT_COUNT) {
+    console.log(`[AutoHandoff] ${projectId}: ${injectCount} injects >= ${AUTO_HANDOFF_INJECT_COUNT} → handoff`);
     shouldHandoff = true;
   }
 

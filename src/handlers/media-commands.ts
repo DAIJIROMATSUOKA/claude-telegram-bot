@@ -40,8 +40,7 @@ async function withMediaQueue<T>(fn: () => Promise<T>): Promise<T> {
 
 // Config
 const execAsync = promisify(exec);
-import { AI_MEDIA_SCRIPT, PYTHON, TIMEOUT_IMAGE, TIMEOUT_VIDEO } from "../constants";
-const WORKING_DIR = "/tmp/ai-media";
+import { AI_MEDIA_SCRIPT, PYTHON, TIMEOUT_IMAGE, TIMEOUT_VIDEO, MEDIA_WORKING_DIR as WORKING_DIR } from "../constants";
 
 // Ensure working directory exists
 if (!existsSync(WORKING_DIR)) {

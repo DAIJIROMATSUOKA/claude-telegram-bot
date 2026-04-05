@@ -121,3 +121,62 @@ export const SESSION_SUMMARY_EXPIRE_DAYS = 30;
 
 /** Number of recent session summaries to always keep */
 export const SESSION_SUMMARY_KEEP_RECENT = 5;
+
+/** Days before purging physically deleted (inactive) memories */
+export const PERMANENT_PURGE_AGE_DAYS = 180;
+
+// ============== Media Working Dir ==============
+
+/** Working directory for AI media generation */
+export const MEDIA_WORKING_DIR = "/tmp/ai-media";
+
+// ============== Bridge / Croppy Worker ==============
+
+/** Maximum entries in bridge reply routing map */
+export const BRIDGE_REPLY_MAP_MAX = 100;
+
+/** Maximum queued tasks when all workers are busy */
+export const TASK_QUEUE_MAX = 10;
+
+/** Milliseconds between task queue processing attempts */
+export const TASK_QUEUE_POLL_INTERVAL = 15_000;
+
+/** Milliseconds before stale worker lock is evicted */
+export const LOCKED_WORKERS_TTL = 60 * 60 * 1000;
+
+/** Warn user when worker inject count reaches this */
+export const INJECT_WARN_THRESHOLD = 25;
+
+/** Trigger auto-handoff when inject count reaches this */
+export const INJECT_HANDOFF_THRESHOLD = 30;
+
+/** Maximum cached worker inject counts */
+export const WORKER_INJECT_MAX = 1000;
+
+/** TTL for worker inject counter entries */
+export const WORKER_INJECT_TTL = 60 * 60 * 1000;
+
+/** Polling interval for worker status checks (ms) */
+export const BRIDGE_POLL_INTERVAL = 3_000;
+
+// ============== Orchestrator Chrome ==============
+
+/** Maximum cached project inject counts */
+export const PROJECT_INJECT_MAX = 1000;
+
+/** TTL for project inject counter entries */
+export const PROJECT_INJECT_TTL = 60 * 60 * 1000;
+
+/** Take project AI context snapshot every N injections */
+export const SNAPSHOT_INTERVAL = 15;
+
+/** Token usage percentage threshold to trigger auto-handoff */
+export const AUTO_HANDOFF_TOKEN_PCT = 70;
+
+/** Inject count fallback threshold to trigger auto-handoff */
+export const AUTO_HANDOFF_INJECT_COUNT = 40;
+
+// ============== Memory Confidence ==============
+
+/** Minimum confidence to store directly (below = pending for review) */
+export const PENDING_CONFIDENCE_THRESHOLD = 0.7;

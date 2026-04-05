@@ -17,7 +17,7 @@ import { escapeHtml } from '../formatting';
 
 const execAsync = promisify(exec);
 
-import { CROPPY_TAB_MANAGER as TAB_MANAGER, CROPPY_NIGHTSHIFT as NIGHTSHIFT, CROPPY_SUPERVISOR as SUPERVISOR } from '../constants';
+import { CROPPY_TAB_MANAGER as TAB_MANAGER, CROPPY_NIGHTSHIFT as NIGHTSHIFT, CROPPY_SUPERVISOR as SUPERVISOR, BRIDGE_REPLY_MAP_MAX, TASK_QUEUE_MAX, TASK_QUEUE_POLL_INTERVAL, LOCKED_WORKERS_TTL, INJECT_WARN_THRESHOLD, INJECT_HANDOFF_THRESHOLD, WORKER_INJECT_MAX, WORKER_INJECT_TTL, BRIDGE_POLL_INTERVAL, TG_SAFE_LIMIT, WORKER_RESPONSE_TIMEOUT_MS } from '../constants';
 
 const DATE_PREFIX_RE = /^\d{4}-\d{2}-\d{2}_\d{4}/;
 const HANDOFF_PREFIX_RE = /^\d{5,6}_/;  // MMDD{seq}_ from api-handoff.sh
@@ -25,7 +25,6 @@ const HANDOFF_PREFIX_RE = /^\d{5,6}_/;  // MMDD{seq}_ from api-handoff.sh
 // Bridge reply routing: Telegram msgId -> Worker tab (wt)
 // Enables reply-chain: DJ replies to bridge response -> same worker tab
 const bridgeReplyMap = new Map<number, string>();
-const BRIDGE_REPLY_MAP_MAX = 100;
 
 // Worker-level lock: prevents concurrent inject to same worker
 const lockedWorkers = new Set<string>();
@@ -40,8 +39,6 @@ interface QueuedTask {
   queuedAt: number;
 }
 const taskQueue: QueuedTask[] = [];
-const TASK_QUEUE_MAX = 10;
-const TASK_QUEUE_POLL_INTERVAL = 15_000; // 15s
 
 /** Get current queue status. */
 export function getTaskQueueStatus(): { size: number; max: number; items: { task: string; age: number }[] } {
@@ -74,7 +71,6 @@ async function processQueue(): Promise<void> {
 // Poll queue periodically
 setInterval(() => { processQueue().catch(() => {}); }, TASK_QUEUE_POLL_INTERVAL).unref();
 const lockedWorkersTimestamps = new Map<string, number>();
-const LOCKED_WORKERS_TTL = 60 * 60 * 1000; // 1 hour (stale lock eviction)
 setInterval(() => {
   const now = Date.now();
   for (const [wt, ts] of lockedWorkersTimestamps) {
@@ -144,12 +140,8 @@ async function formatConversationTitle(wt: string): Promise<void> {
 }
 
 // --- Worker inject counter (auto-handoff at threshold) ---
-const INJECT_WARN_THRESHOLD = 25;
-const INJECT_HANDOFF_THRESHOLD = 30;
 const workerInjectCounts: Map<string, number> = new Map(); // key = W:T
 const workerInjectCountsTimestamps: Map<string, number> = new Map();
-const WORKER_INJECT_MAX = 1000;
-const WORKER_INJECT_TTL = 60 * 60 * 1000; // 1 hour
 setInterval(() => {
   const now = Date.now();
   for (const [key, ts] of workerInjectCountsTimestamps) {
@@ -423,7 +415,7 @@ async function injectAndNotify(ctx: Context, wt: string, task: string, raw = fal
 
     // Wait for response and relay to Telegram (non-blocking for handoff case)
     if (count < INJECT_HANDOFF_THRESHOLD) {
-      waitAndRelayResponse(ctx, wt, 180000, undefined, dispatchHeader).catch(e => 
+      waitAndRelayResponse(ctx, wt, WORKER_RESPONSE_TIMEOUT_MS, undefined, dispatchHeader).catch(e =>
         console.error('[Bridge] Relay error:', e)
       );
     }
@@ -442,12 +434,12 @@ async function injectAndNotify(ctx: Context, wt: string, task: string, raw = fal
 /**
  * Wait for worker to finish (BUSY → READY), then read response and relay to Telegram
  */
-export async function waitAndRelayResponse(ctx: Context, wt: string, maxWaitMs = 180000, dispatchMsgId?: number, dispatchHeader?: string): Promise<void> {
-  const pollInterval = 3000;
+export async function waitAndRelayResponse(ctx: Context, wt: string, maxWaitMs = WORKER_RESPONSE_TIMEOUT_MS, dispatchMsgId?: number, dispatchHeader?: string): Promise<void> {
+  const pollInterval = BRIDGE_POLL_INTERVAL;
   const startTime = Date.now();
 
   // Wait for worker to start processing
-  await new Promise(r => setTimeout(r, 3000));
+  await new Promise(r => setTimeout(r, BRIDGE_POLL_INTERVAL));
 
   // Poll using position-based check (not title-based health)
   while (Date.now() - startTime < maxWaitMs) {
@@ -456,10 +448,10 @@ export async function waitAndRelayResponse(ctx: Context, wt: string, maxWaitMs =
     if (status.trim() === 'READY') {
       // Stability check: wait, re-check status, read only after confirmed stable
       // Prevents false READY during tool-use gaps (web search, code exec)
-      await new Promise(r => setTimeout(r, 3000));
+      await new Promise(r => setTimeout(r, BRIDGE_POLL_INTERVAL));
       const recheck1 = await runLocal(`bash ${TAB_MANAGER} check-status ${wt}`, 10000);
       if (recheck1.trim() === 'BUSY') continue; // tool-use cycle, keep polling
-      await new Promise(r => setTimeout(r, 3000));
+      await new Promise(r => setTimeout(r, BRIDGE_POLL_INTERVAL));
       const recheck2 = await runLocal(`bash ${TAB_MANAGER} check-status ${wt}`, 10000);
       if (recheck2.trim() === 'BUSY') continue; // still in tool-use, keep polling
       // Double-READY confirmed (6s apart) → safe to read
@@ -476,7 +468,7 @@ export async function waitAndRelayResponse(ctx: Context, wt: string, maxWaitMs =
         const cleanResponse = dedupLines.join('\n').trim();
         // Split for Telegram 4096 char limit
         const headerLen = dispatchHeader ? dispatchHeader.length + 2 : 0;
-        const maxLen = 4000;
+        const maxLen = TG_SAFE_LIMIT;
         const chunks: string[] = [];
         let remaining = cleanResponse;
         while (remaining.length > 0) {

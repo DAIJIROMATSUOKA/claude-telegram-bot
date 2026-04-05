@@ -16,8 +16,7 @@
 
 import { callMemoryGateway } from '../handlers/ai-router';
 
-import { EMBED_SERVER, EMBED_TIMEOUT } from '../constants';
-const PENDING_CONFIDENCE_THRESHOLD = 0.7;
+import { EMBED_SERVER, EMBED_TIMEOUT, PENDING_CONFIDENCE_THRESHOLD } from '../constants';
 
 // ─── D1 Schema Initialization ───
 
