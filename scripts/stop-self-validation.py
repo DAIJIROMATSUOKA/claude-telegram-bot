@@ -121,11 +121,11 @@ def check_banned_keywords():
 
 
 def run_tests():
-    """Run bun test and return (success, output)."""
+    """Run bun run test (isolation script) and return (success, output)."""
     try:
         result = subprocess.run(
-            ["bun", "test"],
-            capture_output=True, text=True, timeout=120,
+            ["bun", "run", "test"],
+            capture_output=True, text=True, timeout=300,
             cwd=str(PROJECT_DIR),
             env={
                 **os.environ,
