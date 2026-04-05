@@ -9,10 +9,11 @@ import { WORKING_DIR, ALLOWED_USERS } from "../../config";
 import { isAuthorized } from "../../security";
 import { callMemoryGateway } from "../ai-router";
 import { escapeHtml } from "../../formatting";
-import { exec, execSync } from "child_process";
+import { exec } from "child_process";
 import { notifyError } from "../../utils/error-notify";
 import { promisify } from "util";
-import { writeFileSync, existsSync } from "fs";
+import { existsSync } from "fs";
+import { writeFile } from "fs/promises";
 import { homedir } from "os";
 import { join } from "path";
 import { loadJsonFile } from "../../utils/json-loader";
@@ -35,8 +36,8 @@ function readTaskTracker(): Record<string, string> {
   return loadJsonFile<Record<string, string>>(TASK_TRACKER_PATH, {});
 }
 
-function writeTaskTracker(data: Record<string, string>): void {
-  writeFileSync(TASK_TRACKER_PATH, JSON.stringify(data, null, 2));
+async function writeTaskTracker(data: Record<string, string>): Promise<void> {
+  await writeFile(TASK_TRACKER_PATH, JSON.stringify(data, null, 2));
 }
 
 /**
@@ -55,7 +56,7 @@ export async function handleTaskStart(ctx: Context): Promise<void> {
 
   const tracker = readTaskTracker();
   tracker[taskName] = new Date().toISOString();
-  writeTaskTracker(tracker);
+  await writeTaskTracker(tracker);
 
   try {
     const chatId = ctx.chat?.id;
@@ -67,7 +68,7 @@ export async function handleTaskStart(ctx: Context): Promise<void> {
 
   try {
     const scriptPath = join(PROJECT_ROOT, "scripts", "timer-sync.sh");
-    execSync(`"${scriptPath}" START "${taskName}"`, { encoding: "utf-8" });
+    await execAsync(`"${scriptPath}" START "${taskName}"`);
   } catch (error: any) {
     console.error("[task_start] Timer sync failed (non-fatal):", error.message);
   }
@@ -91,7 +92,7 @@ export async function handleTaskStop(ctx: Context): Promise<void> {
 
   const trackerStop = readTaskTracker();
   delete trackerStop[taskName];
-  writeTaskTracker(trackerStop);
+  await writeTaskTracker(trackerStop);
 
   try {
     const chatId = ctx.chat?.id;
@@ -103,7 +104,7 @@ export async function handleTaskStop(ctx: Context): Promise<void> {
 
   try {
     const scriptPath = join(PROJECT_ROOT, "scripts", "timer-sync.sh");
-    execSync(`"${scriptPath}" STOP "${taskName}"`, { encoding: "utf-8" });
+    await execAsync(`"${scriptPath}" STOP "${taskName}"`);
   } catch (error: any) {
     console.error("[task_stop] Timer sync failed (non-fatal):", error.message);
   }
@@ -127,7 +128,7 @@ export async function handleTaskPause(ctx: Context): Promise<void> {
 
   const trackerPause = readTaskTracker();
   delete trackerPause[taskName];
-  writeTaskTracker(trackerPause);
+  await writeTaskTracker(trackerPause);
 
   try {
     const chatId = ctx.chat?.id;
@@ -139,7 +140,7 @@ export async function handleTaskPause(ctx: Context): Promise<void> {
 
   try {
     const scriptPath = join(PROJECT_ROOT, "scripts", "timer-sync.sh");
-    execSync(`"${scriptPath}" PAUSE "${taskName}"`, { encoding: "utf-8" });
+    await execAsync(`"${scriptPath}" PAUSE "${taskName}"`);
   } catch (error: any) {
     console.error("[task_pause] Timer sync failed (non-fatal):", error.message);
   }

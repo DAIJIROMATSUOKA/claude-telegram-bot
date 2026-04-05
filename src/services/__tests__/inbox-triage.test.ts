@@ -23,6 +23,7 @@ mock.module("util", () => ({
 
 let mockExistsSync = mock(() => false);
 mock.module("fs", () => ({
+  ...require("fs"),
   existsSync: (...args: any[]) => mockExistsSync(...args),
 }));
 

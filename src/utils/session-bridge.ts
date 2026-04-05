@@ -123,7 +123,7 @@ const CLAUDE_MD_PATH = join(
 const SESSION_STATE_START = "<!-- SESSION_STATE_START -->";
 const SESSION_STATE_END = "<!-- SESSION_STATE_END -->";
 
-const SESSION_LOG_PATH = require("node:path").join(
+const SESSION_LOG_PATH = join(
   process.env.HOME || "/Users/daijiromatsuokam1",
   ".jarvis",
   "session_state.log",

@@ -10,7 +10,8 @@
 import { exec } from "child_process";
 import { enqueueMessage, dequeueForProject } from "../utils/message-queue";
 import { promisify } from "util";
-import { appendFileSync, existsSync, mkdirSync, writeFileSync, unlinkSync, readFileSync } from "fs";
+import { existsSync } from "fs";
+import { writeFile, readFile, appendFile, unlink, mkdir } from "fs/promises";
 import { loadJsonFile } from "../utils/json-loader";
 import { extractMachineNo, getProjectContext } from "../project-context-injector";
 import { homedir } from "os";
@@ -45,7 +46,7 @@ async function saveProjectSnapshot(
 ): Promise<void> {
   try {
     const promptFile = `/tmp/snapshot-prompt-${Date.now()}.txt`;
-    writeFileSync(promptFile, "この案件の現在の状況を5行で要約してください。重要な決定事項、進行中の作業、未解決の課題、次のアクションを含めて。必ず5行以内で。", "utf-8");
+    await writeFile(promptFile, "この案件の現在の状況を5行で要約してください。重要な決定事項、進行中の作業、未解決の課題、次のアクションを含めて。必ず5行以内で。", "utf-8");
     await runShell(`bash "${TAB_MANAGER}" inject-file "${tabWT}" "${promptFile}"; rm -f "${promptFile}"`, 15000);
 
     // 5s fixed wait + wait-response
@@ -67,7 +68,7 @@ async function saveProjectSnapshot(
           "",
           summary.substring(0, 2000),
         ].join("\n");
-        writeFileSync(snapshotPath, content, "utf-8");
+        await writeFile(snapshotPath, content, "utf-8");
         console.log(`[Snapshot] ${projectId}: saved to ${snapshotPath}`);
       }
     }
@@ -267,8 +268,8 @@ function loadInboxConfig(): InboxConfig {
   return { inbox_tab_wt: null, inbox_tab_url: null };
 }
 
-function saveInboxConfig(config: InboxConfig): void {
-  writeFileSync(INBOX_CONFIG_PATH, JSON.stringify(config, null, 2), "utf-8");
+async function saveInboxConfig(config: InboxConfig): Promise<void> {
+  await writeFile(INBOX_CONFIG_PATH, JSON.stringify(config, null, 2), "utf-8");
 }
 
 /**
@@ -310,7 +311,7 @@ async function claudeInboxRoute(
 
   // Write prompt to file and inject
   const tmpFile = `/tmp/inbox-route-${Date.now()}.txt`;
-  writeFileSync(tmpFile, prompt, "utf-8");
+  await writeFile(tmpFile, prompt, "utf-8");
   const injectResult = await runShell(
     `bash "${TAB_MANAGER}" inject-file "${config.inbox_tab_wt}" "${tmpFile}"; rm -f "${tmpFile}"`,
     15000
@@ -387,7 +388,7 @@ async function checkAndHandoff(
   let summary = "";
   try {
     const promptFile = `/tmp/handoff-summary-${Date.now()}.txt`;
-    writeFileSync(promptFile, "この会話の要約を作成してください。重要な決定事項、未解決の課題、次のアクションを含めて。500文字以内で。", "utf-8");
+    await writeFile(promptFile, "この会話の要約を作成してください。重要な決定事項、未解決の課題、次のアクションを含めて。500文字以内で。", "utf-8");
     await runShell(`bash "${TAB_MANAGER}" inject-file "${tabWT}" "${promptFile}"; rm -f "${promptFile}"`, 15000);
     await new Promise(r => setTimeout(r, 5000));
     const resp = await runShell(`bash "${TAB_MANAGER}" wait-response "${tabWT}" 120`, 130000);
@@ -404,18 +405,18 @@ async function checkAndHandoff(
   try {
     await runShell(`bash "${CONTEXT_BUILDER}" context "${projectId}" > "${contextFile}"`, 30000);
   } catch {
-    writeFileSync(contextFile, `これは案件 ${projectId} の専用チャットです。\n`, "utf-8");
+    await writeFile(contextFile, `これは案件 ${projectId} の専用チャットです。\n`, "utf-8");
   }
 
   // Append summary (or note that it failed)
-  let contextContent = existsSync(contextFile) ? readFileSync(contextFile, "utf-8") : "";
+  let contextContent = existsSync(contextFile) ? await readFile(contextFile, "utf-8") : "";
   if (summary) {
     contextContent += "\n## 前チャットの要約（自動引き継ぎ）\n" + summary + "\n";
   } else {
     contextContent += "\n## 注意\n前チャットの要約取得に失敗しました。上記のAI文脈スナップショットが最新の状態です。\n";
   }
   contextContent += "\n以上の文脈を踏まえて、今後のメッセージに対応してください。「了解」とだけ返答してください。";
-  writeFileSync(contextFile, contextContent, "utf-8");
+  await writeFile(contextFile, contextContent, "utf-8");
 
   // --- Step 3: Create new chat DIRECTLY (not via resolve, to avoid stale mapping) ---
   let newWT = "";
@@ -468,12 +469,12 @@ async function checkAndHandoff(
     }
   } catch (e: any) {
     console.error(`[AutoHandoff] ${projectId}: new chat creation failed -`, e.message);
-    try { unlinkSync(contextFile); } catch {}
+    try { await unlink(contextFile); } catch {}
     // CRITICAL: do NOT clear old mapping — old chat is still better than nothing
     return { triggered: true, newWT: null, error: e.message };
   }
 
-  try { unlinkSync(contextFile); } catch {}
+  try { await unlink(contextFile); } catch {}
 
   // --- Step 4: ONLY NOW update D1 mapping (old chat still works if this fails) ---
   try {
@@ -488,7 +489,7 @@ async function checkAndHandoff(
       const localPath = `${homedir()}/.croppy-project-tabs.json`;
       const localData = loadJsonFile<Record<string, any>>(localPath, {});
       localData[projectId] = { conv_url: newConvUrl, wt: newWT, updated_at: new Date().toISOString() };
-      writeFileSync(localPath, JSON.stringify(localData, null, 2), "utf-8");
+      await writeFile(localPath, JSON.stringify(localData, null, 2), "utf-8");
     } catch {}
   }
 
@@ -499,7 +500,7 @@ async function checkAndHandoff(
   try {
     const newUrl = newConvUrl.trim();
     if (newUrl && newUrl.includes("/chat/")) {
-      writeFileSync("/tmp/autokick-target-url", newUrl, "utf-8");
+      await writeFile("/tmp/autokick-target-url", newUrl, "utf-8");
       console.log(`[AutoHandoff] auto-kick target updated: ${newUrl.substring(0, 60)}`);
     }
   } catch {}
@@ -510,10 +511,10 @@ async function checkAndHandoff(
 
 // ─── Audit Log ──────────────────────────────────────────────
 
-function logAudit(entry: Record<string, unknown>): void {
+async function logAudit(entry: Record<string, unknown>): Promise<void> {
   try {
-    if (!existsSync(AUDIT_DIR)) mkdirSync(AUDIT_DIR, { recursive: true });
-    appendFileSync(AUDIT_FILE, JSON.stringify(entry) + "\n");
+    if (!existsSync(AUDIT_DIR)) await mkdir(AUDIT_DIR, { recursive: true });
+    await appendFile(AUDIT_FILE, JSON.stringify(entry) + "\n");
   } catch {
     // Non-fatal
   }
@@ -549,7 +550,7 @@ export class ChromeOrchestrator {
     console.log(`[ChromeOrch] codeLayer: method=${decision.method} project=${decision.projectId} conf=${decision.confidence}`);
 
     // Audit
-    logAudit({
+    await logAudit({
       timestamp: now,
       source: opts.source,
       method: decision.method,
@@ -571,7 +572,7 @@ export class ChromeOrchestrator {
           decision.reason = `Claude Inbox: ${inboxResult.reason}`;
           decision.needsReview = inboxResult.confidence < 0.8;
 
-          logAudit({
+          await logAudit({
             timestamp: new Date().toISOString(),
             source: opts.source,
             method: "claude-inbox",
@@ -647,7 +648,7 @@ export class ChromeOrchestrator {
       for (const qm of queued) {
         try {
           const qTmp = `/tmp/orch-queue-${Date.now()}.txt`;
-          writeFileSync(qTmp, `[キュー再送] ${qm.text}`, "utf-8");
+          await writeFile(qTmp, `[キュー再送] ${qm.text}`, "utf-8");
           await runShell(`bash "${TAB_MANAGER}" inject-file "${tabWT}" "${qTmp}"; rm -f "${qTmp}"`, 20000);
           console.log(`[ChromeOrch] Queue retry: ${qm.id} → ${tabWT}`);
         } catch {}
@@ -685,7 +686,7 @@ export class ChromeOrchestrator {
         }
         // Use inject-file to avoid shell quoting issues (lesson: 2026-03-14)
         const tmpFile = `/tmp/orch-inject-${Date.now()}.txt`;
-        writeFileSync(tmpFile, fullMessage, "utf-8");
+        await writeFile(tmpFile, fullMessage, "utf-8");
         const injectResult = await runShell(
           `bash "${TAB_MANAGER}" inject-file "${tabWT}" "${tmpFile}"; rm -f "${tmpFile}"`,
           30000
@@ -739,7 +740,7 @@ export class ChromeOrchestrator {
                     tabWT = emergencyHandoff.newWT;
                     // Re-inject the original message into the new chat
                     const retryFile = `/tmp/retry-msg-${Date.now()}.txt`;
-                    writeFileSync(retryFile, opts.text, "utf-8");
+                    await writeFile(retryFile, opts.text, "utf-8");
                     await runShell(`bash "${TAB_MANAGER}" inject-file "${tabWT}" "${retryFile}"; rm -f "${retryFile}"`, 20000);
                     await new Promise(r => setTimeout(r, 5000));
                     await waitAndRelayResponse(opts.ctx, tabWT!, 180000, undefined, header);
@@ -825,11 +826,11 @@ export class ChromeOrchestrator {
   /**
    * Set the Inbox tab for Claude fallback routing
    */
-  setInboxTab(wt: string, url?: string): void {
+  async setInboxTab(wt: string, url?: string): Promise<void> {
     const config = loadInboxConfig();
     config.inbox_tab_wt = wt;
     if (url) config.inbox_tab_url = url;
-    saveInboxConfig(config);
+    await saveInboxConfig(config);
     console.log(`[ChromeOrchestrator] Inbox tab set: ${wt}`);
   }
 

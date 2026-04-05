@@ -6,6 +6,7 @@
 
 import type { Context } from "grammy";
 import { unlinkSync } from "fs";
+import { execSync } from "child_process";
 import { session } from "../session";
 import { ALLOWED_USERS } from "../config";
 import { isAuthorized } from "../security";
@@ -80,7 +81,6 @@ export async function handleCallback(ctx: Context): Promise<void> {
   if (callbackData.startsWith("mt:restore:")) {
     const date = callbackData.split(":")[2];
     if (date) {
-      const { execSync } = require("child_process");
       try {
         execSync(`zsh ~/scripts/morning-triage-wrapper.sh --restore ${date}`, { timeout: 15000 });
         await ctx.answerCallbackQuery({ text: "📋 復元しました" });

@@ -15,7 +15,7 @@
  *   await injectMessage(chatUrl, userMessage);  // then inject user message
  */
 
-import { readFileSync, existsSync } from 'fs';
+import { readFileSync, existsSync, writeFileSync, mkdirSync } from 'fs';
 import { resolve } from 'path';
 import { loadJsonFile } from './utils/json-loader';
 
@@ -86,7 +86,6 @@ function loadInjectedHashes(): Record<string, string> {
 function saveInjectedHash(machineKey: string, hash: string): void {
   const hashes = loadInjectedHashes();
   hashes[machineKey] = hash;
-  const { writeFileSync, mkdirSync } = require('fs');
   const dir = resolve(HOME, 'claude-telegram-bot/cache');
   mkdirSync(dir, { recursive: true });
   writeFileSync(HASH_STORE_FILE, JSON.stringify(hashes, null, 2));

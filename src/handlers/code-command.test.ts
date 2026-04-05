@@ -6,16 +6,21 @@ const mockExec = mock((_cmd: string, _opts: any, cb: Function) => {
   cb(null, "SPAWNED: task123\nPID: 9999", "");
 });
 const mockExistsSync = mock(() => false);
-const mockReadFileSync = mock(() => '{"pid": 1234, "task_id": "abc"}');
+const mockLoadJsonFile = mock(() => ({ pid: 1234, task_id: "abc" }));
 
 mock.module("child_process", () => ({
+  ...require("child_process"),
   exec: mockExec,
   execSync: mockExecSync,
 }));
 
 mock.module("fs", () => ({
+  ...require("fs"),
   existsSync: mockExistsSync,
-  readFileSync: mockReadFileSync,
+}));
+
+mock.module("../utils/json-loader", () => ({
+  loadJsonFile: mockLoadJsonFile,
 }));
 
 mock.module("../security", () => ({
@@ -41,7 +46,7 @@ describe("handleCode", () => {
     mockExecSync.mockClear();
     mockExec.mockClear();
     mockExistsSync.mockClear();
-    mockReadFileSync.mockClear();
+    mockLoadJsonFile.mockClear();
   });
 
   test("unauthorized user is rejected silently", async () => {
@@ -85,7 +90,7 @@ describe("handleCode", () => {
 
   test("/code stop with running task sends SIGTERM", async () => {
     mockExistsSync.mockReturnValueOnce(true);
-    mockReadFileSync.mockReturnValueOnce(JSON.stringify({ pid: 99999, task_id: "test-task" }));
+    mockLoadJsonFile.mockReturnValueOnce({ pid: 99999, task_id: "test-task" });
     // Mock process.kill to avoid actually killing anything
     const origKill = process.kill;
     process.kill = mock(() => {}) as any;

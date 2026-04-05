@@ -27,6 +27,7 @@ mock.module("../../utils/exec-async", () => ({
 const mockWriteFileSync = mock(() => {});
 const mockUnlinkSync = mock(() => {});
 mock.module("fs", () => ({
+  ...require("fs"),
   writeFileSync: mockWriteFileSync,
   unlinkSync: mockUnlinkSync,
 }));

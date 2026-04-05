@@ -92,20 +92,26 @@ async function writeTmpMsg(msg: string): Promise<string> {
   return tmp;
 }
 
+// Timing constants — exported for test overrides
+export const CHAT_TIMING = {
+  initialWaitMs: 3000,
+  settleMs: 1500,
+  pollIntervalMs: 3000,
+};
+
 /**
  * Wait for claude.ai tab to finish responding and return cleaned text.
  */
 async function waitForChatResponse(wt: string, maxWaitMs = 180000): Promise<string | null> {
-  const pollInterval = 3000;
   const startTime = Date.now();
 
-  await new Promise(r => setTimeout(r, 3000)); // wait for response to start
+  await new Promise(r => setTimeout(r, CHAT_TIMING.initialWaitMs)); // wait for response to start
 
   while (Date.now() - startTime < maxWaitMs) {
     const status = await runLocal(`bash "${TAB_MANAGER}" check-status ${wt}`, 10000);
 
     if (status.trim() === "READY") {
-      await new Promise(r => setTimeout(r, 1500)); // settle
+      await new Promise(r => setTimeout(r, CHAT_TIMING.settleMs)); // settle
       const response = await runLocal(`bash "${TAB_MANAGER}" read-response ${wt}`, 10000);
 
       if (!response || response.includes("NO_RESPONSE") || response.includes("ERROR")) {
@@ -120,7 +126,7 @@ async function waitForChatResponse(wt: string, maxWaitMs = 180000): Promise<stri
         : response;
     }
 
-    await new Promise(r => setTimeout(r, pollInterval));
+    await new Promise(r => setTimeout(r, CHAT_TIMING.pollIntervalMs));
   }
 
   return null; // timeout

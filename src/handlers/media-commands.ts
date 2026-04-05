@@ -13,8 +13,10 @@
  */
 
 import { Context } from "grammy";
-import { spawn, execSync } from "child_process";
-import { existsSync, mkdirSync, unlinkSync, writeFileSync, statSync } from "fs";
+import { spawn, exec } from "child_process";
+import { promisify } from "util";
+import { existsSync, mkdirSync } from "fs";
+import { writeFile, unlink, stat } from "fs/promises";
 import { join, basename } from "path";
 import { InputFile } from "grammy";
 import { escapeHtml } from "../formatting";
@@ -37,6 +39,7 @@ async function withMediaQueue<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 // Config
+const execAsync = promisify(exec);
 import { AI_MEDIA_SCRIPT, PYTHON, TIMEOUT_IMAGE, TIMEOUT_VIDEO } from "../constants";
 const WORKING_DIR = "/tmp/ai-media";
 
@@ -126,8 +129,8 @@ async function sendResultPrivate(
   // Get file info
   let sizeStr = "不明";
   try {
-    const stat = statSync(resultPath);
-    sizeStr = formatFileSize(stat.size);
+    const st = await stat(resultPath);
+    sizeStr = formatFileSize(st.size);
   } catch {}
 
   const elapsedStr = elapsed ? `${elapsed}秒` : "不明";
@@ -285,7 +288,7 @@ async function downloadPhoto(ctx: Context): Promise<string | null> {
     const ext = (filePath.split(".").pop() || "jpg").toLowerCase();
     const localPath = join(WORKING_DIR, `input_${Date.now()}.${ext}`);
     const buffer = Buffer.from(await response.arrayBuffer());
-    writeFileSync(localPath, buffer);
+    await writeFile(localPath, buffer);
 
     // Convert HEIC/HEIF to JPEG using macOS sips (more reliable than PIL)
     if (ext === "heic" || ext === "heif") {
@@ -293,7 +296,7 @@ async function downloadPhoto(ctx: Context): Promise<string | null> {
       try {
         const proc = Bun.spawnSync(["sips", "-s", "format", "jpeg", localPath, "--out", jpegPath]);
         if (proc.exitCode === 0 && existsSync(jpegPath)) {
-          try { unlinkSync(localPath); } catch {}
+          try { await unlink(localPath); } catch {}
           console.log(`[media] Converted HEIC → JPEG: ${jpegPath}`);
           return jpegPath;
         }
@@ -362,7 +365,7 @@ export async function handleImagine(ctx: Context): Promise<void> {
     await ctx.api.deleteMessage(ctx.chat!.id, statusMsg.message_id).catch(() => {});
 
     // Cleanup
-    cleanupFile(result.path);
+    await cleanupFile(result.path);
   } catch (e: any) {
     await ctx.api.editMessageText(
       ctx.chat!.id,
@@ -543,7 +546,7 @@ export async function handleEdit(ctx: Context): Promise<void> {
         statusMsg.message_id,
         `❌ 編集失敗: ${result.error?.slice(-500) || "unknown error"}`
       );
-      if (!isLocalInput) cleanupFile(imagePath);
+      if (!isLocalInput) await cleanupFile(imagePath);
       return;
     }
 
@@ -555,7 +558,7 @@ export async function handleEdit(ctx: Context): Promise<void> {
       // ORIGINAL: Send photo preview (inline, compressed) + document (original quality)
       const filename = `edit_${Date.now()}.png`;
       const caption = `✏️ ${prompt}\n⏱ ${result.elapsed}秒`;
-      const fileSize = statSync(result.path).size;
+      const fileSize = (await stat(result.path)).size;
       console.log(`[media-upload] /edit starting upload: ${result.path} (${fileSize}B)`);
       const t0 = Date.now();
       await ctx.replyWithPhoto(new InputFile(result.path), { caption });
@@ -567,8 +570,8 @@ export async function handleEdit(ctx: Context): Promise<void> {
       });
       console.log(`[media-upload] /edit document sent in ${Date.now() - t1}ms (total ${Date.now() - t0}ms)`);
       await ctx.api.deleteMessage(ctx.chat!.id, statusMsg.message_id).catch(() => {});
-      cleanupFile(imagePath);
-      cleanupFile(result.path);
+      await cleanupFile(imagePath);
+      await cleanupFile(result.path);
     }
   } catch (e: any) {
     await ctx.api.editMessageText(
@@ -714,7 +717,7 @@ export async function handleOutpaint(ctx: Context): Promise<void> {
         statusMsg.message_id,
         `❌ 拡張失敗: ${result.error?.slice(-500) || "unknown error"}`
       );
-      if (!isLocalInput) cleanupFile(imagePath);
+      if (!isLocalInput) await cleanupFile(imagePath);
       return;
     }
 
@@ -732,8 +735,8 @@ export async function handleOutpaint(ctx: Context): Promise<void> {
         disable_content_type_detection: true,
       });
       await ctx.api.deleteMessage(chatId, statusMsg.message_id).catch(() => {});
-      cleanupFile(imagePath);
-      cleanupFile(result.path);
+      await cleanupFile(imagePath);
+      await cleanupFile(result.path);
     }
   } catch (e: any) {
     await ctx.api.editMessageText(
@@ -834,7 +837,7 @@ export async function handleAnimate(ctx: Context): Promise<void> {
         });
       }
       await ctx.api.deleteMessage(ctx.chat!.id, statusMsg.message_id).catch(() => {});
-      cleanupFile(result.path);
+      await cleanupFile(result.path);
     }
   } catch (e: any) {
     await ctx.api.editMessageText(
@@ -978,7 +981,7 @@ export async function handleUndress(ctx: Context): Promise<void> {
         statusMsg.message_id,
         `❌ Undress失敗: ${result.error?.slice(-500) || "unknown error"}`
       );
-      if (!isLocalInput) cleanupFile(imagePath);
+      if (!isLocalInput) await cleanupFile(imagePath);
       return;
     }
 
@@ -1012,19 +1015,19 @@ export async function handleUndress(ctx: Context): Promise<void> {
         const caption = `🔥 Undress${strengthInfo}\n⏱ ${result.elapsed}秒\n📁 ${result.path}`;
         await ctx.replyWithAnimation(new InputFile(gifPath), { caption });
         await ctx.api.deleteMessage(chatId, statusMsg.message_id).catch(() => {});
-        cleanupFile(gifPath);
+        await cleanupFile(gifPath);
       } else {
         // Fallback: text notification only if GIF generation fails
         await sendResultPrivate(ctx, statusMsg.message_id, result.path, result.elapsed, "/undress");
       }
 
       // Cleanup mask file if it exists
-      if (result.mask_path) cleanupFile(result.mask_path);
+      if (result.mask_path) await cleanupFile(result.mask_path);
 
       // In privacy mode: keep result file. In normal mode: cleanup.
       if (!isPrivacyMode) {
-        cleanupFile(imagePath);
-        cleanupFile(result.path);
+        await cleanupFile(imagePath);
+        await cleanupFile(result.path);
       }
     }
   } catch (e: any) {
@@ -1039,11 +1042,11 @@ export async function handleUndress(ctx: Context): Promise<void> {
 // ============================================================
 // Utility
 // ============================================================
-function cleanupFile(path: string): void {
+async function cleanupFile(path: string): Promise<void> {
   try {
-    if (existsSync(path)) unlinkSync(path);
+    await unlink(path);
   } catch {
-    // ignore
+    // ignore (file may not exist)
   }
 }
 
@@ -1084,7 +1087,7 @@ async function createProcessGif(
     }
     // ffmpeg concat requires last file repeated without duration
     concatContent += `file '${frames[frames.length - 1]}'\n`;
-    writeFileSync(concatPath, concatContent);
+    await writeFile(concatPath, concatContent);
 
     // Generate GIF with ffmpeg: resize to max 480px wide, good quality palette
     const cmd = [
@@ -1095,8 +1098,8 @@ async function createProcessGif(
       gifPath
     ].join(" ");
 
-    execSync(cmd, { timeout: 30000, stdio: "pipe" });
-    cleanupFile(concatPath);
+    await execAsync(cmd, { timeout: 30000 });
+    await cleanupFile(concatPath);
 
     if (existsSync(gifPath)) {
       return gifPath;

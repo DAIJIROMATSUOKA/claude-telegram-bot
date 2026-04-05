@@ -37,6 +37,7 @@ const mockExistsSync = mock((path: string) => {
 });
 
 mock.module("fs", () => ({
+  ...require("fs"),
   readFileSync: mockReadFileSync,
   writeFileSync: mockWriteFileSync,
   existsSync: mockExistsSync,
@@ -84,7 +85,13 @@ import {
   handlePostCommand,
   handleChatsCommand,
   handleChatReply,
+  CHAT_TIMING,
 } from "../claude-chat";
+
+// Override timing for fast tests
+CHAT_TIMING.initialWaitMs = 10;
+CHAT_TIMING.settleMs = 10;
+CHAT_TIMING.pollIntervalMs = 10;
 
 // --- Tests ---
 
@@ -136,13 +143,13 @@ describe("isDefaultTitle / formatTitle (indirect)", () => {
 
     const ctx = makeMockCtx("/chat test message");
     await handleChatCommand(ctx);
-    await new Promise(r => setTimeout(r, 6000));
+    await new Promise(r => setTimeout(r, 200));
 
     const setTitleCall = mockExecAsync.mock.calls.find(
       (call: any) => typeof call[0] === "string" && (call[0] as string).includes("set-title")
     );
     expect(setTitleCall).toBeUndefined();
-  }, 10000);
+  }, 5000);
 
   test("Jarvis title is recognized as default", async () => {
     mockExecResults = {
@@ -154,13 +161,13 @@ describe("isDefaultTitle / formatTitle (indirect)", () => {
 
     const ctx = makeMockCtx("/chat jarvis default");
     await handleChatCommand(ctx);
-    await new Promise(r => setTimeout(r, 6000));
+    await new Promise(r => setTimeout(r, 200));
 
     const setTitleCall = mockExecAsync.mock.calls.find(
       (call: any) => typeof call[0] === "string" && (call[0] as string).includes("set-title")
     );
     expect(setTitleCall).toBeUndefined();
-  }, 10000);
+  }, 5000);
 
   test("formatTitle strips [J-WORKER-N] prefix and - Claude suffix", async () => {
     mockExecResults = {
@@ -174,7 +181,7 @@ describe("isDefaultTitle / formatTitle (indirect)", () => {
 
     const ctx = makeMockCtx("/chat format test");
     await handleChatCommand(ctx);
-    await new Promise(r => setTimeout(r, 6000));
+    await new Promise(r => setTimeout(r, 200));
 
     const setTitleCall = mockExecAsync.mock.calls.find(
       (call: any) => typeof call[0] === "string" && (call[0] as string).includes("set-title")
@@ -186,7 +193,7 @@ describe("isDefaultTitle / formatTitle (indirect)", () => {
       expect(cmd).toContain("My Task");
       expect(cmd).not.toContain("[J-WORKER-1]");
     }
-  }, 10000);
+  }, 5000);
 });
 
 describe("handleChatCommand", () => {
@@ -220,13 +227,13 @@ describe("handleChatCommand", () => {
     const firstCall = ctx.reply.mock.calls[0]![0] as string;
     expect(firstCall).toContain("送信中");
 
-    await new Promise(r => setTimeout(r, 6000));
+    await new Promise(r => setTimeout(r, 200));
 
     const newChatCall = mockExecAsync.mock.calls.find(
       (call: any) => typeof call[0] === "string" && (call[0] as string).includes("new-chat")
     );
     expect(newChatCall).toBeTruthy();
-  }, 10000);
+  }, 5000);
 
   test("saves chat map after creation", async () => {
     mockExecResults = {
@@ -299,10 +306,10 @@ describe("handleChatCommand", () => {
 
     const ctx = makeMockCtx("/chat poll test");
     await handleChatCommand(ctx);
-    await new Promise(r => setTimeout(r, 6000));
+    await new Promise(r => setTimeout(r, 200));
 
     expect(ctx.reply.mock.calls.length).toBeGreaterThanOrEqual(1);
-  }, 10000);
+  }, 5000);
 });
 
 describe("handleChatsCommand", () => {
@@ -555,7 +562,7 @@ describe("reopenAndInject (via handleChatReply NOT_FOUND + convUrl)", () => {
     const createCtx = makeMockCtx("/chat reopen setup");
     await handleChatCommand(createCtx);
     // Wait for fire-and-forget (3s initial + 1.5s settle + overhead)
-    await new Promise(r => setTimeout(r, 6000));
+    await new Promise(r => setTimeout(r, 200));
 
     // After fire-and-forget: status msg (9000) deleted, response msg (9001) in map
     const responseMsgId = 9001;
@@ -574,13 +581,13 @@ describe("reopenAndInject (via handleChatReply NOT_FOUND + convUrl)", () => {
     expect(result).toBe(true);
 
     // Wait for reopen async to complete
-    await new Promise(r => setTimeout(r, 6000));
+    await new Promise(r => setTimeout(r, 200));
 
     const reopenCall = mockExecAsync.mock.calls.find(
       (call: any) => typeof call[0] === "string" && (call[0] as string).includes("reopen-and-inject")
     );
     expect(reopenCall).toBeTruthy();
-  }, 20000);
+  }, 5000);
 });
 
 describe("auto-handoff detection", () => {
@@ -604,13 +611,13 @@ describe("auto-handoff detection", () => {
 
     const ctx = makeMockCtx("/chat auto handoff test");
     await handleChatCommand(ctx);
-    await new Promise(r => setTimeout(r, 8000));
+    await new Promise(r => setTimeout(r, 200));
 
     const detectCall = mockExecAsync.mock.calls.find(
       (call: any) => typeof call[0] === "string" && (call[0] as string).includes("detect")
     );
     expect(detectCall).toBeTruthy();
-  }, 15000);
+  }, 5000);
 
   test("handoff-chat is NOT called when detect returns OK", async () => {
     mockExecResults = {
@@ -625,13 +632,13 @@ describe("auto-handoff detection", () => {
 
     const ctx = makeMockCtx("/chat no handoff test");
     await handleChatCommand(ctx);
-    await new Promise(r => setTimeout(r, 8000));
+    await new Promise(r => setTimeout(r, 200));
 
     const handoffCall = mockExecAsync.mock.calls.find(
       (call: any) => typeof call[0] === "string" && (call[0] as string).includes("handoff-chat")
     );
     expect(handoffCall).toBeUndefined();
-  }, 15000);
+  }, 5000);
 
   test("handoff-chat IS called when detect returns LONG_CHAT", async () => {
     mockExecResults = {
@@ -647,13 +654,13 @@ describe("auto-handoff detection", () => {
 
     const ctx = makeMockCtx("/chat trigger handoff test");
     await handleChatCommand(ctx);
-    await new Promise(r => setTimeout(r, 8000));
+    await new Promise(r => setTimeout(r, 200));
 
     const handoffCall = mockExecAsync.mock.calls.find(
       (call: any) => typeof call[0] === "string" && (call[0] as string).includes("handoff-chat")
     );
     expect(handoffCall).toBeTruthy();
-  }, 15000);
+  }, 5000);
 });
 
 describe("response parsing", () => {
@@ -674,14 +681,14 @@ describe("response parsing", () => {
 
     const ctx = makeMockCtx("/chat no response test");
     await handleChatCommand(ctx);
-    await new Promise(r => setTimeout(r, 6000));
+    await new Promise(r => setTimeout(r, 200));
 
     const replyCalls = ctx.reply.mock.calls;
     const hasTimeout = replyCalls.some(
       (call: any) => typeof call[0] === "string" && (call[0] as string).includes("タイムアウト")
     );
     expect(hasTimeout).toBe(true);
-  }, 10000);
+  }, 5000);
 
   test("ERROR in read-response results in timeout message", async () => {
     mockExecResults = {
@@ -693,14 +700,14 @@ describe("response parsing", () => {
 
     const ctx = makeMockCtx("/chat error response test");
     await handleChatCommand(ctx);
-    await new Promise(r => setTimeout(r, 6000));
+    await new Promise(r => setTimeout(r, 200));
 
     const replyCalls = ctx.reply.mock.calls;
     const hasTimeout = replyCalls.some(
       (call: any) => typeof call[0] === "string" && (call[0] as string).includes("タイムアウト")
     );
     expect(hasTimeout).toBe(true);
-  }, 10000);
+  }, 5000);
 });
 
 describe("chat map persistence", () => {

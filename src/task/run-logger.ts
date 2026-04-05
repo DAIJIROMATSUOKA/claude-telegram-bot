@@ -13,7 +13,7 @@
  *   logger.writeSummary(completionReport);
  */
 
-import { mkdirSync, appendFileSync, writeFileSync, existsSync, readdirSync } from "node:fs";
+import { mkdirSync, appendFileSync, writeFileSync, readFileSync, existsSync, readdirSync } from "node:fs";
 import { loadJsonFile } from "../utils/json-loader";
 import { join } from "node:path";
 

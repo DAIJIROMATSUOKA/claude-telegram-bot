@@ -358,7 +358,7 @@ export async function handleText(ctx: Context): Promise<void> {
     if (memoText) {
       try {
         const { appendMemo } = await import("../services/obsidian-writer");
-        appendMemo(memoText);
+        await appendMemo(memoText);
       } catch (e) { console.error('[Memo] Obsidian write failed:', e); }
     }
     // Brief confirmation, then auto-delete
@@ -374,7 +374,7 @@ export async function handleText(ctx: Context): Promise<void> {
     if (taskText) {
       try {
         const { appendTask } = await import('../services/obsidian-writer');
-        appendTask(taskText);
+        await appendTask(taskText);
       } catch (e) { console.error('[Task] Obsidian write failed:', e); }
     }
     // Brief confirmation, then auto-delete

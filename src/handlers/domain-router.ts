@@ -6,7 +6,7 @@
  * text.tsから呼ばれ、Telegram→専門チャット→応答→Telegram返信を行う。
  */
 
-import { exec } from "child_process";
+import { exec, execSync } from "child_process";
 import { promisify } from "util";
 import type { Context } from "grammy";
 import { DOMAIN_RELAY_TIMEOUT_MS, CMD_TIMEOUT_SHORT_MS } from "../constants";
@@ -32,7 +32,6 @@ const CHAT_ROUTER = `${SCRIPTS_DIR}/chat-router.py`;
  */
 export function quickDomainRoute(text: string): { domain: string; url: string } | null {
   try {
-    const { execSync } = require("child_process");
     const out = execSync(
       `python3 "${CHAT_ROUTER}" route ${JSON.stringify(text)}`,
       { timeout: CMD_TIMEOUT_SHORT_MS, encoding: "utf-8" }

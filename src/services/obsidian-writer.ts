@@ -3,7 +3,8 @@
  * Writes directly to Obsidian vault on M1 filesystem
  */
 
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from "fs";
+import { existsSync, readdirSync } from "fs";
+import { readFile, writeFile, mkdir } from "fs/promises";
 import { join } from "path";
 
 const VAULT_PATH =
@@ -13,7 +14,7 @@ const VAULT_PATH =
 /**
  * Get today's daily note path (JST)
  */
-function getDailyNotePath(): string {
+async function getDailyNotePath(): Promise<string> {
   const now = new Date();
   // JST = UTC+9
   const jst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
@@ -21,18 +22,18 @@ function getDailyNotePath(): string {
   const m = String(jst.getUTCMonth() + 1).padStart(2, "0");
   const d = String(jst.getUTCDate()).padStart(2, "0");
   const dir = join(VAULT_PATH, String(y), m);
-  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+  if (!existsSync(dir)) await mkdir(dir, { recursive: true });
   return join(dir, `${y}-${m}-${d}.md`);
 }
 
 /**
  * Ensure daily note exists with section headers
  */
-function ensureDailyNote(path: string): void {
+async function ensureDailyNote(path: string): Promise<void> {
   if (!existsSync(path)) {
     const date = path.split("/").pop()?.replace(".md", "") || "";
     const template = `# ${date}\n\n## 🎙 Voice Inbox\n\n## 📋 Tasks\n\n## 📰 News\n`;
-    writeFileSync(path, template, "utf-8");
+    await writeFile(path, template, "utf-8");
     console.log(`[Obsidian] Created daily note: ${path}`);
   }
 }
@@ -40,10 +41,10 @@ function ensureDailyNote(path: string): void {
 /**
  * Append content to a specific section in the daily note
  */
-function appendToSection(path: string, section: string, content: string): void {
-  ensureDailyNote(path);
+async function appendToSection(path: string, section: string, content: string): Promise<void> {
+  await ensureDailyNote(path);
 
-  let note = readFileSync(path, "utf-8");
+  let note = await readFile(path, "utf-8");
   const sectionHeader = `## ${section}`;
   const idx = note.indexOf(sectionHeader);
 
@@ -60,7 +61,7 @@ function appendToSection(path: string, section: string, content: string): void {
     note = note.substring(0, insertAt) + `\n${content}` + note.substring(insertAt);
   }
 
-  writeFileSync(path, note, "utf-8");
+  await writeFile(path, note, "utf-8");
 }
 
 /**
@@ -94,10 +95,10 @@ export async function archiveToObsidian(
  */
 export async function appendNews(title: string, summary: string, url?: string): Promise<void> {
   try {
-    const path = getDailyNotePath();
+    const path = await getDailyNotePath();
     const link = url ? ` [→](${url})` : "";
     const entry = `- **${title}**${link}\n  ${summary}`;
-    appendToSection(path, "📰 News", entry);
+    await appendToSection(path, "📰 News", entry);
   } catch (error) {
     console.error("[Obsidian] News append error:", error);
   }
@@ -106,7 +107,7 @@ export async function appendNews(title: string, summary: string, url?: string): 
 /**
  * Append memo to daily note (from Telegram 。command)
  */
-export function appendMemo(text: string): void {
+export async function appendMemo(text: string): Promise<void> {
   try {
     const now = new Date();
     const jst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
@@ -116,10 +117,10 @@ export function appendMemo(text: string): void {
     const path = join(VAULT_PATH, String(y), m, `${y}-${m}-${d}.md`);
     // Ensure directory exists
     const dir = join(VAULT_PATH, String(y), m);
-    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+    if (!existsSync(dir)) await mkdir(dir, { recursive: true });
     const time = jst.toISOString().substring(11, 16);
     const entry = `- ${time} ${text}`;
-    appendToSection(path, "📝 メモ", entry);
+    await appendToSection(path, "📝 メモ", entry);
     console.log(`[Obsidian] Memo: ${text.substring(0, 50)}`);
   } catch (error) {
     console.error('[Obsidian] Memo error:', error);
@@ -129,14 +130,14 @@ export function appendMemo(text: string): void {
 /**
  * Append task to daily note (from Telegram 、command)
  */
-export function appendTask(text: string): void {
+export async function appendTask(text: string): Promise<void> {
   try {
-    const path = getDailyNotePath();
+    const path = await getDailyNotePath();
     const now = new Date();
     const jst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
     const time = jst.toISOString().substring(11, 16);
     const entry = `- [ ] ${time} ${text}`;
-    appendToSection(path, '📋 Tasks', entry);
+    await appendToSection(path, '📋 Tasks', entry);
     console.log(`[Obsidian] Task: ${text.substring(0, 50)}`);
   } catch (error) {
     console.error('[Obsidian] Task error:', error);
@@ -162,7 +163,7 @@ export function detectProjectNumbers(text: string): string[] {
  */
 function findProjectNote(projectNum: string): string | null {
   if (!existsSync(WORK_DIR)) return null;
-  const files = require("fs").readdirSync(WORK_DIR) as string[];
+  const files = readdirSync(WORK_DIR) as string[];
   const match = files.find((f: string) => f.startsWith(projectNum) && f.endsWith(".md"));
   return match ? join(WORK_DIR, match) : null;
 }
@@ -170,8 +171,8 @@ function findProjectNote(projectNum: string): string | null {
 /**
  * Create a new project note from template
  */
-function createProjectNote(projectNum: string, contextHint: string): string {
-  if (!existsSync(WORK_DIR)) mkdirSync(WORK_DIR, { recursive: true });
+async function createProjectNote(projectNum: string, contextHint: string): Promise<string> {
+  if (!existsSync(WORK_DIR)) await mkdir(WORK_DIR, { recursive: true });
   
   // Try to extract client name from context (e.g. "M1318_2026/03/10" or surrounding text)
   let clientHint = "";
@@ -213,7 +214,7 @@ tags:
 - ${dateStr} 案件ノート自動作成（Telegram検出）
 `;
   
-  writeFileSync(filePath, template, "utf-8");
+  await writeFile(filePath, template, "utf-8");
   console.log(`[Obsidian] Created project note: ${fileName}`);
   return filePath;
 }
@@ -247,12 +248,12 @@ export async function routeToProjectNotes(
         let isNew = false;
         
         if (!notePath) {
-          notePath = createProjectNote(pNum, content);
+          notePath = await createProjectNote(pNum, content);
           isNew = true;
         }
         
         // Append to log section
-        let note = readFileSync(notePath, "utf-8");
+        let note = await readFile(notePath, "utf-8");
         const logIdx = note.indexOf("## ログ");
         if (logIdx !== -1) {
           const nextSection = note.indexOf("\n## ", logIdx + 5);
@@ -261,7 +262,7 @@ export async function routeToProjectNotes(
         } else {
           note += "\n## ログ\n" + entry + "\n";
         }
-        writeFileSync(notePath, note, "utf-8");
+        await writeFile(notePath, note, "utf-8");
         
         if (isNew) {
           routed.push(`NEW:${pNum}`);

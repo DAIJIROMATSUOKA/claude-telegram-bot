@@ -10,6 +10,7 @@
 
 import { exec } from 'child_process';
 import { writeFileSync as bwSync } from 'fs';
+import { loadJsonFile } from '../utils/json-loader';
 import { promisify } from 'util';
 import type { Context } from 'grammy';
 import { escapeHtml } from '../formatting';
@@ -88,8 +89,7 @@ setInterval(() => {
 function isProjectTab(wt: string): boolean {
   try {
     const mapPath = `${process.env.HOME}/.croppy-project-tabs.json`;
-    const { loadJsonFile: loadJson } = require('../utils/json-loader');
-    const map = loadJson(mapPath, {});
+    const map = loadJsonFile(mapPath, {});
     return Object.values(map).some((v: any) => typeof v === 'string' && v.includes(`|${wt}`));
   } catch { return false; }
 }
