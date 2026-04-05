@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+# Self-detach: new session to survive terminal close/SIGHUP
+if [ -z "$BATCH_SETSID" ]; then
+  export BATCH_SETSID=1
+  python3 -c 'import os,subprocess,sys; os.setsid(); subprocess.Popen(["/bin/bash"]+sys.argv[1:], stdin=subprocess.DEVNULL)' "$0" "$@"
+  echo "BATCH launched (detached)"
+  exit 0
+fi
 # batch-runner-v4.sh — Batch runner with sequential + Agent Teams parallel modes
 # Usage:
 #   batch-runner-v4.sh <prompt-directory>              # sequential (v3 compat)
