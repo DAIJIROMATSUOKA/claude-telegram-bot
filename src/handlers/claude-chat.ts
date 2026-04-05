@@ -1,9 +1,6 @@
-import { exec } from "child_process";
-import { promisify } from "util";
 import { readFileSync, writeFileSync, existsSync } from "fs";
 import type { Context } from "grammy";
-
-const execAsync = promisify(exec);
+import { execAsync } from "../utils/exec-async";
 
 const HOME = process.env.HOME || "/Users/daijiromatsuokam1";
 const SCRIPTS_DIR = `${HOME}/claude-telegram-bot/scripts`;

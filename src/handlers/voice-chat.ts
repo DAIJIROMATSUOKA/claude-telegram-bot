@@ -5,14 +5,11 @@
  * Rollback: remove import+registration from index.ts, delete this file
  */
 
-import { exec } from 'child_process';
-import { promisify } from 'util';
 import { writeFileSync, unlinkSync } from 'fs';
 import type { Context } from 'grammy';
 import { startTypingIndicator } from '../utils';
 import { fetchWithTimeout } from '../utils/fetch-with-timeout';
-
-const execAsync = promisify(exec);
+import { execAsync } from '../utils/exec-async';
 
 const WHISPER_CLI = '/opt/homebrew/bin/whisper-cli';
 const WHISPER_MODEL = `${process.env.HOME}/whisper-models/ggml-base.bin`;

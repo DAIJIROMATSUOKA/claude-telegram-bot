@@ -6,7 +6,8 @@
   "scripts": {
     "start": "bun run src/index.ts",
     "dev": "bun --watch run src/index.ts",
-    "typecheck": "bun run --bun tsc --noEmit"
+    "typecheck": "bun run --bun tsc --noEmit",
+    "test": "bun test src/tests/ src/task/ src/utils/ src/handlers/commands.test.ts src/handlers/callback.test.ts src/handlers/ai-router.test.ts src/handlers/code-command.test.ts src/handlers/__tests__/text.test.ts src/services/__tests__/jarvis-memory.test.ts && bun test src/handlers/__tests__/inbox.test.ts src/handlers/__tests__/claude-chat.test.ts src/handlers/__tests__/voice-chat.test.ts src/services/__tests__/inbox-triage.test.ts"
   },
   "devDependencies": {
     "@types/bun": "latest",

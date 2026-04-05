@@ -1,0 +1,3 @@
+[test]
+# Run each test file in its own process to prevent mock.module() leaks
+isolate = true
