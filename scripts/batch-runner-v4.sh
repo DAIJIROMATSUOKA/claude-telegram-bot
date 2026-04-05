@@ -2,7 +2,7 @@
 # Self-detach: new session to survive terminal close/SIGHUP
 if [ -z "$BATCH_SETSID" ]; then
   export BATCH_SETSID=1
-  python3 -c 'import os,subprocess,sys; os.setsid(); subprocess.Popen(["/bin/bash"]+sys.argv[1:], stdin=subprocess.DEVNULL)' "$0" "$@"
+  python3 -c 'import subprocess,sys; subprocess.Popen(["/bin/bash"]+sys.argv[1:], stdin=subprocess.DEVNULL, start_new_session=True)' "$0" "$@"
   echo "BATCH launched (detached)"
   exit 0
 fi
