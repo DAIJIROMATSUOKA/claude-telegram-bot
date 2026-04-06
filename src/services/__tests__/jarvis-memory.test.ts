@@ -2,7 +2,7 @@ import { describe, test, expect, mock, beforeEach } from "bun:test";
 
 // --- Mocks (before importing module under test) ---
 
-const mockCallMemoryGateway = mock(() =>
+const mockCallMemoryGateway = mock<(_path: string, _method: string, _body: any) => Promise<any>>(() =>
   Promise.resolve({ data: { results: [], meta: { changes: 0 } } })
 );
 
@@ -156,8 +156,8 @@ describe("getProfileFull", () => {
     );
     const result = await getProfileFull();
     expect(result).toEqual(rows);
-    expect(result[0].source).toBe("manual");
-    expect(result[0].category).toBe("identity");
+    expect(result[0]!.source).toBe("manual");
+    expect(result[0]!.category).toBe("identity");
   });
 
   test("returns empty array on error", async () => {

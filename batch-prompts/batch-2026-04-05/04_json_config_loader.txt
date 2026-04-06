@@ -1,0 +1,8 @@
+Find all instances of JSON.parse(readFileSync(...)) pattern in the codebase.
+Create a utility function in src/utils/config-loader.ts that handles:
+- Reading JSON files with proper error handling
+- UTF-8 BOM stripping
+- Caching loaded configs
+- Type-safe generic return type
+Replace all instances (there should be ~16) with the new utility.
+Run existing tests to verify nothing breaks. Commit with message 'refactor: centralize JSON config loading'.

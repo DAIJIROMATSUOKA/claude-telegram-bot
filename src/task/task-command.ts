@@ -55,7 +55,7 @@ export async function handleTaskCommand(ctx: Context): Promise<void> {
 
   // Validate JSON content
   try {
-    const plan = loadConfig(planPath);
+    const plan = loadConfig<{ micro_tasks?: unknown[]; [key: string]: unknown }>(planPath);
     if (!plan.micro_tasks || !Array.isArray(plan.micro_tasks)) {
       await ctx.reply("❌ TaskPlan JSONにmicro_tasksがありません");
       return;

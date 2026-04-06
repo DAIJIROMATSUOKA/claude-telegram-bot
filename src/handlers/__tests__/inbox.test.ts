@@ -4,7 +4,7 @@ import { describe, test, expect, mock, beforeEach } from "bun:test";
 // Mocks — must be declared before importing module under test
 // ============================================================
 
-const mockGatewayQuery = mock(() => Promise.resolve({ results: [] }));
+const mockGatewayQuery = mock<() => Promise<any>>(() => Promise.resolve({ results: [] }));
 mock.module("../../services/gateway-db", () => ({
   gatewayQuery: mockGatewayQuery,
 }));

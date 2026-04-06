@@ -1,0 +1,4 @@
+Add comprehensive tests for src/services/jarvis-memory.ts.
+Mock the gateway HTTP calls. Test CRUD operations, error handling, and data transformation.
+Create tests in tests/services/jarvis-memory.test.ts. Use bun test.
+Run tests to verify they pass. Commit with message 'test: add jarvis-memory.ts tests'.

@@ -1,0 +1,5 @@
+Convert the top 50 most impactful synchronous I/O calls to async equivalents.
+Focus on: readFileSync -> readFile, writeFileSync -> writeFile, execSync -> exec (with promisify).
+Skip test files. Prioritize hot paths (handlers, services).
+Run all tests after each batch of changes to ensure nothing breaks.
+Commit with message 'refactor: convert top 50 sync I/O to async'.

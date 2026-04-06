@@ -1,0 +1,7 @@
+Split the large callback handler in src/handlers/inbox.ts.
+The file is 898 lines. Extract:
+- Triage callback handling → src/handlers/inbox-triage-callbacks.ts
+- Gmail action callbacks → src/handlers/inbox-gmail-callbacks.ts
+- LINE action callbacks → src/handlers/inbox-line-callbacks.ts
+Keep src/handlers/inbox.ts as the router that delegates to the extracted modules.
+Update imports. Run tests. Commit with message 'refactor: split inbox.ts callback handlers'.

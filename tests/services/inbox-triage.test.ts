@@ -4,7 +4,7 @@ import { describe, test, expect, mock, beforeEach, afterAll } from "bun:test";
 // Mocks — must be declared BEFORE importing module under test
 // ============================================================
 
-const mockExecAsync = mock(() =>
+const mockExecAsync = mock((_cmd?: any, _opts?: any) =>
   Promise.resolve({ stdout: "", stderr: "" })
 );
 
@@ -21,7 +21,7 @@ mock.module("util", () => ({
   promisify: () => mockExecAsync,
 }));
 
-let mockExistsSync = mock(() => false);
+let mockExistsSync = mock((_path?: any) => false);
 mock.module("fs", () => ({
   ...require("fs"),
   existsSync: (...args: any[]) => mockExistsSync(...args),
@@ -46,14 +46,14 @@ mock.module("../../src/utils/retry", () => ({
 
 // Global fetch mock
 const originalFetch = globalThis.fetch;
-const mockFetch = mock(() =>
+const mockFetch = mock((_url?: any) =>
   Promise.resolve({
     ok: true,
     json: () => Promise.resolve({ ok: true, items: [] }),
     text: () => Promise.resolve('{"ok":true}'),
   } as any)
 );
-globalThis.fetch = mockFetch;
+globalThis.fetch = mockFetch as unknown as typeof fetch;
 
 // ============================================================
 // Import module under test
@@ -386,12 +386,12 @@ describe("Batch queue with 3s debounce", () => {
     const answerCb = mock(() => Promise.resolve());
 
     await handleTriageCallback(makeCallbackQuery("triage:ok:item-c1"), answerCb);
-    expect(answerCb.mock.calls[0][0]).toEqual(
+    expect((answerCb.mock.calls[0] as any[])[0]).toEqual(
       expect.objectContaining({ text: expect.stringContaining("1件") })
     );
 
     await handleTriageCallback(makeCallbackQuery("triage:ok:item-c2"), answerCb);
-    expect(answerCb.mock.calls[1][0]).toEqual(
+    expect((answerCb.mock.calls[1] as any[])[0]).toEqual(
       expect.objectContaining({ text: expect.stringContaining("2件") })
     );
     stopInboxTriage();
@@ -699,7 +699,7 @@ describe("Error handling", () => {
 
   test("GAS HTTP error is logged but does not throw", async () => {
     mockFetchWithTimeout.mockImplementation(() =>
-      Promise.resolve({ ok: false, status: 500, statusText: "Internal Server Error" })
+      Promise.resolve({ ok: false, status: 500, statusText: "Internal Server Error" } as any)
     );
     const bot = makeMockBot();
     startInboxTriage(bot, 200);
@@ -842,7 +842,7 @@ describe("reportResult and reportFeedback", () => {
       String(c[0]).includes("/v1/inbox/feedback")
     );
     if (feedbackCalls.length > 0) {
-      const body = JSON.parse(feedbackCalls[0][1]?.body);
+      const body = JSON.parse((feedbackCalls[0] as any[])[1]?.body);
       expect(body.feedback).toBe("rejected");
     }
     stopInboxTriage();
@@ -878,7 +878,7 @@ describe("buildOpenButton for different sources", () => {
     });
     const phoneMatch = (item.sender_name + " " + item.body).match(/(\+?\d[\d-]{8,})/);
     expect(phoneMatch).not.toBeNull();
-    const num = phoneMatch![1].replace(/-/g, "");
+    const num = phoneMatch![1]!.replace(/-/g, "");
     expect(num).toBe("09012345678");
   });
 

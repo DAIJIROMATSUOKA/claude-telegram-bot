@@ -1,0 +1,8 @@
+Split src/handlers/media-commands.ts (1126 lines) into smaller modules.
+Create these files under src/handlers/media/:
+- image-handler.ts (image generation/editing commands)
+- voice-handler.ts (voice/audio commands)  
+- file-handler.ts (file upload/download commands)
+- index.ts (re-exports all handlers)
+Update imports in src/index.ts and any other files that import from media-commands.ts.
+Run tests after. Commit with message 'refactor: split media-commands.ts into modules'.

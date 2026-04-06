@@ -1,0 +1,19 @@
+IMPORTANT: Before starting, run WebSearch for "Claude Code agent teams headless -p parallel worktree" to understand limitations.
+
+Investigate why Agent Teams --parallel mode produced 0 commits despite running for 1.5 hours with 4 worktrees created.
+
+Steps:
+1. Check .claude/teams/ for any leftover team configs or logs
+2. Check git worktree list for orphaned worktrees
+3. Review batch-runner-v4.sh --parallel mode prompt construction
+4. Test a MINIMAL agent teams prompt: just 2 simple read-only tasks (e.g., count lines in 2 files)
+5. If that works, test 2 write tasks (create 2 small test files, commit each)
+6. Document findings in docs/agent-teams-investigation.md
+
+Key hypotheses to test:
+- Does -p mode support spawning teammates? (maybe only interactive)
+- Does the composite prompt format confuse the team lead?
+- Do worktree conflicts prevent commits?
+
+Do NOT make production code changes. This is investigation only.
+Commit docs with message 'docs: agent teams parallel investigation findings'.

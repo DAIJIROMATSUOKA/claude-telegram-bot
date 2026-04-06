@@ -1,0 +1,14 @@
+IMPORTANT: Before fixing anything, run WebSearch to check best practices for bun test mocking and mock.module() cross-file contamination.
+
+Analyze and fix failing tests in this codebase.
+Run `bun test 2>&1 | tail -50` to identify failures.
+
+Common issues to check:
+- mock.module() contamination between test files (each test must be isolated)
+- Tests referencing removed/renamed functions after refactoring
+- Async tests missing await
+- Import paths changed by recent refactoring (media-commands split, inbox callback split)
+
+Fix test files to match current source. Do NOT change source code.
+Run tests after each fix. Target: reduce failures to under 30.
+Commit with message 'fix: reduce test failures to <N> (batch auto-fix)'.

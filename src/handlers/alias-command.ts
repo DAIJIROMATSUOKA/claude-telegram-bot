@@ -94,7 +94,7 @@ export async function resolveAlias(message: string): Promise<string | null> {
   const match = message.match(/^\/([a-z0-9_]+)(\s+.*)?$/i);
   if (!match) return null;
 
-  const name = match[1].toLowerCase();
+  const name = match[1]!.toLowerCase();
   const rest = match[2]?.trim() || "";
 
   try {

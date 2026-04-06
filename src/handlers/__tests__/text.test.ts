@@ -156,8 +156,8 @@ mock.module("../inbox", () => ({
   handleInboxCallback: mock(() => Promise.resolve(false)),
 }));
 
-const mockRelayDomain = mock((_domain: string, _msg: string, _onProgress?: any) => Promise.resolve("domain response"));
-const mockGetLock = mock((_domain: string) => null);
+const mockRelayDomain = mock((_domain: string, _msg: string, _onProgress?: any): Promise<string | null> => Promise.resolve("domain response"));
+const mockGetLock = mock((_domain: string): null | { type: string; since: number } => null);
 const mockGetBufferCount = mock((_domain: string) => 0);
 mock.module("../../services/domain-buffer", () => ({
   relayDomain: mockRelayDomain,
@@ -321,7 +321,7 @@ describe("handleText", () => {
       const ctx = makeMockCtx({ text: "hello world" });
       await handleText(ctx);
       expect(mockDispatchToWorker).toHaveBeenCalled();
-      expect(mockDispatchToWorker.mock.calls[0][1]).toBe("hello world");
+      expect((mockDispatchToWorker.mock.calls[0] as any[])[1]).toBe("hello world");
     });
 
     test("routes to AI session when active session exists", async () => {

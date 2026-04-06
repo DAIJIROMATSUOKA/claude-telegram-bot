@@ -78,7 +78,7 @@ function flush(key: string, sendFn: SendFn): void {
 
   let combined: string;
   if (items.length === 1) {
-    combined = items[0];
+    combined = items[0]!;
   } else {
     const header = `📦 通知まとめ (${items.length}件)${tag !== "default" ? ` [${tag}]` : ""}`;
     const bullets = items.map((t) => `• ${t}`).join("\n");

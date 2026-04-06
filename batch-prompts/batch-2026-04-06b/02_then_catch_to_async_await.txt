@@ -1,0 +1,19 @@
+IMPORTANT: Before starting, run WebSearch to check TypeScript async/await best practices and common .then/.catch to async/await migration pitfalls.
+
+Convert .then/.catch patterns to async/await in src/ (skip test files and node_modules).
+There are approximately 106 instances.
+
+Rules:
+- Convert .then(x => ...).catch(e => ...) to try/await/catch
+- Keep fire-and-forget patterns as .catch(() => {}) when intentional (e.g., deleteMessage)
+- Make parent functions async if not already
+- Do NOT change behavior, only syntax
+- Run tests after every 10-15 conversions
+
+Process in batches by directory:
+1. src/handlers/ (largest)
+2. src/services/
+3. src/task/
+4. Remaining files
+
+Commit each directory batch separately with message 'refactor: .then/.catch to async/await in <dir>'.

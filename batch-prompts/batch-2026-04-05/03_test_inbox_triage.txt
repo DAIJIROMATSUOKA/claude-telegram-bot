@@ -1,0 +1,4 @@
+Add comprehensive tests for src/services/inbox-triage.ts.
+Mock external API calls (GAS, gateway). Test classification logic, auto-approve timer, undo flow.
+Create tests in tests/services/inbox-triage.test.ts. Use bun test.
+Run tests to verify they pass. Commit with message 'test: add inbox-triage.ts tests'.

@@ -1,0 +1,6 @@
+Analyze and fix failing tests in this codebase.
+Run `bun test 2>&1 | tail -30` to see which tests fail.
+Fix the test files (not the source code) to match the current source behavior.
+If a test is testing removed/changed functionality, update or remove it.
+Run tests after each fix to verify. Target: reduce failures to under 50.
+Commit with message 'fix: reduce test failures (batch auto-fix)'.

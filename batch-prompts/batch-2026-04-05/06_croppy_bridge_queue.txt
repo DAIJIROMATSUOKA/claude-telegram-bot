@@ -1,0 +1,7 @@
+Implement the task queue TODO at approximately line 276 in src/services/croppy-bridge.ts.
+Look for TODO comments about task queuing. Implement a simple in-memory queue that:
+- Queues incoming tasks when bridge is busy
+- Processes queue FIFO when bridge becomes available
+- Has a max queue size (10)
+- Drops oldest when full
+Run tests. Commit with message 'feat: implement croppy-bridge task queue'.

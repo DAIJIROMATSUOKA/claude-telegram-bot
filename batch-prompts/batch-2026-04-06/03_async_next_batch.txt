@@ -1,0 +1,8 @@
+Continue converting synchronous I/O to async in these files (skip files already converted):
+- src/session.ts (~795 lines, likely has readFileSync/writeFileSync)
+- src/handlers/orchestrator-chrome.ts (~858 lines, likely has execSync)
+- src/handlers/inbox.ts (~898 lines)
+- src/handlers/ai-router.ts (~752 lines)
+Convert readFileSync→readFile, writeFileSync→writeFile, execSync→execAsync.
+Make affected functions async, update callers with await.
+Run tests after each file. Commit with message 'refactor: convert sync I/O to async (batch 2)'.

@@ -45,7 +45,7 @@ export async function handleInboxCallback(ctx: Context): Promise<boolean> {
     return true;
   }
 
-  const action = parts[1];
+  const action = parts[1] as string;
   const sourceId = parts.slice(2).join(":"); // gmail_id might contain colons
   const msgId = ctx.callbackQuery?.message?.message_id;
   const chatId = ctx.chat?.id;

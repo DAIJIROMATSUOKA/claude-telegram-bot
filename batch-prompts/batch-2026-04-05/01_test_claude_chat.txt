@@ -1,0 +1,4 @@
+Add comprehensive tests for src/services/claude-chat.ts.
+Mock subprocess calls (execSync/spawn). Test routing logic, error handling, and response parsing.
+Create tests in tests/services/claude-chat.test.ts. Use bun test.
+Run tests to verify they pass. Commit with message 'test: add claude-chat.ts tests'.

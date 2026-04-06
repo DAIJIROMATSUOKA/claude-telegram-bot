@@ -1,0 +1,8 @@
+Find scattered magic strings and constants across these files:
+- src/services/media-commands.ts
+- src/services/jarvis-memory.ts
+- src/services/croppy-bridge.ts
+- src/services/orchestrator-chrome.ts
+- src/services/memory-gc.ts
+Extract them into src/config/constants.ts with proper exports.
+Update all imports. Run tests. Commit with message 'refactor: centralize constants into config.ts'.

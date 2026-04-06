@@ -38,7 +38,7 @@ describe("gatewayQuery", () => {
     expect(result).not.toBeNull();
     expect(result!.results).toEqual([{ id: 1 }]);
     expect(mockFetch).toHaveBeenCalledTimes(1);
-    const callArgs = mockFetch.mock.calls[0]!;
+    const callArgs = mockFetch.mock.calls[0]! as any[];
     expect(callArgs[0]).toContain("/v1/db/query");
     const body = JSON.parse((callArgs[1] as any).body);
     expect(body.sql).toBe("SELECT * FROM users WHERE id = ?");
@@ -121,7 +121,7 @@ describe("gatewayQuery", () => {
 
   test("sends correct headers including API key", async () => {
     await gatewayQuery("SELECT 1");
-    const callArgs = mockFetch.mock.calls[0]!;
+    const callArgs = mockFetch.mock.calls[0]! as any[];
     const opts = callArgs[1] as any;
     expect(opts.method).toBe("POST");
     expect(opts.headers["Content-Type"]).toBe("application/json");

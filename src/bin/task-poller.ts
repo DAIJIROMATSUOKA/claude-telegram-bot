@@ -12,7 +12,7 @@
 
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import { readFileSync, unlinkSync, existsSync } from 'fs';
+import { readFileSync, unlinkSync, existsSync, readdirSync } from 'fs';
 import { readFile, writeFile, rename } from 'fs/promises';
 
 const execAsync = promisify(exec);

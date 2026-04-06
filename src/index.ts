@@ -470,7 +470,7 @@ async function gracefulShutdown(signal: string): Promise<void> {
   console.log(`[Shutdown] ${signal} received — stopping gracefully`);
 
   // Stop accepting new messages
-  try { runner.abort(); } catch {}
+  try { await runner.stop(); } catch {}
 
   // Wait up to 10s for in-flight handlers
   const deadline = Date.now() + 10_000;
