@@ -217,76 +217,11 @@ print(f'\n---\n📨 HANDOFF中にDJから届いたメッセージ ({len(entries)
 fi
 
 # --- Step 6: Save to handoffs directory ---
-# --- Step 5.5: Validate REMAINING section (仕組み化 — 不完全な引き継ぎを物理的に防止) ---
-VALIDATION=$(python3 -c "
-import sys, re
-text = open('$SUMMARY_FILE').read()
-lines = text.split('\n')
-in_remaining = False
-items = []
-numbered_items = set()
-for line in lines:
-    if line.strip().startswith('## REMAINING'):
-        in_remaining = True
-        continue
-    if in_remaining and line.strip().startswith('## '):
-        break
-    if in_remaining and line.strip().startswith('- '):
-        items.append(line.strip())
-    elif in_remaining and line.strip() and re.match(r'^\d+\.\s+', line.strip()):
-        items.append(line.strip())
-        numbered_items.add(line.strip())
-
-warnings = []
-
-# Check: empty REMAINING
-if not items:
-    warnings.append('  NO_REMAINING: REMAININGセクションが空です。本当に全タスク完了ですか？')
-
-for item in items:
-    # Check: too short (< 10 chars total = not actionable)
-    if len(item) < 10:
-        warnings.append(f'  TOO_SHORT: {item}  ← 詳細が不足しています')
-        continue
-
-    # Check: bare number + description (e.g., '1. git push') — lacks state context
-    if item in numbered_items:
-        warnings.append(f'  NO_CONTEXT: {item}  ← 現在の状態(完了/未着手/ブロック中)と次アクションを含めてください')
-
-    if len(item) < 30:
-        warnings.append(f'  SHORT: {item}')
-    if not any(kw in item.lower() for kw in ['script', 'file', 'cmd', 'api', 'url', 'path', '/', 'exec', 'bash', 'python', 'commit', 'pr', 'deploy', 'test', 'verify', 'check', 'run', 'status', 'pending', 'done', 'fail', 'ok', 'error', 'waiting', 'running', 'blocked']):
-        warnings.append(f'  NO_HOW: {item}')
-
-# Check COMPRESSED for E: entries without boundary conditions
-compressed_section = []
-in_compressed = False
-for line in lines:
-    if line.strip().startswith('## COMPRESSED'):
-        in_compressed = True
-        continue
-    if in_compressed and line.strip().startswith('## '):
-        break
-    if in_compressed:
-        compressed_section.append(line.strip())
-
-error_entries = [l for l in compressed_section if l.startswith('E:')]
-for entry in error_entries:
-    has_boundary = any(kw in entry.lower() for kw in ['ok', 'ng', 'works', 'fails', 'when', '<', '>', 'char', 'byte', 'line', 'short', 'long'])
-    if not has_boundary:
-        warnings.append(f'  NO_BOUNDARY: {entry}  ← 動作/不動作の境界条件を含めてください')
-
-if warnings:
-    print('⚠️ REMAINING items lack detail (what/how/status):')
-    for w in warnings:
-        print(w)
-    print('次セッションが自力で判断できるよう、各項目にスクリプト名・現在の状態・境界条件を含めてください。')
-else:
-    print('OK')
-" 2>/dev/null)
+# --- Step 5.5: Validate handoff quality (仕組み化 — 3要素チェック: 現状・次アクション・完了条件) ---
+VALIDATION=$(python3 "$SCRIPTS_DIR/validate-handoff.py" "$SUMMARY_FILE" 2>/dev/null || echo "VALIDATION_ERROR")
 
 if [ "$VALIDATION" != "OK" ]; then
-  log "WARNING: REMAINING validation failed"
+  log "WARNING: Handoff quality check failed"
   # Inject warning into handoff file
   {
     echo ""
