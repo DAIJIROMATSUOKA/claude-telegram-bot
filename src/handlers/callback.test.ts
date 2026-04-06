@@ -32,10 +32,6 @@ mock.module("./streaming", () => ({
   createStatusCallback: mock(() => mock(() => {})),
 }));
 
-mock.module("./inbox", () => ({
-  handleInboxCallback: mock(() => Promise.resolve(false)),
-}));
-
 mock.module("../services/inbox-triage", () => ({
   handleTriageCallback: mock(() => Promise.resolve(false)),
 }));
