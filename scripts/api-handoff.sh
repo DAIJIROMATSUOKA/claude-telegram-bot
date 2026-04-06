@@ -171,19 +171,45 @@ log "URL switched: $NEW_URL"
 # --- Step 4: Rename old chat (use OLD name + _archived) ---
 OLD_CHAT_ID=$(echo "$DOMAIN_URL" | grep -o '[0-9a-f-]\{36\}$')
 if [ -n "$OLD_CHAT_ID" ]; then
-  # Get old chat's current name from chatlog state (local file, no API call needed)
+  # Get old chat's current name (chatlog state → API fallback)
   OLD_CHAT_NAME=$(python3 -c "
-import json, os
+import json, os, re, sys, urllib.request
+chat_id = '$OLD_CHAT_ID'
+title = ''
+# Method 1: chatlog state (local, fast)
 try:
     state = json.load(open(os.path.expanduser('~/.claude-chatlog-state.json')))
-    entry = state.get('$OLD_CHAT_ID', {})
+    entry = state.get(chat_id, {})
     title = entry.get('title', '')
-    # Strip date prefix if present (e.g. '2026-04-03_1602_' -> keep rest)
-    import re
+except Exception as e:
+    print(f'chatlog-state error: {e}', file=sys.stderr)
+# Method 2: API fallback
+if not title:
+    try:
+        cfg = json.load(open(os.path.expanduser('~/.claude-chatlog-config.json')))
+        sk, org = cfg['session_key'], cfg['org_id']
+        url = f'https://claude.ai/api/organizations/{org}/chat_conversations/{chat_id}'
+        req = urllib.request.Request(url, headers={
+            'Cookie': f'sessionKey={sk}',
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+            'Accept': 'application/json',
+            'Referer': 'https://claude.ai/',
+            'Origin': 'https://claude.ai',
+            'Content-Type': 'application/json',
+            'anthropic-client-sha': 'unknown',
+            'anthropic-client-platform': 'web',
+        })
+        resp = urllib.request.urlopen(req)
+        data = json.loads(resp.read())
+        title = data.get('name', '')
+    except Exception as e:
+        print(f'API fallback error: {e}', file=sys.stderr)
+# Strip date prefix and _archived suffix
+if title:
     m = re.match(r'^\d{4}-\d{2}-\d{2}_\d{4}_(.+)', title)
     if m: title = m.group(1)
-    print(title)
-except: pass
+    title = re.sub(r'_archived$', '', title)
+print(title)
 " 2>/dev/null)
   if [ -n "$OLD_CHAT_NAME" ]; then
     ARCHIVED_NAME="${OLD_CHAT_NAME}_archived"
