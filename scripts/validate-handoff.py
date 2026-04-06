@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
-"""Handoff quality validation - 3-element check per REMAINING item.
-Elements: 現状(status), 次アクション(next action), 完了条件(done criteria)
+"""Handoff quality validation v2 — stricter 3-element check.
+Each REMAINING item must contain:
+  1. 現状 (what's broken/blocked, concrete status)
+  2. 次アクション (specific command/script/step, not "対応予定")
+  3. 完了条件 (measurable done-when)
+
 Usage: python3 validate-handoff.py <summary-file>
 """
 import sys, re
@@ -13,7 +17,9 @@ text = open(sys.argv[1]).read()
 lines = text.split("\n")
 warnings = []
 
-# === REMAINING validation ===
+# ============================================================
+# REMAINING validation
+# ============================================================
 in_remaining = False
 items = []
 for line in lines:
@@ -29,51 +35,85 @@ for line in lines:
 if not items:
     warnings.append("NO_REMAINING: REMAININGセクションが空。本当に全タスク完了？")
 
-STATUS_KWS = [
+# --- Keyword sets ---
+# Status: must describe WHAT is happening, not just label
+STATUS_CONCRETE = [
     "完了", "未着手", "ブロック", "pending", "done", "fail", "error",
     "ok", "ng", "running", "waiting", "blocked", "稼働", "壊れ",
     "動かない", "未実装", "済み", "途中", "wip", "live", "broken",
     "不具合", "bug", "成功", "失敗", "未テスト", "untested",
+    "件", "箇所", "%", "個",  # quantifiers indicate concrete status
 ]
-ACTION_KWS = [
-    "実行", "deploy", "commit", "push", "run", "test", "verify",
-    "check", "bash", "python", "script", "exec", "修正", "追加",
-    "削除", "更新", "確認", "調査", "実装", "設計", "fix", "add",
-    "remove", "update", "install", "create", "作成", "書き換え",
-    "migration", "移行", "手動", "manual", "dj",
+
+# Action: must be SPECIFIC (script/command/file), not vague
+ACTION_VAGUE = ["対応", "対応予定", "予定", "やる", "する", "検討", "検証"]
+ACTION_SPECIFIC = [
+    ".py", ".sh", ".ts", ".js", ".md", ".yaml", ".json",
+    "bash ", "python3 ", "bun ", "npm ", "curl ", "git ",
+    "deploy", "commit", "push", "run ", "exec",
+    "script.google.com",  # specific platform
+    "DJ手動",  # explicit owner assignment counts
 ]
-DONE_KWS = [
+
+# Done condition: measurable outcome
+DONE_MARKERS = [
     "完了条件", "done when", "すれば", "したら", "になれば",
-    "pass", "green", "0 fail", "0fail", "confirm", "確認できれば",
+    "→0", "→OK", "→完了", "→pass", "→green",
+    "pass", "green", "0 fail", "0fail", "confirm",
+    "確認できれば", "で完了", "になったら",
+    "通れば", "出れば", "消えれば", "なくなれば",
 ]
-SPECIFICITY_PATS = [
-    r"/", r"\.py", r"\.sh", r"\.ts", r"\.js", r"\.md",
-    r"M\d{4}", r"commit", r"PR", r"deploy", r"\d{2,}", r"http",
-]
+# Arrows + specifics together imply a done condition
+HAS_OUTCOME_PATTERN = re.compile(r"[→⇒\->]\s*\S")
+
 
 for item in items:
     iw = []
     low = item.lower()
 
-    if not any(kw in low for kw in STATUS_KWS):
-        iw.append("NO_STATUS")
-    if not any(kw in low for kw in ACTION_KWS):
-        iw.append("NO_ACTION")
+    # 1. Status check
+    if not any(kw in low for kw in STATUS_CONCRETE):
+        iw.append("NO_CONTEXT")
 
-    has_done = any(kw in low for kw in DONE_KWS)
-    has_arrow = "\u2192" in item or "\u21d2" in item or "->" in item
-    has_specifics = any(re.search(p, item) for p in SPECIFICITY_PATS)
-    if not has_done and not has_arrow and not has_specifics:
+    # 2. Action check — must be specific, not just "対応予定"
+    has_specific_action = any(kw in item for kw in ACTION_SPECIFIC)
+    has_vague_only = any(kw in low for kw in ACTION_VAGUE) and not has_specific_action
+    if not has_specific_action:
+        if has_vague_only:
+            iw.append("VAGUE_ACTION")
+        else:
+            iw.append("NO_ACTION")
+
+    # 3. Done condition check
+    has_done = any(kw in low for kw in DONE_MARKERS)
+    has_outcome = bool(HAS_OUTCOME_PATTERN.search(item))
+    if not has_done and not has_outcome:
         iw.append("NO_DONE")
 
-    if len(item) < 30:
+    # 4. Length — short items almost always lack context
+    if len(item) < 40:
         iw.append("SHORT")
 
     if iw:
-        warnings.append("  " + ",".join(iw) + ": " + item)
+        # Build actionable hint
+        hints = []
+        if "NO_CONTEXT" in iw:
+            hints.append("現在の状態(完了/未着手/ブロック中)と次アクションを含めてください")
+        if "VAGUE_ACTION" in iw:
+            hints.append("「対応予定」ではなく具体的なスクリプト名・コマンドを書いてください")
+        if "NO_ACTION" in iw:
+            hints.append("次に何をやるか(スクリプト名/コマンド/DJ手動)を含めてください")
+        if "NO_DONE" in iw:
+            hints.append("完了条件(→0fail, →OK等)を含めてください")
+        hint_str = "  ← " + "、".join(hints) if hints else ""
+        warnings.append(f"  {','.join(iw)}: {item}{hint_str}")
 
-# === ARTIFACTS context check ===
+
+# ============================================================
+# ARTIFACTS context check
+# ============================================================
 in_artifacts = False
+artifact_items = []
 for line in lines:
     if line.strip().startswith("## ARTIFACTS"):
         in_artifacts = True
@@ -82,11 +122,20 @@ for line in lines:
         break
     s = line.strip()
     if in_artifacts and s and (s.startswith("- ") or re.match(r"^\d+", s)):
-        parts = re.split(r"\s*[\u2014\u2013]\s*", s, maxsplit=1)
-        if len(parts) == 2 and len(parts[1]) < 15:
-            warnings.append("  ARTIFACT_THIN: " + s + "  \u2190 変更理由を追記")
+        artifact_items.append(s)
 
-# === COMPRESSED E: boundary check ===
+for a in artifact_items:
+    # Split on em-dash or en-dash
+    parts = re.split(r"\s*[—–]\s*", a, maxsplit=1)
+    if len(parts) < 2:
+        warnings.append(f"  ARTIFACT_NO_DESC: {a}  ← 変更理由・目的を追記 (例: — COM直接化でAgent SDK依存排除)")
+    elif len(parts) == 2 and len(parts[1]) < 15:
+        warnings.append(f"  ARTIFACT_THIN: {a}  ← 変更理由を追記 (次セッションが「なぜ」を理解できるように)")
+
+
+# ============================================================
+# COMPRESSED E: boundary check
+# ============================================================
 in_compressed = False
 for line in lines:
     if line.strip().startswith("## COMPRESSED"):
@@ -97,19 +146,34 @@ for line in lines:
     if in_compressed and line.strip().startswith("E:"):
         entry = line.strip()
         bkw = ["ok", "ng", "=ok", "=ng", "works", "fails", "when",
-               "<", ">", "char", "byte", "動く", "動かない", "成功", "失敗", "可", "不可"]
+               "<", ">", "char", "byte", "動く", "動かない", "成功", "失敗", "可", "不可",
+               "必須", "不要", "専用", "限定", "のみ"]
         if not any(kw in entry.lower() for kw in bkw):
-            warnings.append("  E_NO_BOUNDARY: " + entry + "  \u2190 境界条件を含めて")
+            warnings.append(f"  E_NO_BOUNDARY: {entry}  ← 境界条件を含めて (何がOK/何がNG)")
 
-# === Output ===
+
+# ============================================================
+# Output
+# ============================================================
 if warnings:
-    print("\u26a0\ufe0f HANDOFF品質警告:")
-    for w in warnings:
-        print(w)
+    remaining_warns = [w for w in warnings if not w.startswith("  ARTIFACT") and not w.startswith("  E_")]
+    artifact_warns = [w for w in warnings if w.startswith("  ARTIFACT")]
+    e_warns = [w for w in warnings if w.startswith("  E_")]
+
+    if remaining_warns:
+        print("⚠️ REMAINING items lack detail (what/how/status):")
+        for w in remaining_warns:
+            print(w)
+    if artifact_warns:
+        print("⚠️ ARTIFACTS lack context:")
+        for w in artifact_warns:
+            print(w)
+    if e_warns:
+        print("⚠️ COMPRESSED E: entries lack boundary conditions:")
+        for w in e_warns:
+            print(w)
+
     print()
-    print('良い例: "3. テスト137fail \u2014 723中137fail(19%),未着手。`bun test`実行\u21920failで完了"')
-    print('悪い例: "3. テスト137 fail \u2014 batch task01で対応予定"')
-    print()
-    print("次セッションが再調査なしで着手できるよう、現状・次アクション・完了条件を含めてください。")
+    print("次セッションが自力で判断できるよう、各項目にスクリプト名・現在の状態・境界条件を含めてください。")
 else:
     print("OK")
