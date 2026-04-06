@@ -2,7 +2,8 @@
   "env": {
     "BASH_DEFAULT_TIMEOUT_MS": "1800000",
     "BASH_MAX_TIMEOUT_MS": "7200000",
-    "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "90"
+    "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "90",
+    "MCP_CONNECTION_NONBLOCKING": "true"
   },
   "sandbox": {
     "permissions": {
