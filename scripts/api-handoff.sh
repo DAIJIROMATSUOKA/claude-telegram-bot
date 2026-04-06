@@ -140,7 +140,6 @@ print(count + 1)
 TITLE_BASE=$($CHAT_ROUTER get-field "$DOMAIN" title_template 2>/dev/null || echo "$DOMAIN")
 TITLE_BASE=$(echo "$TITLE_BASE" | sed "s/{date}_//; s/{date}//")
 NEW_CHAT_NAME="${TODAY_MMDD}${TODAY_COUNT}_${TITLE_BASE}"
-ARCHIVED_NAME="${NEW_CHAT_NAME}_archived"
 log "Chat name: $NEW_CHAT_NAME (seq=$TODAY_COUNT)"
 
 # --- Step 2: Create new chat via API ---
@@ -169,9 +168,34 @@ $CHAT_ROUTER archive-url "$DOMAIN" 2>/dev/null
 $CHAT_ROUTER set-url "$DOMAIN" "$NEW_URL" 2>/dev/null
 log "URL switched: $NEW_URL"
 
-# --- Step 4: Rename old chat ---
+# --- Step 4: Rename old chat (use OLD name + _archived) ---
 OLD_CHAT_ID=$(echo "$DOMAIN_URL" | grep -o '[0-9a-f-]\{36\}$')
 if [ -n "$OLD_CHAT_ID" ]; then
+  # Get old chat's current name from API
+  OLD_CHAT_NAME=$(python3 -c "
+import json, urllib.request, os
+cfg = json.load(open(os.path.expanduser('~/.claude-chatlog-config.json')))
+sk, org = cfg['session_key'], cfg['org_id']
+url = f'https://claude.ai/api/organizations/{org}/chat_conversations/$OLD_CHAT_ID'
+req = urllib.request.Request(url, headers={
+    'Cookie': f'sessionKey={sk}',
+    'User-Agent': 'Mozilla/5.0',
+    'Accept': 'application/json',
+    'anthropic-client-sha': 'unknown',
+    'anthropic-client-platform': 'web',
+})
+try:
+    resp = urllib.request.urlopen(req)
+    data = json.loads(resp.read())
+    print(data.get('name', ''))
+except: pass
+" 2>/dev/null)
+  if [ -n "$OLD_CHAT_NAME" ]; then
+    ARCHIVED_NAME="${OLD_CHAT_NAME}_archived"
+  else
+    ARCHIVED_NAME="${NEW_CHAT_NAME}_archived"
+    log "WARNING: could not get old chat name, using new name for archive"
+  fi
   python3 "$SCRIPTS_DIR/rename-conversation.py" "$OLD_CHAT_ID" "$ARCHIVED_NAME" 2>/dev/null || true
   log "Old chat renamed: $ARCHIVED_NAME"
 fi
