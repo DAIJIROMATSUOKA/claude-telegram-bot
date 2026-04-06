@@ -504,16 +504,19 @@ const runner = run(bot);
 
 // Start task poller for remote execution
 // Initialize memory tables (non-blocking)
-  Promise.all([
-    ensureLearnedMemoryTable(),
-    ensureSessionSummaryTable(),
-  ]).then(() => {
-    console.log('[Startup] Memory tables initialized');
-    // Inbox Zero: snooze re-notification checker
-    try { startSnoozeChecker(bot); } catch(e) { console.error("[Snooze] Init failed:", e); }
-    try { startInboxTriage(bot, ALLOWED_USERS[0] || 0); } catch(e) { console.error("[Triage] Init failed:", e); }
-    try { initNotifTable(); } catch(e) { console.error("[Notif] Table init failed:", e); }
-  }).catch((e) => console.error('[Memory] Init failed:', e));
+  (async () => {
+    try {
+      await Promise.all([
+        ensureLearnedMemoryTable(),
+        ensureSessionSummaryTable(),
+      ]);
+      console.log('[Startup] Memory tables initialized');
+      // Inbox Zero: snooze re-notification checker
+      try { startSnoozeChecker(bot); } catch(e) { console.error("[Snooze] Init failed:", e); }
+      try { startInboxTriage(bot, ALLOWED_USERS[0] || 0); } catch(e) { console.error("[Triage] Init failed:", e); }
+      try { initNotifTable(); } catch(e) { console.error("[Notif] Table init failed:", e); }
+    } catch (e) { console.error('[Memory] Init failed:', e); }
+  })();
 
 
 // === Agent Task HTTP endpoint (localhost only) ===

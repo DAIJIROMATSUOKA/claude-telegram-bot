@@ -33,14 +33,17 @@ export async function handleNew(ctx: Context): Promise<void> {
   // セッション終了前に会話要約を生成・保存（非同期、ブロックしない）
   if (session.isActive && userId) {
     const sessionId = session.sessionId || 'unknown';
-    getChatHistory(userId, 50).then(async (history) => {
-      if (history.length >= 3) {
-        await saveSessionSummary(userId, sessionId, history);
-        console.log('[/new] Session summary saved in background');
+    (async () => {
+      try {
+        const history = await getChatHistory(userId, 50);
+        if (history.length >= 3) {
+          await saveSessionSummary(userId, sessionId, history);
+          console.log('[/new] Session summary saved in background');
+        }
+      } catch (err) {
+        console.error('[/new] Failed to save session summary:', err);
       }
-    }).catch((err) => {
-      console.error('[/new] Failed to save session summary:', err);
-    });
+    })();
   }
 
   // Clear session

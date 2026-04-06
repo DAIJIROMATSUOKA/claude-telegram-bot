@@ -33,7 +33,7 @@ async function withMediaQueue<T>(fn: () => Promise<T>): Promise<T> {
   try { return await fn(); }
   finally {
     const next = mediaQueueWaiting.shift();
-    if (next) { next.run().then(next.resolve, next.reject).finally(() => { mediaQueueBusy = false; }); }
+    if (next) { (async () => { try { next.resolve(await next.run()); } catch (e) { next.reject(e); } finally { mediaQueueBusy = false; } })(); }
     else { mediaQueueBusy = false; }
   }
 }

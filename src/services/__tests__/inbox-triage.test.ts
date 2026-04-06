@@ -9,11 +9,14 @@ const mockExecAsync = mock((_cmd?: any, _opts?: any) =>
 );
 
 mock.module("child_process", () => ({
-  exec: (...args: any[]) => {
+  exec: async (...args: any[]) => {
     const cb = args[args.length - 1];
-    mockExecAsync(args[0], args[1])
-      .then((r: any) => cb(null, r))
-      .catch((e: any) => cb(e));
+    try {
+      const r = await mockExecAsync(args[0], args[1]);
+      cb(null, r);
+    } catch (e: any) {
+      cb(e);
+    }
   },
 }));
 

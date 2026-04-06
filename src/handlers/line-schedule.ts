@@ -62,13 +62,14 @@ export async function handleLineSchedule(ctx: Context): Promise<void> {
   try {
   // Sub-commands: list, cancel
   if (raw === 'list' || raw === '一覧') {
-    const data: any = await fetch(`${GATEWAY_URL}/v1/db/query`, {
+    const listRes = await fetch(`${GATEWAY_URL}/v1/db/query`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         sql: `SELECT id, target_name, message, file_type, file_name, scheduled_at FROM line_scheduled WHERE status = 'pending' ORDER BY scheduled_at ASC LIMIT 20`,
       }),
-    }).then(r => r.json());
+    });
+    const data: any = await listRes.json();
     const tasks = data.results || [];
     if (tasks.length === 0) {
       await ctx.reply('📋 予約なし');
@@ -87,13 +88,14 @@ export async function handleLineSchedule(ctx: Context): Promise<void> {
   const cancelMatch = raw.match(/^cancel\s+(\d+)$/i);
   if (cancelMatch) {
     const cancelIdx = parseInt(cancelMatch[1]!) - 1;
-    const data: any = await fetch(`${GATEWAY_URL}/v1/db/query`, {
+    const cancelRes = await fetch(`${GATEWAY_URL}/v1/db/query`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         sql: `SELECT id, target_name, scheduled_at FROM line_scheduled WHERE status = 'pending' ORDER BY scheduled_at ASC LIMIT 20`,
       }),
-    }).then(r => r.json());
+    });
+    const data: any = await cancelRes.json();
     const tasks = data.results || [];
     if (cancelIdx < 0 || cancelIdx >= tasks.length) {
       await ctx.reply(`❌ 番号が範囲外です (1-${tasks.length})`);
