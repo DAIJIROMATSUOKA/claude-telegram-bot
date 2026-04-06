@@ -171,23 +171,18 @@ log "URL switched: $NEW_URL"
 # --- Step 4: Rename old chat (use OLD name + _archived) ---
 OLD_CHAT_ID=$(echo "$DOMAIN_URL" | grep -o '[0-9a-f-]\{36\}$')
 if [ -n "$OLD_CHAT_ID" ]; then
-  # Get old chat's current name from API
+  # Get old chat's current name from chatlog state (local file, no API call needed)
   OLD_CHAT_NAME=$(python3 -c "
-import json, urllib.request, os
-cfg = json.load(open(os.path.expanduser('~/.claude-chatlog-config.json')))
-sk, org = cfg['session_key'], cfg['org_id']
-url = f'https://claude.ai/api/organizations/{org}/chat_conversations/$OLD_CHAT_ID'
-req = urllib.request.Request(url, headers={
-    'Cookie': f'sessionKey={sk}',
-    'User-Agent': 'Mozilla/5.0',
-    'Accept': 'application/json',
-    'anthropic-client-sha': 'unknown',
-    'anthropic-client-platform': 'web',
-})
+import json, os
 try:
-    resp = urllib.request.urlopen(req)
-    data = json.loads(resp.read())
-    print(data.get('name', ''))
+    state = json.load(open(os.path.expanduser('~/.claude-chatlog-state.json')))
+    entry = state.get('$OLD_CHAT_ID', {})
+    title = entry.get('title', '')
+    # Strip date prefix if present (e.g. '2026-04-03_1602_' -> keep rest)
+    import re
+    m = re.match(r'^\d{4}-\d{2}-\d{2}_\d{4}_(.+)', title)
+    if m: title = m.group(1)
+    print(title)
 except: pass
 " 2>/dev/null)
   if [ -n "$OLD_CHAT_NAME" ]; then
