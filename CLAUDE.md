@@ -118,6 +118,15 @@ Claude Code handles context compaction internally (server-side summarization for
 
 `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` is exported in `scripts/claude-code-spawn.sh`. Agent definitions in `.claude/agents/`: batch-leader, test-runner, code-reviewer, batch-worker. See `docs/agent-teams.md`.
 
+## Git Safety (CRITICAL)
+
+Before every `git commit`, run `git diff --cached --stat` and verify:
+1. No unexpected file deletions (>5 deleted files = STOP and investigate)
+2. Only files you intentionally modified are staged
+3. Never use `git add -A` or `git add .` — always add specific files
+
+This prevents worktree index corruption from silently deleting the entire codebase.
+
 ## Commit Style
 
 Do not add "Generated with Claude Code" footers or "Co-Authored-By" trailers.

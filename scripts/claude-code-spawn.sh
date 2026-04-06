@@ -82,6 +82,15 @@ trap '' TERM HUP  # Survive SIGTERM from poller process group cleanup
 RESUME_SESSION="{resume_session}"
 cd "{cwd}" || exit 1
 
+# Safety: detect corrupted git index (worktree kill recovery)
+if git rev-parse --git-dir >/dev/null 2>&1; then
+  STAGED_DELETES=$(git diff --cached --name-status 2>/dev/null | grep -c "^D" || true)
+  if [ "$STAGED_DELETES" -gt 5 ]; then
+    echo "SAFETY: $STAGED_DELETES staged deletions in index — resetting to HEAD" >&2
+    git reset HEAD -- . >/dev/null 2>&1
+  fi
+fi
+
 # Enable Agent Teams for batch coordination
 export CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1
 
