@@ -119,7 +119,7 @@ ${assistantResponse.substring(0, 1000)}
         const result = JSON.parse(cleaned);
         resolve(result as ExtractionResult);
       } catch (e) {
-        log.error('[Memory Extractor] JSON parse failed:', (e as Error).message);
+        log.error('[Memory Extractor] JSON parse failed:', e instanceof Error ? e.message : String(e));
         log.error('[Memory Extractor] Raw:', stdout.substring(0, 300));
         resolve(null);
       }

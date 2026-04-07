@@ -313,7 +313,7 @@ async function embedServerCall(path: string, body: any): Promise<any> {
     clearTimeout(timer);
     return await res.json();
   } catch (e) {
-    console.warn('[Memory] Embed server unreachable:', (e as Error).message);
+    console.warn('[Memory] Embed server unreachable:', e instanceof Error ? e.message : String(e));
     return null;
   }
 }

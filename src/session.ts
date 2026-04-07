@@ -367,7 +367,7 @@ class ClaudeSession {
     try {
       memoryContext = await buildMemoryContext(message);
     } catch (e) {
-      console.warn('[Memory V2] Context build failed:', (e as Error).message);
+      console.warn('[Memory V2] Context build failed:', e instanceof Error ? e.message : String(e));
     }
 
     // Build context block - always include SYSTEM CONTEXT

@@ -727,7 +727,7 @@ export async function handleRecall(ctx: Context): Promise<void> {
       sections.push('');
     }
   } catch (e) {
-    const stderr = (e as any)?.stderr || '';
+    const stderr = e instanceof Error && 'stderr' in e ? String((e as NodeJS.ErrnoException & { stderr?: string }).stderr) : '';
     if (stderr.trim().length > 0) {
       log.error('[Recall] git log error:', e);
     }

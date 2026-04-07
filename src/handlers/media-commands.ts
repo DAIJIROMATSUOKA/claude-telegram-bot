@@ -378,6 +378,7 @@ export async function handleImagine(ctx: Context): Promise<void> {
 }
 
 /** /edit <instruction> -- Edit a replied-to photo with AI. */
+// TODO: this function exceeds 100 lines and should be refactored
 export async function handleEdit(ctx: Context): Promise<void> {
   const text = ctx.message?.text || "";
   const rawArgs = text.replace(/^\/edit\s*/i, "").trim();
@@ -585,6 +586,7 @@ export async function handleEdit(ctx: Context): Promise<void> {
 }
 
 /** /outpaint -- Extend image canvas with AI outpainting. */
+// TODO: this function exceeds 100 lines and should be refactored
 export async function handleOutpaint(ctx: Context): Promise<void> {
   const text = ctx.message?.text || "";
   const rawArgs = text.replace(/^\/outpaint\s*/i, "").trim();
@@ -851,6 +853,7 @@ export async function handleAnimate(ctx: Context): Promise<void> {
 }
 
 /** /undress -- Dedicated nude generation from a replied-to photo. */
+// TODO: this function exceeds 100 lines and should be refactored
 export async function handleUndress(ctx: Context): Promise<void> {
   const text = ctx.message?.text || "";
   const rawArgs = text.replace(/^\/undress\s*/i, "").trim();

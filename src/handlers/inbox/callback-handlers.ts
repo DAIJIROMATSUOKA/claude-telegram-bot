@@ -96,8 +96,8 @@ export async function handleTodoCallback(cc: CallbackContext): Promise<void> {
       try { await ctx.api.deleteMessage(chatId, msgId); } catch {}
     }
     await ctx.answerCallbackQuery({ text: `\u{1F4CB} ${h}:${mi} \u30BF\u30B9\u30AF\u5316`, show_alert: false });
-  } catch (e: any) {
-    await ctx.answerCallbackQuery({ text: `\u274C ${(e as Error).message || "\u30BF\u30B9\u30AF\u5316\u5931\u6557"}`, show_alert: true });
+  } catch (e: unknown) {
+    await ctx.answerCallbackQuery({ text: `\u274C ${e instanceof Error ? e.message : "\u30BF\u30B9\u30AF\u5316\u5931\u6557"}`, show_alert: true });
   }
 }
 

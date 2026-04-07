@@ -350,6 +350,7 @@ async function claudeInboxRoute(
 /**
  * Check if a project tab needs handoff and execute if needed
  */
+// TODO: this function exceeds 100 lines and should be refactored
 async function checkAndHandoff(
   projectId: string,
   tabWT: string,

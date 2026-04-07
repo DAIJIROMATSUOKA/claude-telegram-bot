@@ -448,6 +448,7 @@ function buildOpenButton(item: TriageItem): { text: string; url: string } | null
   }
 }
 
+// TODO: this function exceeds 100 lines and should be refactored
 async function executeAction(item: TriageItem, judgment: TriageJudgment): Promise<void> {
   const chatId = item.telegram_chat_id || djChatId;
   log.info(`[Triage] executeAction: action=${judgment.action}, chatId=${chatId}, botApi=${!!botApi}, djChatId=${djChatId}`);
