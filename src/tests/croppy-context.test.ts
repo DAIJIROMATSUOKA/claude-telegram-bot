@@ -3,7 +3,8 @@
  * Unit tests for croppy-context.ts
  */
 
-import { mock, describe, test, expect, beforeEach } from 'bun:test';
+import { mock, spyOn, describe, test, expect, beforeEach, afterAll } from 'bun:test';
+import * as aiRouterModule from '../handlers/ai-router';
 
 // Mock functions - declare before mock.module
 let mockGetJarvisContext = mock(() =>
@@ -28,9 +29,9 @@ mock.module('../utils/chat-history', () => ({
   getChatHistory: (...args: unknown[]) => mockGetChatHistory(...args),
   formatChatHistoryForPrompt: (...args: unknown[]) => mockFormatChatHistoryForPrompt(...args),
 }));
-mock.module('../handlers/ai-router', () => ({
-  getMemoryPack: (...args: unknown[]) => mockGetMemoryPack(...args),
-}));
+const getMemoryPackSpy = spyOn(aiRouterModule, 'getMemoryPack').mockImplementation(
+  (...args: unknown[]) => mockGetMemoryPack(...args)
+);
 
 // Import module under test AFTER mocking
 import {
@@ -62,9 +63,6 @@ describe('croppy-context', () => {
     mock.module('../utils/chat-history', () => ({
       getChatHistory: (...args: unknown[]) => mockGetChatHistory(...args),
       formatChatHistoryForPrompt: (...args: unknown[]) => mockFormatChatHistoryForPrompt(...args),
-    }));
-    mock.module('../handlers/ai-router', () => ({
-      getMemoryPack: (...args: unknown[]) => mockGetMemoryPack(...args),
     }));
   });
 
@@ -225,4 +223,8 @@ describe('croppy-context', () => {
       expect(result).not.toContain('<script>');
     });
   });
+});
+
+afterAll(() => {
+  getMemoryPackSpy.mockRestore();
 });

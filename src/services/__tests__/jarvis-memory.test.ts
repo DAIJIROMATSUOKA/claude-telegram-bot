@@ -1,4 +1,5 @@
-import { describe, test, expect, mock, beforeEach } from "bun:test";
+import { describe, test, expect, mock, spyOn, beforeEach, afterAll } from "bun:test";
+import * as aiRouterModule from "../../handlers/ai-router";
 
 // --- Mocks (before importing module under test) ---
 
@@ -6,9 +7,9 @@ const mockCallMemoryGateway = mock<(_path: string, _method: string, _body: any) 
   Promise.resolve({ data: { results: [], meta: { changes: 0 } } })
 );
 
-mock.module("../../handlers/ai-router", () => ({
-  callMemoryGateway: mockCallMemoryGateway,
-}));
+const callMemoryGatewaySpy = spyOn(aiRouterModule, "callMemoryGateway").mockImplementation(
+  (...args: any[]) => (mockCallMemoryGateway as any)(...args)
+);
 
 // Mock global fetch for embed server calls
 const originalFetch = globalThis.fetch;
@@ -606,4 +607,8 @@ describe("buildMemoryContext", () => {
     const ctx = await buildMemoryContext("hello");
     expect(ctx).toBe("");
   });
+});
+
+afterAll(() => {
+  callMemoryGatewaySpy.mockRestore();
 });

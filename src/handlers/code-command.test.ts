@@ -1,4 +1,6 @@
-import { describe, test, expect, mock, beforeEach, afterEach } from "bun:test";
+import { describe, test, expect, mock, spyOn, beforeEach, afterEach, afterAll } from "bun:test";
+import * as fs from "fs";
+import * as jsonLoader from "../utils/json-loader";
 
 // Mock modules before importing the handler
 const mockExecSync = mock(() => "task1 running PID 1234");
@@ -14,14 +16,8 @@ mock.module("child_process", () => ({
   execSync: mockExecSync,
 }));
 
-mock.module("fs", () => ({
-  ...require("fs"),
-  existsSync: mockExistsSync,
-}));
-
-mock.module("../utils/json-loader", () => ({
-  loadJsonFile: mockLoadJsonFile,
-}));
+const existsSyncSpy = spyOn(fs, "existsSync").mockImplementation((...args: any[]) => (mockExistsSync as any)(...args) as any);
+const loadJsonFileSpy = spyOn(jsonLoader, "loadJsonFile").mockImplementation((...args: any[]) => (mockLoadJsonFile as any)(...args));
 
 mock.module("../security", () => ({
   isAuthorized: (userId: number | undefined, _allowed: number[]) => userId === 123456,
@@ -128,4 +124,10 @@ describe("handleCode", () => {
     expect(ctx.reply).toHaveBeenCalledTimes(2);
     expect(ctx.reply.mock.calls[1][0]).toContain("spawn fail");
   });
+});
+
+afterAll(() => {
+  existsSyncSpy.mockRestore();
+  loadJsonFileSpy.mockRestore();
+  mock.restore();
 });

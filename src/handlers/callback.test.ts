@@ -1,4 +1,8 @@
-import { describe, test, expect, mock, beforeEach } from "bun:test";
+import { describe, test, expect, mock, spyOn, beforeEach, afterAll } from "bun:test";
+import * as streamingModule from "./streaming";
+import * as gatewayDbModule from "../services/gateway-db";
+import * as inboxTriageModule from "../services/inbox-triage";
+import * as taskCommandModule from "./task-command";
 
 // Mock all heavy dependencies before importing
 mock.module("../session", () => ({
@@ -25,24 +29,21 @@ mock.module("../utils", () => ({
   startTypingIndicator: mock(() => ({ stop: mock(() => {}) })),
 }));
 
-mock.module("./streaming", () => ({
-  StreamingState: class {
-    toolMessages: any[] = [];
-  },
-  createStatusCallback: mock(() => mock(() => {})),
-}));
+const createStatusCallbackSpy = spyOn(streamingModule, "createStatusCallback").mockImplementation(
+  () => mock(() => {})
+);
 
-mock.module("../services/inbox-triage", () => ({
-  handleTriageCallback: mock(() => Promise.resolve(false)),
-}));
+const handleTriageCallbackSpy = spyOn(inboxTriageModule, "handleTriageCallback").mockImplementation(
+  () => Promise.resolve(false)
+);
 
-mock.module("./task-command", () => ({
-  handleTaskCallback: mock(() => Promise.resolve(false)),
-}));
+const handleTaskCallbackSpy = spyOn(taskCommandModule, "handleTaskCallback").mockImplementation(
+  () => Promise.resolve(false)
+);
 
-mock.module("../services/gateway-db", () => ({
-  gatewayQuery: mock(() => Promise.resolve()),
-}));
+const gatewayQuerySpy = spyOn(gatewayDbModule, "gatewayQuery").mockImplementation(
+  () => Promise.resolve()
+);
 
 import { handleCallback } from "./callback";
 
@@ -130,4 +131,11 @@ describe("handleCallback", () => {
     });
     expect(ctx.answerCallbackQuery).toHaveBeenCalledWith({ text: "\u23f8 スヌーズ停止" });
   });
+});
+
+afterAll(() => {
+  createStatusCallbackSpy.mockRestore();
+  gatewayQuerySpy.mockRestore();
+  handleTriageCallbackSpy.mockRestore();
+  handleTaskCallbackSpy.mockRestore();
 });

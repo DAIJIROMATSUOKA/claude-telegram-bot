@@ -1,18 +1,19 @@
-import { describe, test, expect, mock, beforeEach, afterEach } from "bun:test";
+import { describe, test, expect, mock, spyOn, beforeEach, afterEach, afterAll } from "bun:test";
 import { unlinkSync, existsSync, writeFileSync, readFileSync } from "fs";
+import * as jsonLoaderModule from "../../utils/json-loader";
 
 // --- Mocks ---
 
-mock.module("../../utils/json-loader", () => ({
-  loadJsonFile: mock((path: string, fallback?: any) => {
+const loadJsonFileSpy = spyOn(jsonLoaderModule, "loadJsonFile").mockImplementation(
+  (path: string, fallback?: any) => {
     try {
       const content = readFileSync(path, "utf-8");
       return JSON.parse(content);
     } catch (e) {
       return fallback ?? null;
     }
-  }),
-}));
+  }
+);
 
 // --- Import module under test ---
 import {
@@ -115,4 +116,8 @@ describe("domain buffer integration", () => {
     removeHandoffLock("domain-a");
     removeHandoffLock("domain-b");
   });
+});
+
+afterAll(() => {
+  loadJsonFileSpy.mockRestore();
 });

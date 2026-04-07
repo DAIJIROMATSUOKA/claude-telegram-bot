@@ -1,4 +1,7 @@
-import { describe, test, expect, mock, beforeEach } from "bun:test";
+import { describe, test, expect, mock, spyOn, beforeEach, afterAll } from "bun:test";
+import * as util from "util";
+import * as fs from "fs";
+import * as gatewayDb from "../gateway-db";
 
 // ============================================================
 // Mocks — must be declared BEFORE importing module under test
@@ -20,20 +23,15 @@ mock.module("child_process", () => ({
   },
 }));
 
-mock.module("util", () => ({
-  promisify: () => mockExecAsync,
-}));
+const promisifySpy = spyOn(util, "promisify").mockImplementation((_fn: any) => mockExecAsync as any);
 
 let mockExistsSync = mock((_path?: any) => false);
-mock.module("fs", () => ({
-  ...require("fs"),
-  existsSync: (...args: any[]) => mockExistsSync(...args),
-}));
+const existsSyncSpy = spyOn(fs, "existsSync").mockImplementation((...args: any[]) => mockExistsSync(...args) as any);
 
 const mockGatewayQuery = mock(() => Promise.resolve({ results: [] }));
-mock.module("../gateway-db", () => ({
-  gatewayQuery: mockGatewayQuery,
-}));
+const gatewayQuerySpy = spyOn(gatewayDb, "gatewayQuery").mockImplementation(
+  (...args: any[]) => (mockGatewayQuery as any)(...args)
+);
 
 const mockFetchWithTimeout = mock(() =>
   Promise.resolve({ ok: true, json: () => Promise.resolve({ ok: true }), text: () => Promise.resolve('{"ok":true}') })
@@ -1097,10 +1095,11 @@ describe("Triage lifecycle", () => {
   });
 });
 
-// Restore global fetch
+// Restore global fetch and module mocks
 afterAll(() => {
+  promisifySpy.mockRestore();
+  existsSyncSpy.mockRestore();
+  gatewayQuerySpy.mockRestore();
   globalThis.fetch = originalFetch;
+  mock.restore();
 });
-
-// Need afterAll import
-import { afterAll } from "bun:test";

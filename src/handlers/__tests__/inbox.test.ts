@@ -1,13 +1,14 @@
-import { describe, test, expect, mock, beforeEach } from "bun:test";
+import { describe, test, expect, mock, spyOn, beforeEach, afterAll } from "bun:test";
+import * as gatewayDbModule from "../../services/gateway-db";
 
 // ============================================================
 // Mocks — must be declared before importing module under test
 // ============================================================
 
 const mockGatewayQuery = mock<() => Promise<any>>(() => Promise.resolve({ results: [] }));
-mock.module("../../services/gateway-db", () => ({
-  gatewayQuery: mockGatewayQuery,
-}));
+const gatewayQuerySpy = spyOn(gatewayDbModule, "gatewayQuery").mockImplementation(
+  (...args: any[]) => (mockGatewayQuery as any)(...args)
+);
 
 mock.module("../../config", () => ({
   ALLOWED_USERS: [123456],
@@ -819,4 +820,8 @@ describe("batch execution", () => {
     expect(deletedIds).toContain(504);
     expect(deletedIds).toContain(10);
   });
+});
+
+afterAll(() => {
+  gatewayQuerySpy.mockRestore();
 });

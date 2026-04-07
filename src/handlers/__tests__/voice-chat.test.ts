@@ -1,4 +1,5 @@
-import { describe, test, expect, mock, beforeEach } from "bun:test";
+import { describe, test, expect, mock, spyOn, beforeEach, afterAll } from "bun:test";
+import * as fs from "fs";
 
 // --- Mocks (before imports) ---
 
@@ -26,11 +27,8 @@ mock.module("../../utils/exec-async", () => ({
 
 const mockWriteFileSync = mock(() => {});
 const mockUnlinkSync = mock(() => {});
-mock.module("fs", () => ({
-  ...require("fs"),
-  writeFileSync: mockWriteFileSync,
-  unlinkSync: mockUnlinkSync,
-}));
+const writeFileSyncSpy = spyOn(fs, "writeFileSync").mockImplementation(mockWriteFileSync as any);
+const unlinkSyncSpy = spyOn(fs, "unlinkSync").mockImplementation(mockUnlinkSync as any);
 
 const mockDispatchToWorker = mock(() => Promise.resolve());
 mock.module("../croppy-bridge", () => ({
@@ -327,4 +325,10 @@ describe("handleVoice", () => {
     // The prefix is about 22 chars, the error portion is at most 200
     expect(String(errorReply![0]).length).toBeLessThanOrEqual(225);
   });
+});
+
+afterAll(() => {
+  writeFileSyncSpy.mockRestore();
+  unlinkSyncSpy.mockRestore();
+  mock.restore();
 });

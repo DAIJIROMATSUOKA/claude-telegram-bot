@@ -1,4 +1,5 @@
-import { describe, test, expect, mock, beforeEach } from "bun:test";
+import { describe, test, expect, mock, spyOn, beforeEach, afterAll } from "bun:test";
+import * as fs from "fs";
 
 // --- Mocks (BEFORE importing module under test) ---
 
@@ -36,12 +37,15 @@ const mockExistsSync = mock((path: string) => {
   return path in writtenFiles;
 });
 
-mock.module("fs", () => ({
-  ...require("fs"),
-  readFileSync: mockReadFileSync,
-  writeFileSync: mockWriteFileSync,
-  existsSync: mockExistsSync,
-}));
+const writeFileSyncSpy = spyOn(fs, "writeFileSync").mockImplementation(
+  (path: any, data: any) => (mockWriteFileSync as any)(path, data)
+);
+const readFileSyncSpy = spyOn(fs, "readFileSync").mockImplementation(
+  (path: any, enc?: any) => (mockReadFileSync as any)(path, enc)
+);
+const existsSyncSpy = spyOn(fs, "existsSync").mockImplementation(
+  (path: any) => (mockExistsSync as any)(path)
+);
 
 mock.module("../../config", () => ({
   ALLOWED_USERS: [123456],
@@ -745,4 +749,11 @@ describe("chat map persistence", () => {
     expect(handlePostCommand).toBeDefined();
     expect(handleChatReply).toBeDefined();
   });
+});
+
+afterAll(() => {
+  writeFileSyncSpy.mockRestore();
+  readFileSyncSpy.mockRestore();
+  existsSyncSpy.mockRestore();
+  mock.restore();
 });

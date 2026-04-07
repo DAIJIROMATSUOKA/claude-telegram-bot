@@ -1,4 +1,5 @@
-import { describe, test, expect, mock, beforeEach } from "bun:test";
+import { describe, test, expect, mock, spyOn, beforeEach, afterAll } from "bun:test";
+import * as aiRouterModule from "./ai-router";
 
 // Mock heavy dependencies
 const mockSession = {
@@ -40,9 +41,9 @@ mock.module("../utils/session-summary", () => ({
   saveSessionSummary: mock(() => Promise.resolve()),
 }));
 
-mock.module("./ai-router", () => ({
-  callMemoryGateway: mock(() => Promise.resolve({ data: {} })),
-}));
+const callMemoryGatewaySpy = spyOn(aiRouterModule, "callMemoryGateway").mockImplementation(
+  () => Promise.resolve({ data: {} })
+);
 
 mock.module("../utils/focus-mode", () => ({
   enableFocusMode: mock(() => {}),
@@ -215,4 +216,8 @@ describe("handleStop", () => {
     await handleStop(ctx);
     expect(ctx.reply.mock.calls[0][0]).toContain("Unauthorized");
   });
+});
+
+afterAll(() => {
+  callMemoryGatewaySpy.mockRestore();
 });

@@ -2,7 +2,9 @@
  * Unit tests for auto-review.ts
  */
 
-import { mock, describe, test, expect, beforeEach, beforeAll } from 'bun:test';
+import { mock, spyOn, describe, test, expect, beforeEach, beforeAll, afterAll } from 'bun:test';
+import * as util from 'util';
+import * as aiRouterModule from '../handlers/ai-router';
 
 // Global state for mocks - use object to maintain reference
 const mockState = {
@@ -14,16 +16,18 @@ const mockState = {
   codexResponse: { content: 'LGTM', error: null as string | null },
 };
 
-// Mock ai-router
-mock.module('../handlers/ai-router', () => ({
-  callGeminiAPI: () => Promise.resolve({ ...mockState.geminiResponse }),
-  callCodexCLI: () => Promise.resolve({ ...mockState.codexResponse }),
-}));
+// Spy on ai-router (spyOn restores in afterAll → no cross-file contamination)
+const callGeminiAPISpy = spyOn(aiRouterModule, 'callGeminiAPI').mockImplementation(
+  () => Promise.resolve({ ...mockState.geminiResponse })
+);
+const callCodexCLISpy = spyOn(aiRouterModule, 'callCodexCLI').mockImplementation(
+  () => Promise.resolve({ ...mockState.codexResponse })
+);
 
-// Mock promisify to return a function that returns our fake diff
-mock.module('util', () => ({
-  promisify: () => () => Promise.resolve({ stdout: mockState.fakeDiff, stderr: '' }),
-}));
+// Spy on promisify to return a function that returns our fake diff (spyOn restores in afterAll → no cross-file contamination)
+const promisifySpy = spyOn(util, 'promisify').mockImplementation(
+  (_fn: any) => () => Promise.resolve({ stdout: mockState.fakeDiff, stderr: '' })
+);
 
 // Store imported functions - will be populated in beforeAll
 let detectCodeChanges: (response: string) => boolean;
@@ -112,4 +116,11 @@ const x = 1;
       expect(result).toContain('Logic: Missing error handling');
     });
   });
+});
+
+afterAll(() => {
+  promisifySpy.mockRestore();
+  callGeminiAPISpy.mockRestore();
+  callCodexCLISpy.mockRestore();
+  mock.restore();
 });

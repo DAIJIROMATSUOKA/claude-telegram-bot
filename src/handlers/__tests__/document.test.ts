@@ -29,18 +29,6 @@ mock.module("../../utils", () => ({
   startTypingIndicator: mock(() => ({ stop: mock(() => {}) })),
 }));
 
-const mockCreateStatusCallback = mock(() => mock(() => Promise.resolve()));
-mock.module("../streaming", () => ({
-  StreamingState: class {
-    textMessages = new Map();
-    toolMessages: any[] = [];
-    lastEditTimes = new Map();
-    lastContent = new Map();
-    headerSent = false;
-  },
-  createStatusCallback: mockCreateStatusCallback,
-}));
-
 mock.module("../media-group", () => ({
   createMediaGroupBuffer: mock(() => ({
     addToGroup: mock(() => Promise.resolve()),
@@ -106,6 +94,7 @@ beforeEach(() => {
   mockSession.sendMessageStreaming.mockClear();
   mockSession.startProcessing.mockClear();
 });
+
 
 describe("handleDocument", () => {
   test("rejects unauthorized users", async () => {

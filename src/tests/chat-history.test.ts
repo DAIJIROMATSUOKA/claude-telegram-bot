@@ -3,13 +3,14 @@
  * Chat History Manager Unit Tests
  */
 
-import { describe, test, expect, beforeEach, mock } from 'bun:test';
+import { describe, test, expect, beforeEach, afterAll, mock, spyOn } from 'bun:test';
+import * as aiRouterModule from '../handlers/ai-router';
 
 // Mock BEFORE importing the module under test
 let mockGatewayFn = mock(() => Promise.resolve({ data: { results: [] } }));
-mock.module('../handlers/ai-router', () => ({
-  callMemoryGateway: (...args: unknown[]) => mockGatewayFn(...args),
-}));
+const callMemoryGatewaySpy = spyOn(aiRouterModule, 'callMemoryGateway').mockImplementation(
+  (...args: unknown[]) => mockGatewayFn(...args)
+);
 mock.module('ulidx', () => ({
   ulid: () => 'TEST-ULID-001',
 }));
@@ -222,4 +223,8 @@ describe('chat-history', () => {
       expect(result).toBe('1. [DJ] Short message');
     });
   });
+});
+
+afterAll(() => {
+  callMemoryGatewaySpy.mockRestore();
 });

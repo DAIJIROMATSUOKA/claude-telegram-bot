@@ -1,4 +1,7 @@
-import { describe, test, expect, mock, beforeEach } from "bun:test";
+import { describe, test, expect, mock, spyOn, beforeEach, afterAll } from "bun:test";
+import * as claudeChatModule from "../claude-chat";
+import * as domainBufferModule from "../../services/domain-buffer";
+import * as streamingModule from "../streaming";
 
 // ── Mock session ──
 const mockSession = {
@@ -62,17 +65,9 @@ mock.module("../../utils/logger", () => ({
 }));
 
 // ── Mock streaming ──
-const mockStreamingState = {
-  replyToMessageId: undefined as number | undefined,
-  toolMessages: [] as any[],
-};
-mock.module("../streaming", () => ({
-  StreamingState: class {
-    replyToMessageId = undefined;
-    toolMessages: any[] = [];
-  },
-  createStatusCallback: mock(() => mock(() => {})),
-}));
+const createStatusCallbackSpy = spyOn(streamingModule, "createStatusCallback").mockImplementation(
+  () => mock(() => {})
+);
 
 // ── Mock control tower ──
 mock.module("../../utils/control-tower-db", () => ({
@@ -159,12 +154,9 @@ mock.module("../inbox", () => ({
 const mockRelayDomain = mock((_domain: string, _msg: string, _onProgress?: any): Promise<string | null> => Promise.resolve("domain response"));
 const mockGetLock = mock((_domain: string): null | { type: string; since: number } => null);
 const mockGetBufferCount = mock((_domain: string) => 0);
-mock.module("../../services/domain-buffer", () => ({
-  relayDomain: mockRelayDomain,
-  getLock: mockGetLock,
-  getBufferCount: mockGetBufferCount,
-  MAX_BUFFER: 10,
-}));
+const relayDomainSpy = spyOn(domainBufferModule, "relayDomain").mockImplementation((...args: any[]) => (mockRelayDomain as any)(...args));
+const getLockSpy = spyOn(domainBufferModule, "getLock").mockImplementation((...args: any[]) => (mockGetLock as any)(...args));
+const getBufferCountSpy = spyOn(domainBufferModule, "getBufferCount").mockImplementation((...args: any[]) => (mockGetBufferCount as any)(...args));
 
 const mockEnrichMessage = mock((_msg: string, _userId: number) =>
   Promise.resolve({ message: _msg, enrichmentMs: 10 })
@@ -205,12 +197,18 @@ mock.module("../croppy-bridge", () => ({
 }));
 
 const mockHandleChatReply = mock((_ctx: any) => Promise.resolve(false));
-mock.module("../claude-chat", () => ({
-  handleChatReply: mockHandleChatReply,
-  handleChatCommand: mock(() => Promise.resolve()),
-  handlePostCommand: mock(() => Promise.resolve()),
-  handleChatsCommand: mock(() => Promise.resolve()),
-}));
+const handleChatReplySpy = spyOn(claudeChatModule, "handleChatReply").mockImplementation(
+  (...args: any[]) => (mockHandleChatReply as any)(...args)
+);
+const handleChatCommandSpy = spyOn(claudeChatModule, "handleChatCommand").mockImplementation(
+  () => Promise.resolve()
+);
+const handlePostCommandSpy = spyOn(claudeChatModule, "handlePostCommand").mockImplementation(
+  () => Promise.resolve()
+);
+const handleChatsCommandSpy = spyOn(claudeChatModule, "handleChatsCommand").mockImplementation(
+  () => Promise.resolve()
+);
 
 const mockHandleAgentTask = mock((_prompt: string, _chatId: number, _api: any) => Promise.resolve());
 mock.module("../agent-task", () => ({
@@ -307,6 +305,17 @@ function resetAllMocks() {
   mockSplitTelegramMessage.mockClear();
   mockSplitTelegramMessage.mockImplementation((text: string) => [text]);
 }
+
+afterAll(() => {
+  handleChatReplySpy.mockRestore();
+  handleChatCommandSpy.mockRestore();
+  handlePostCommandSpy.mockRestore();
+  handleChatsCommandSpy.mockRestore();
+  relayDomainSpy.mockRestore();
+  getLockSpy.mockRestore();
+  getBufferCountSpy.mockRestore();
+  createStatusCallbackSpy.mockRestore();
+});
 
 // ── Tests ──
 
