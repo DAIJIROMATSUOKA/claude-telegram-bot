@@ -591,25 +591,35 @@ export async function handleReminder(ctx: Context): Promise<void> {
     return;
   }
 
-  const { dateTime, label } = parsed;
+  let { dateTime, label } = parsed;
+
+  // Bug fix: time-only → add today's date (tomorrow if time already passed)
+  if (/^\d{2}:\d{2}$/.test(dateTime)) {
+    const now = new Date();
+    const parts = dateTime.split(":").map(Number); const h = parts[0] ?? 0, m = parts[1] ?? 0;
+    const target = new Date(now);
+    target.setHours(h, m, 0, 0);
+    if (target <= now) target.setDate(target.getDate() + 1);
+    const y = target.getFullYear();
+    const mo = (target.getMonth() + 1).toString().padStart(2, "0");
+    const d = target.getDate().toString().padStart(2, "0");
+    dateTime = `${y}-${mo}-${d} ${dateTime}`;
+  }
 
   try {
+    // Bug fix: base64 transfer to avoid shell injection (single quotes, emoji in label)
     const input = `${dateTime}\n${label}`;
+    const b64 = Buffer.from(input).toString("base64");
     const { stderr } = await execAsync(
-      `printf '${input}' | shortcuts run '緊急リマインダー'`,
+      `echo '${b64}' | base64 -d | shortcuts run '緊急リマインダー'`,
       { timeout: 15000 }
     );
     if (stderr && stderr.includes("Error")) {
       await ctx.reply(`❌ リマインダー設定エラー: ${stderr}`);
       return;
     }
-    const confirmMsg = await ctx.reply(`🔔 ${dateTime} 緊急リマインダー: ${label}`);
-    const autoDelete = async () => {
-      await new Promise(r => setTimeout(r, 3000));
-      try { await ctx.api.deleteMessage(ctx.chat!.id, ctx.message!.message_id); } catch {}
-      try { await ctx.api.deleteMessage(ctx.chat!.id, confirmMsg.message_id); } catch {}
-    };
-    autoDelete();
+    // Bug fix: confirmation stays visible (removed 3s auto-delete)
+    await ctx.reply(`🔔 ${dateTime} リマインダー: ${label}`);
   } catch (error) {
     await notifyError(ctx, "reminder", error instanceof Error ? error : new Error(String(error)));
   }
