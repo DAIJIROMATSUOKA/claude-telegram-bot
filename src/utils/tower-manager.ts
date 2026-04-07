@@ -4,6 +4,9 @@
  * Philosophy: "Safe, transparent, self-healing"
  */
 
+import { createLogger } from "./logger";
+const log = createLogger("tower-manager");
+
 import type { Context } from 'grammy';
 import {
   renderTower,
@@ -154,7 +157,7 @@ export async function updateTower(
 
   // 1. Acquire single-flight lock
   if (!acquireLock(chatId)) {
-    console.log(`[TowerManager] Update skipped - lock held: ${chatId}`);
+    log.info(`[TowerManager] Update skipped - lock held: ${chatId}`);
     return {
       success: true,
       action: 'skipped',
@@ -173,7 +176,7 @@ export async function updateTower(
 
     // 3. Check if suspended
     if (cached.status === 'suspended' || cached.status === 'permission_error') {
-      console.log(`[TowerManager] Tower suspended: ${cached.status}`);
+      log.info(`[TowerManager] Tower suspended: ${cached.status}`);
       return {
         success: false,
         action: 'failed',
@@ -188,7 +191,7 @@ export async function updateTower(
 
     // 5. Check if content changed (skip if same)
     if (newHash === cached.lastRenderHash && cached.messageId) {
-      console.log(`[TowerManager] Content unchanged - skipping update`);
+      log.info(`[TowerManager] Content unchanged - skipping update`);
       return {
         success: true,
         action: 'skipped',
@@ -204,7 +207,7 @@ export async function updateTower(
       cached.lastUpdateTime > 0 &&
       timeSinceLastUpdate < MIN_UPDATE_INTERVAL_MS
     ) {
-      console.log(
+      log.info(
         `[TowerManager] Rate limit - ${MIN_UPDATE_INTERVAL_MS - timeSinceLastUpdate}ms remaining`
       );
       return {
@@ -269,7 +272,7 @@ async function editTowerMessage(
       { parse_mode: undefined } // Plain text only
     );
 
-    console.log(`[TowerManager] Message edited: ${messageId}`);
+    log.info(`[TowerManager] Message edited: ${messageId}`);
     return {
       success: true,
       action: 'updated',
@@ -277,7 +280,7 @@ async function editTowerMessage(
     };
   } catch (error: any) {
     const editError = classifyEditError(error);
-    console.error(`[TowerManager] Edit failed:`, editError);
+    log.error(`[TowerManager] Edit failed:`, editError);
 
     // Handle specific error types
     if (editError.code === 'not_modified') {
@@ -291,14 +294,14 @@ async function editTowerMessage(
 
     if (editError.code === 'not_found') {
       // Message deleted - recover by creating new one
-      console.log(`[TowerManager] Message not found - recovering...`);
+      log.info(`[TowerManager] Message not found - recovering...`);
       return await recoverTower(ctx, content, messageId);
     }
 
     if (editError.code === 'rate_limit') {
       // Rate limited - retry after delay
       if (editError.retryAfter) {
-        console.log(
+        log.info(
           `[TowerManager] Rate limited - retry after ${editError.retryAfter}s`
         );
         await new Promise((resolve) =>
@@ -331,7 +334,7 @@ async function editTowerMessage(
 
     if (editError.code === 'forbidden' || editError.code === 'unauthorized') {
       // Permission error - suspend tower (status updated by caller)
-      console.error(`[TowerManager] Permission error - suspending tower`);
+      log.error(`[TowerManager] Permission error - suspending tower`);
       return {
         success: false,
         action: 'failed',
@@ -365,7 +368,7 @@ async function createTowerMessage(
       parse_mode: undefined,
     });
 
-    console.log(`[TowerManager] Message created: ${message.message_id}`);
+    log.info(`[TowerManager] Message created: ${message.message_id}`);
 
     return {
       success: true,
@@ -373,7 +376,7 @@ async function createTowerMessage(
       messageId: String(message.message_id),
     };
   } catch (error: any) {
-    console.error(`[TowerManager] Create failed:`, error);
+    log.error(`[TowerManager] Create failed:`, error);
     return {
       success: false,
       action: 'failed',
@@ -433,5 +436,5 @@ export function getTowerStatus(identifier: TowerIdentifier): CachedTowerState | 
 export function clearTowerCache(identifier: TowerIdentifier): void {
   const key = getTowerKey(identifier);
   towerCache.delete(key);
-  console.log(`[TowerManager] Cache cleared: ${key}`);
+  log.info(`[TowerManager] Cache cleared: ${key}`);
 }

@@ -5,6 +5,9 @@
  * Rollback: remove import+registration from index.ts, delete this file
  */
 
+import { createLogger } from "../utils/logger";
+const log = createLogger("voice-chat");
+
 import { writeFileSync, unlinkSync } from 'fs';
 import type { Context } from 'grammy';
 import { startTypingIndicator } from '../utils';
@@ -23,7 +26,7 @@ const ENV = {
  * Handle incoming voice messages
  */
 export async function handleVoice(ctx: Context): Promise<void> {
-  console.log("[VoiceChat] Handler called!", JSON.stringify({voice: !!ctx.message?.voice, from: ctx.from?.id}));
+  log.info("[VoiceChat] Handler called!", JSON.stringify({voice: !!ctx.message?.voice, from: ctx.from?.id}));
   const voice = ctx.message?.voice;
   if (!voice) return;
 
@@ -81,7 +84,7 @@ export async function handleVoice(ctx: Context): Promise<void> {
 
   } catch (error: any) {
     const msg = error.message || String(error);
-    console.error('[VoiceChat] Error:', msg);
+    log.error('[VoiceChat] Error:', msg);
     await ctx.reply(`❌ Voice chat error: ${msg.substring(0, 200)}`);
   } finally {
     typing.stop();

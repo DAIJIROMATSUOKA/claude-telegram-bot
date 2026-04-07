@@ -6,6 +6,9 @@
  * Example: /search 見積
  */
 
+import { createLogger } from "../utils/logger";
+const log = createLogger("search-command");
+
 import type { Context } from "grammy";
 import { isAuthorized } from "../security";
 import { ALLOWED_USERS } from "../config";
@@ -127,7 +130,7 @@ export async function handleSearch(ctx: Context): Promise<void> {
     if (errMsg.includes("ENOENT")) {
       await ctx.reply("⚠️ search-chatlogs.py が見つかりません");
     } else {
-      console.error("[Search] Error:", errMsg);
+      log.error("[Search] Error:", errMsg);
       await ctx.reply(`⚠️ 検索エラー: ${errMsg.substring(0, 200)}`);
     }
   }

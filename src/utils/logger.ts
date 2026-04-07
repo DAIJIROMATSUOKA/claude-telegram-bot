@@ -40,3 +40,17 @@ export const logger = {
     emit("error", module, msg, error);
   },
 };
+
+export function createLogger(module: string) {
+  return {
+    info(msg: unknown, ...args: unknown[]): void {
+      emit("info", module, String(msg), args.length === 1 ? args[0] : args.length > 1 ? args : undefined);
+    },
+    warn(msg: unknown, ...args: unknown[]): void {
+      emit("warn", module, String(msg), args.length === 1 ? args[0] : args.length > 1 ? args : undefined);
+    },
+    error(msg: unknown, ...args: unknown[]): void {
+      emit("error", module, String(msg), args.length === 1 ? args[0] : args.length > 1 ? args : undefined);
+    },
+  };
+}

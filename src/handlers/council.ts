@@ -8,6 +8,9 @@
  * 従量課金API不使用。全てCLI/Shortcuts経由。
  */
 
+import { createLogger } from "../utils/logger";
+const log = createLogger("council");
+
 import type { Context } from "grammy";
 import { ALLOWED_USERS } from "../config";
 import { isAuthorized } from "../security";
@@ -55,7 +58,7 @@ async function safeEditMessageText(
     });
   } catch (e: any) {
     // Log error or handle silently as per current behavior
-    console.error("[Council] Failed to edit message:", e);
+    log.error("[Council] Failed to edit message:", e);
   }
 }
 

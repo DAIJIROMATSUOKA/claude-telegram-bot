@@ -14,6 +14,9 @@
  *   4. 全作業完了 → clearWorkState()
  */
 
+import { createLogger } from "./logger";
+const log = createLogger("work-state");
+
 import { existsSync, writeFileSync, unlinkSync } from "fs";
 import { loadConfig, invalidateConfig } from "./config-loader";
 import { resolve } from "path";
@@ -72,9 +75,9 @@ export function setWorkState(state: Omit<WorkState, "created_at" | "updated_at" 
     };
     writeFileSync(WORK_STATE_FILE, JSON.stringify(data, null, 2));
     invalidateConfig(WORK_STATE_FILE);
-    console.log(`[WorkState] Saved: ${state.tasks.length} tasks, directive: "${state.directive.slice(0, 50)}"`);
+    log.info(`[WorkState] Saved: ${state.tasks.length} tasks, directive: "${state.directive.slice(0, 50)}"`);
   } catch (error) {
-    console.error("[WorkState] Failed to save:", error);
+    log.error("[WorkState] Failed to save:", error);
   }
 }
 
@@ -91,16 +94,16 @@ export function getWorkState(): WorkState | null {
 
     // 期限切れチェック
     if (Date.now() > state.expires_at) {
-      console.log(`[WorkState] Expired (created: ${state.created_at}), clearing`);
+      log.info(`[WorkState] Expired (created: ${state.created_at}), clearing`);
       clearWorkState();
       return null;
     }
 
     const pendingCount = state.tasks.filter(t => t.status === "pending" || t.status === "in_progress").length;
-    console.log(`[WorkState] Found: ${pendingCount} remaining tasks of ${state.tasks.length} total`);
+    log.info(`[WorkState] Found: ${pendingCount} remaining tasks of ${state.tasks.length} total`);
     return state;
   } catch (error) {
-    console.error("[WorkState] Failed to read:", error);
+    log.error("[WorkState] Failed to read:", error);
     return null;
   }
 }
@@ -131,9 +134,9 @@ export function updateWorkProgress(
 
     writeFileSync(WORK_STATE_FILE, JSON.stringify(state, null, 2));
     invalidateConfig(WORK_STATE_FILE);
-    console.log(`[WorkState] Updated task ${taskId}: ${status}${notes ? ` (${notes})` : ""}`);
+    log.info(`[WorkState] Updated task ${taskId}: ${status}${notes ? ` (${notes})` : ""}`);
   } catch (error) {
-    console.error("[WorkState] Failed to update:", error);
+    log.error("[WorkState] Failed to update:", error);
   }
 }
 
@@ -149,9 +152,9 @@ export function updateWorkStateSessionId(sessionId: string): void {
     state.updated_at = new Date().toISOString();
     writeFileSync(WORK_STATE_FILE, JSON.stringify(state, null, 2));
     invalidateConfig(WORK_STATE_FILE);
-    console.log(`[WorkState] Updated session_id: ${sessionId.slice(0, 8)}...`);
+    log.info(`[WorkState] Updated session_id: ${sessionId.slice(0, 8)}...`);
   } catch (error) {
-    console.error("[WorkState] Failed to update session_id:", error);
+    log.error("[WorkState] Failed to update session_id:", error);
   }
 }
 
@@ -163,10 +166,10 @@ export function clearWorkState(): void {
     if (existsSync(WORK_STATE_FILE)) {
       unlinkSync(WORK_STATE_FILE);
       invalidateConfig(WORK_STATE_FILE);
-      console.log("[WorkState] Cleared");
+      log.info("[WorkState] Cleared");
     }
   } catch (error) {
-    console.error("[WorkState] Failed to clear:", error);
+    log.error("[WorkState] Failed to clear:", error);
   }
 }
 

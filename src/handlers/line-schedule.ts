@@ -3,6 +3,9 @@
  * 画像/動画: LINE直接送信, ZIP/PDF等: Dropbox共有リンク
  */
 
+import { createLogger } from "../utils/logger";
+const log = createLogger("line-schedule");
+
 import type { Context } from 'grammy';
 import { getPendingAttach, clearPendingAttach } from '../utils/attach-pending';
 import { parseJapaneseTime, formatJST } from '../utils/time-parser';
@@ -264,7 +267,7 @@ export async function handleLineSchedule(ctx: Context): Promise<void> {
 
   await ctx.reply(parts);
   } catch (e: any) {
-    console.error("[LineSchedule] Unhandled error:", e);
+    log.error("[LineSchedule] Unhandled error:", e);
     await ctx.reply(`❌ エラー: ${e.message || e}`).catch(() => {});
   }
 }

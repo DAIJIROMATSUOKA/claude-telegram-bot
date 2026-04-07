@@ -13,6 +13,9 @@
  *   logger.writeSummary(completionReport);
  */
 
+import { createLogger } from "../utils/logger";
+const log = createLogger("run-logger");
+
 import { mkdirSync, appendFileSync, writeFileSync, readFileSync, existsSync, readdirSync } from "node:fs";
 import { loadJsonFile } from "../utils/json-loader";
 import { join } from "node:path";
@@ -108,7 +111,7 @@ export class RunLogger {
     try {
       appendFileSync(this.logPath, JSON.stringify(entry) + "\n");
     } catch (err) {
-      console.error(`[RunLogger] Failed to write event:`, err);
+      log.error(`[RunLogger] Failed to write event:`, err);
     }
   }
 
@@ -125,7 +128,7 @@ export class RunLogger {
     try {
       writeFileSync(this.summaryPath, JSON.stringify(full, null, 2) + "\n");
     } catch (err) {
-      console.error(`[RunLogger] Failed to write summary:`, err);
+      log.error(`[RunLogger] Failed to write summary:`, err);
     }
   }
 }

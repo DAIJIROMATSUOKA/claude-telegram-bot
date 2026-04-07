@@ -1,3 +1,6 @@
+import { createLogger } from "../utils/logger";
+const log = createLogger("text");
+
 import { handleImsgSend } from "./imsg-send";
 import { handleMailSend } from "./mail-send";
 import { handleLinePost } from "./line-post";
@@ -154,7 +157,7 @@ export async function handleText(ctx: Context): Promise<void> {
       const domainMatch = replyContent.match(/(?:\u{1F4CB}\s*\[([\w-]+)\]|\u{1F4CC}\s*([\w-]+))/u);
       const replyDomain = domainMatch?.[1] || domainMatch?.[2];
       if (replyDomain) {
-        console.log(`[Text] Reply to domain ${replyDomain} response -> routing back`);
+        log.info(`[Text] Reply to domain ${replyDomain} response -> routing back`);
         try {
           const userText = ctx.message?.text || "";
           const statusMsg = await ctx.reply(`\u{1F4CC} ${replyDomain} \u306B\u9001\u4FE1\u4E2D...`);
@@ -181,7 +184,7 @@ export async function handleText(ctx: Context): Promise<void> {
           }
           return;
         } catch (domReplyErr: any) {
-          console.error(`[Text] Domain reply to ${replyDomain} failed:`, domReplyErr?.message?.substring(0, 100));
+          log.error(`[Text] Domain reply to ${replyDomain} failed:`, domReplyErr?.message?.substring(0, 100));
           await ctx.reply(`\u26a0\ufe0f ${replyDomain} \u30c1\u30e3\u30c3\u30c8\u63a5\u7d9a\u30a8\u30e9\u30fc\u3002/pc \u3067\u76f4\u63a5\u9001\u4fe1\u3057\u3066\u304f\u3060\u3055\u3044\u3002`);
           return; // Do NOT fall through to INBOX
         }
@@ -202,7 +205,7 @@ export async function handleText(ctx: Context): Promise<void> {
             { timeout: 5000, encoding: "utf-8" }
           ).trim();
           if (urlCheck && !urlCheck.includes("未作成") && !urlCheck.includes("ERROR") && urlCheck.startsWith("http")) {
-            console.log(`[Text] Direct send: /${domainLower} → ${urlCheck.substring(0, 50)}`);
+            log.info(`[Text] Direct send: /${domainLower} → ${urlCheck.substring(0, 50)}`);
             // Delete DJ's message
             try { await ctx.api.deleteMessage(ctx.chat!.id, ctx.message!.message_id); } catch {}
             const statusMsg = await ctx.reply(`📌 ${domainLower} に送信中...`);
@@ -230,7 +233,7 @@ export async function handleText(ctx: Context): Promise<void> {
               }
             } catch (relayErr: any) {
               try { await ctx.api.editMessageText(ctx.chat!.id, statusMsg.message_id, `📌 ${domainLower} — エラー`); } catch {}
-              console.error("[Text] Direct send error:", relayErr?.message?.substring(0, 100));
+              log.error("[Text] Direct send error:", relayErr?.message?.substring(0, 100));
             }
             return;
           }
@@ -249,7 +252,7 @@ export async function handleText(ctx: Context): Promise<void> {
       const orch = getChromeOrchestrator();
       if (orch && !orchestratorHandled) {
         const routeResult = orch.quickRoute(message, "telegram");
-        console.log(`[Text] Orchestrator quickRoute: method=${routeResult.method} project=${routeResult.projectId} conf=${routeResult.confidence}`);
+        log.info(`[Text] Orchestrator quickRoute: method=${routeResult.method} project=${routeResult.projectId} conf=${routeResult.confidence}`);
         if (routeResult.projectId && routeResult.confidence >= 0.8) {
           // Code-layer match: route to project tab (blocking — G1 応答リレー)
           const result = await orch.route({
@@ -258,17 +261,17 @@ export async function handleText(ctx: Context): Promise<void> {
             autoPost: true,
             ctx, // G1: pass ctx for Telegram reply
           });
-          console.log(`[Text] Orchestrator route result: forwarded=${result.forwarded} tabWT=${result.tabWT} error=${result.error}`);
+          log.info(`[Text] Orchestrator route result: forwarded=${result.forwarded} tabWT=${result.tabWT} error=${result.error}`);
           if (result.forwarded) {
             orchestratorHandled = true;
           }
         } else if (routeResult.method === "no-route") {
             // Bot message replies without domain tag (triage, worker etc.) → skip INBOX, use Worker tab
             if (replyMsg?.from?.is_bot) {
-              console.log("[Text] No route, reply to bot message → skip INBOX, fall through to Worker");
+              log.info("[Text] No route, reply to bot message → skip INBOX, fall through to Worker");
             } else {
             // No domain match, no M-number: route to INBOX specialist chat
-            console.log("[Text] No route match → relaying to INBOX domain");
+            log.info("[Text] No route match → relaying to INBOX domain");
             try {
               // 1. Show status + delete original message
               const statusMsg = await ctx.reply("📥 INBOX に送信中...");
@@ -284,37 +287,37 @@ export async function handleText(ctx: Context): Promise<void> {
 
                 if (routeTag && routeTag !== "none") {
                   // 3. Auto-forward to target domain
-                  console.log(`[Text] INBOX routed to ${routeTag}, forwarding...`);
+                  log.info(`[Text] INBOX routed to ${routeTag}, forwarding...`);
                   try {
                     const fwdResponse = await relayDomain(routeTag, message, async () => {
                       try { await ctx.api.editMessageText(ctx.chat!.id, statusMsg.message_id, `📥 → ${routeTag} 応答中...`); } catch {}
                     });
                     if (fwdResponse && fwdResponse !== "BUFFERED") {
                       await sendRelayResponse(ctx, ctx.chat!.id, statusMsg.message_id, `${djQuote(message)}📌 ${routeTag}\n\n${fwdResponse}`);
-                      console.log(`[Text] ${routeTag} replied ${fwdResponse.length} chars`);
+                      log.info(`[Text] ${routeTag} replied ${fwdResponse.length} chars`);
                     } else if (fwdResponse === "BUFFERED") {
                       try { await ctx.api.editMessageText(ctx.chat!.id, statusMsg.message_id, `📌 ${routeTag} 応答中（バッファ済み）`); } catch {}
                     } else {
                       await sendRelayResponse(ctx, ctx.chat!.id, statusMsg.message_id, `${djQuote(message)}📌 ${routeTag}\n\n${cleanResponse}`);
-                      console.log(`[Text] ${routeTag} no response, showing INBOX answer`);
+                      log.info(`[Text] ${routeTag} no response, showing INBOX answer`);
                     }
                   } catch (fwdErr: any) {
                     // Forward failed, show INBOX response as fallback
                     await sendRelayResponse(ctx, ctx.chat!.id, statusMsg.message_id, `📥 INBOX (${routeTag}転送失敗)\n\n${cleanResponse}`);
-                    console.error(`[Text] Forward to ${routeTag} failed:`, fwdErr?.message?.substring(0, 100));
+                    log.error(`[Text] Forward to ${routeTag} failed:`, fwdErr?.message?.substring(0, 100));
                   }
                 } else {
                   // No route / ROUTE:none -> show INBOX response directly
                   await ctx.api.editMessageText(ctx.chat!.id, statusMsg.message_id, `📥 INBOX\n\n${cleanResponse}`);
-                  console.log(`[Text] INBOX replied ${cleanResponse.length} chars (no route)`);
+                  log.info(`[Text] INBOX replied ${cleanResponse.length} chars (no route)`);
                 }
               } else {
                 await ctx.api.editMessageText(ctx.chat!.id, statusMsg.message_id, "📥 INBOX — 応答なし");
-                console.log("[Text] INBOX relay done but no response");
+                log.info("[Text] INBOX relay done but no response");
               }
               orchestratorHandled = true;
             } catch (inboxErr: any) {
-              console.error("[Text] INBOX relay failed:", inboxErr?.message?.substring(0, 100));
+              log.error("[Text] INBOX relay failed:", inboxErr?.message?.substring(0, 100));
               // Fall through to Worker Tab as last resort
             }
             } // end: else (not bot reply)
@@ -324,7 +327,7 @@ export async function handleText(ctx: Context): Promise<void> {
       }
     } catch (e: any) {
       // Non-fatal: orchestrator failure falls through to Bridge
-      console.error("[Orch] Route EXCEPTION (falling through to Bridge):", e?.message || e, e?.stack?.substring(0, 300));
+      log.error("[Orch] Route EXCEPTION (falling through to Bridge):", e?.message || e, e?.stack?.substring(0, 300));
     }
 
   // ── Chat Reply Routing: TelegramリプライをClaude.aiチャットにルーティング
@@ -344,7 +347,7 @@ export async function handleText(ctx: Context): Promise<void> {
       try {
         const { appendMemo } = await import("../services/obsidian-writer");
         await appendMemo(memoText);
-      } catch (e) { console.error('[Memo] Obsidian write failed:', e); }
+      } catch (e) { log.error('[Memo] Obsidian write failed:', e); }
     }
     // Brief confirmation, then auto-delete
     const memoConfirm = await ctx.api.sendMessage(chatId, '📝 ✓');
@@ -360,7 +363,7 @@ export async function handleText(ctx: Context): Promise<void> {
       try {
         const { appendTask } = await import('../services/obsidian-writer');
         await appendTask(taskText);
-      } catch (e) { console.error('[Task] Obsidian write failed:', e); }
+      } catch (e) { log.error('[Task] Obsidian write failed:', e); }
     }
     // Brief confirmation, then auto-delete
     const taskConfirm = await ctx.api.sendMessage(chatId, '☑️ ✓');
@@ -446,11 +449,11 @@ export async function handleText(ctx: Context): Promise<void> {
   // ── 🦞 Croppy Bridge: Route default messages to Worker tabs ──
   // G2: Skip bridge if orchestrator already handled this message
   if (orchestratorHandled) {
-    console.log("[Text] G2: Orchestrator handled, skipping Bridge");
+    log.info("[Text] G2: Orchestrator handled, skipping Bridge");
     stopProcessing();
     return;
   }
-  console.log("[Text] Orchestrator did NOT handle, falling through to Bridge");
+  log.info("[Text] Orchestrator did NOT handle, falling through to Bridge");
   stopProcessing();
   await dispatchToWorker(ctx, message, { raw: true });
 }

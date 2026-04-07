@@ -3,6 +3,9 @@
  * Runs via LaunchAgent at 23:00 JST, sends results to Telegram
  * READ-ONLY: no file modifications, proposals only
  */
+import { createLogger } from "../utils/logger";
+const log = createLogger("nightly-agent");
+
 import { query } from "@anthropic-ai/claude-agent-sdk";
 
 const CWD = (process.env.HOME || "/Users/daijiromatsuokam1") + "/claude-telegram-bot";
@@ -11,7 +14,7 @@ const CHAT_ID = process.env.TELEGRAM_ALLOWED_USERS || "";
 
 async function sendTelegram(text: string) {
   if (!BOT_TOKEN || !CHAT_ID) {
-    console.log("[Nightly] No Telegram config, printing:", text);
+    log.info("[Nightly] No Telegram config, printing:", text);
     return;
   }
   const chunks = [];
@@ -23,13 +26,13 @@ async function sendTelegram(text: string) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ chat_id: CHAT_ID, text: chunk }),
-    }).catch(e => console.error("[Nightly] Telegram error:", e));
+    }).catch(e => log.error("[Nightly] Telegram error:", e));
   }
 }
 
 async function main() {
   const start = Date.now();
-  console.log("[Nightly Agent] Starting...");
+  log.info("[Nightly Agent] Starting...");
 
   const prompt = `あなたはNightly Agent。DJは朝3時に起きてTelegramでこのレポートを読む。
 技術者ではない経営者にも分かる言葉で書け。ファイルは絶対に変更するな。
@@ -78,11 +81,11 @@ DJが「やって」と返信すれば次のセッションで実装される。
     const report = resultMsg?.result || "(no result)";
 
     const fullReport = `${report}\n\n⏱ ${elapsed}s | $${cost}`;
-    console.log(fullReport);
+    log.info(fullReport);
     await sendTelegram(fullReport);
   } catch (error: any) {
     const errMsg = `❌ Nightly Agent 失敗\n${error.message}`;
-    console.error(errMsg);
+    log.error(errMsg);
     await sendTelegram(errMsg);
   }
 }

@@ -2,6 +2,9 @@
  * Phase Detector - Jarvisの応答からPhase完了を検出
  */
 
+import { createLogger } from "./logger";
+const log = createLogger("phase-detector");
+
 import type { Context } from 'grammy';
 
 /**
@@ -150,9 +153,9 @@ export async function checkPhaseCompletionApproval(
     return true;
   }
 
-  console.log('[Phase Detector] Phase完了検出:', detection.phaseName);
+  log.info('[Phase Detector] Phase完了検出:', detection.phaseName);
 
   // Phase完了 → 常にSTOP（DJ承認待ち）
-  console.log('[Phase Detector] Phase完了 → DJ承認待ち');
+  log.info('[Phase Detector] Phase完了 → DJ承認待ち');
   return false;
 }

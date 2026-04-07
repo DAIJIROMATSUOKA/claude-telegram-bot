@@ -7,6 +7,9 @@
  * Focus中はControl Tower更新のみ行い、通常メッセージ通知は送らない
  */
 
+import { createLogger } from "./logger";
+const log = createLogger("focus-mode");
+
 import { callMemoryGateway } from '../handlers/ai-router';
 import { getJarvisContext, updateJarvisContext } from './jarvis-context';
 import type { Context } from 'grammy';
@@ -33,7 +36,7 @@ export async function isFocusModeEnabled(userId: string | number): Promise<boole
  */
 export async function enableFocusMode(userId: string | number): Promise<void> {
   await updateJarvisContext(userId, { focus_mode: 1 });
-  console.log(`[Focus Mode] Enabled for user ${userId}`);
+  log.info(`[Focus Mode] Enabled for user ${userId}`);
 }
 
 /**
@@ -41,7 +44,7 @@ export async function enableFocusMode(userId: string | number): Promise<void> {
  */
 export async function disableFocusMode(userId: string | number): Promise<void> {
   await updateJarvisContext(userId, { focus_mode: 0 });
-  console.log(`[Focus Mode] Disabled for user ${userId}`);
+  log.info(`[Focus Mode] Disabled for user ${userId}`);
 }
 
 /**
@@ -61,9 +64,9 @@ export async function bufferNotification(
       params: [userIdStr, notificationType, message],
     });
 
-    console.log(`[Focus Mode] Buffered ${notificationType}: ${message.substring(0, 50)}...`);
+    log.info(`[Focus Mode] Buffered ${notificationType}: ${message.substring(0, 50)}...`);
   } catch (error) {
-    console.error('[Focus Mode] Buffer error:', error);
+    log.error('[Focus Mode] Buffer error:', error);
   }
 }
 
@@ -88,7 +91,7 @@ export async function getBufferedNotifications(userId: string | number): Promise
 
     return response.data.results as FocusNotification[];
   } catch (error) {
-    console.error('[Focus Mode] Get buffer error:', error);
+    log.error('[Focus Mode] Get buffer error:', error);
     return [];
   }
 }
@@ -107,9 +110,9 @@ export async function markNotificationsDelivered(userId: string | number): Promi
       params: [userIdStr],
     });
 
-    console.log(`[Focus Mode] Marked all notifications as delivered for user ${userId}`);
+    log.info(`[Focus Mode] Marked all notifications as delivered for user ${userId}`);
   } catch (error) {
-    console.error('[Focus Mode] Mark delivered error:', error);
+    log.error('[Focus Mode] Mark delivered error:', error);
   }
 }
 
@@ -184,7 +187,7 @@ export async function deliverBufferedNotifications(ctx: Context, userId: string 
     await ctx.reply(message);
     await markNotificationsDelivered(userId);
   } catch (error) {
-    console.error('[Focus Mode] Deliver error:', error);
+    log.error('[Focus Mode] Deliver error:', error);
     await ctx.reply('⚠️ バッファ通知の配信に失敗しました');
   }
 }

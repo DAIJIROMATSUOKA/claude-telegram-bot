@@ -3,6 +3,9 @@
  * Router: delegates callback and reply handling to extracted modules.
  */
 
+import { createLogger } from "../utils/logger";
+const log = createLogger("inbox");
+
 import type { Context } from "grammy";
 import { logger } from "../utils/logger";
 import { ALLOWED_USERS } from "../config";
@@ -114,7 +117,7 @@ export async function handleInboxReply(ctx: Context): Promise<boolean> {
         "SELECT source, source_id, source_detail FROM message_mappings WHERE telegram_msg_id = ? AND telegram_chat_id = ?",
         [parentMsgId, chatId]
       );
-      console.log("[Inbox] Reply chain: prompt=" + replyMsgId + " parent=" + parentMsgId + " found=" + !!mapping?.results?.[0]);
+      log.info("[Inbox] Reply chain: prompt=" + replyMsgId + " parent=" + parentMsgId + " found=" + !!mapping?.results?.[0]);
     }
 
     if (!mapping?.results?.[0]) return false;
@@ -132,7 +135,7 @@ export async function handleInboxReply(ctx: Context): Promise<boolean> {
       return await handleImessageReply(ctx, source_id, detail, replyText, replyMsgId);
     }
   } catch (e) {
-    console.error("[Inbox] Reply lookup error:", e);
+    log.error("[Inbox] Reply lookup error:", e);
   }
 
   return false;

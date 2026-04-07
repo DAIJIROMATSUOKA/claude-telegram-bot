@@ -6,6 +6,9 @@
  * text.tsから呼ばれ、Telegram→専門チャット→応答→Telegram返信を行う。
  */
 
+import { createLogger } from "../utils/logger";
+const log = createLogger("domain-router");
+
 import { exec, execSync } from "child_process";
 import { promisify } from "util";
 import type { Context } from "grammy";
@@ -63,7 +66,7 @@ export async function handleDomainRelay(
   const chatId = ctx.chat?.id;
   if (!chatId) return false;
 
-  console.log(`[DomainRouter] Routing to ${route.domain}: ${route.url.substring(0, 50)}`);
+  log.info(`[DomainRouter] Routing to ${route.domain}: ${route.url.substring(0, 50)}`);
 
   // Send "routing" indicator
   const statusMsg = await ctx.reply(`🔄 ${route.domain} チャットに転送中...`, {
@@ -86,7 +89,7 @@ export async function handleDomainRelay(
     const response = stdout.match(/^RESPONSE: ([\s\S]+)$/m)?.[1]?.trim();
 
     if (!response) {
-      console.error(`[DomainRouter] No response from ${route.domain}: ${stderr}`);
+      log.error(`[DomainRouter] No response from ${route.domain}: ${stderr}`);
       await ctx.api.editMessageText(
         chatId,
         statusMsg.message_id,
@@ -120,10 +123,10 @@ export async function handleDomainRelay(
       }
     }
 
-    console.log(`[DomainRouter] ${route.domain}: relayed ${response.length} chars`);
+    log.info(`[DomainRouter] ${route.domain}: relayed ${response.length} chars`);
     return true;
   } catch (error: any) {
-    console.error(`[DomainRouter] Error:`, error?.message);
+    log.error(`[DomainRouter] Error:`, error?.message);
     try {
       await ctx.api.editMessageText(
         chatId,

@@ -6,6 +6,9 @@
  * 問題があればTelegramに通知する。
  */
 
+import { createLogger } from "./logger";
+const log = createLogger("auto-review");
+
 import { callGeminiAPI, callCodexCLI } from '../handlers/ai-router';
 import { exec } from 'child_process';
 import { promisify } from 'util';
@@ -60,11 +63,11 @@ export async function autoReviewWithGemini(
     return null;
   }
 
-  console.log('[Auto Review] 💎 Code changes detected, starting Gemini review...');
+  log.info('[Auto Review] 💎 Code changes detected, starting Gemini review...');
 
   const diff = await getGitDiff();
   if (!diff || diff.length < 20) {
-    console.log('[Auto Review] 💎 No meaningful diff found, skipping');
+    log.info('[Auto Review] 💎 No meaningful diff found, skipping');
     return null;
   }
 
@@ -92,11 +95,11 @@ ${diff.slice(0, 3000)}`;
 
     // LGTMなら通知不要
     if (/^LGTM$/i.test(review) || review.toLowerCase().includes('lgtm')) {
-      console.log('[Auto Review] 💎 LGTM - no issues found');
+      log.info('[Auto Review] 💎 LGTM - no issues found');
       return null;
     }
 
-    console.log('[Auto Review] 💎 Issues found:', review.slice(0, 100));
+    log.info('[Auto Review] 💎 Issues found:', review.slice(0, 100));
 
     // 重大な変更（diffが大きい）場合はチャッピーにも確認（council review）
     if (diff.length > 1000) {
@@ -118,7 +121,7 @@ ${diff.slice(0, 3000)}`;
  */
 async function councilReviewWithChappy(diff: string): Promise<string | null> {
   try {
-    console.log('[Auto Review] 🧠 Large change detected, getting Chappy second opinion...');
+    log.info('[Auto Review] 🧠 Large change detected, getting Chappy second opinion...');
 
     const reviewPrompt = `以下のgit diffをレビューしろ。問題がなければ「LGTM」とだけ答えろ。
 重大なバグ、セキュリティ問題、ロジックミスのみ指摘しろ。
@@ -141,7 +144,7 @@ ${diff.slice(0, 3000)}`;
     const review = result.content.trim();
 
     if (/^LGTM$/i.test(review) || review.toLowerCase().includes('lgtm')) {
-      console.log('[Auto Review] 🧠 Chappy: LGTM');
+      log.info('[Auto Review] 🧠 Chappy: LGTM');
       return null;
     }
 

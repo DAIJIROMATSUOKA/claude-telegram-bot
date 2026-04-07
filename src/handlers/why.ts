@@ -10,6 +10,9 @@
  * - Next (次の一手)
  */
 
+import { createLogger } from "../utils/logger";
+const log = createLogger("why");
+
 import type { Context } from 'grammy';
 import { controlTowerDB } from '../utils/control-tower-db';
 import { isAuthorized } from '../security';
@@ -39,7 +42,7 @@ export async function handleWhy(ctx: Context): Promise<void> {
         return;
       }
     } catch (e) {
-      console.error('[/why] Failed to parse why_allowlist_user_ids:', e);
+      log.error('[/why] Failed to parse why_allowlist_user_ids:', e);
     }
   }
 

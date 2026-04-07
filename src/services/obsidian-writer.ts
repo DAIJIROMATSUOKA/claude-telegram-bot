@@ -3,6 +3,9 @@
  * Writes directly to Obsidian vault on M1 filesystem
  */
 
+import { createLogger } from "../utils/logger";
+const log = createLogger("obsidian-writer");
+
 import { existsSync, readdirSync } from "fs";
 import { readFile, writeFile, mkdir } from "fs/promises";
 import { join } from "path";
@@ -34,7 +37,7 @@ async function ensureDailyNote(path: string): Promise<void> {
     const date = path.split("/").pop()?.replace(".md", "") || "";
     const template = `# ${date}\n\n## 🎙 Voice Inbox\n\n## 📋 Tasks\n\n## 📰 News\n`;
     await writeFile(path, template, "utf-8");
-    console.log(`[Obsidian] Created daily note: ${path}`);
+    log.info(`[Obsidian] Created daily note: ${path}`);
   }
 }
 
@@ -81,11 +84,11 @@ export async function archiveToObsidian(
     if (routed.length > 0) {
       const newProjects = routed.filter(r => r.startsWith("NEW:"));
       if (newProjects.length > 0) {
-        console.log(`[Obsidian] New project notes created: ${newProjects.map(r => r.replace("NEW:", "")).join(", ")}`);
+        log.info(`[Obsidian] New project notes created: ${newProjects.map(r => r.replace("NEW:", "")).join(", ")}`);
       }
     }
   } catch (error) {
-    console.error("[Obsidian] Archive error:", error);
+    log.error("[Obsidian] Archive error:", error);
     // Non-fatal: don't break inbox flow
   }
 }
@@ -100,7 +103,7 @@ async function appendNews(title: string, summary: string, url?: string): Promise
     const entry = `- **${title}**${link}\n  ${summary}`;
     await appendToSection(path, "📰 News", entry);
   } catch (error) {
-    console.error("[Obsidian] News append error:", error);
+    log.error("[Obsidian] News append error:", error);
   }
 }
 
@@ -121,9 +124,9 @@ export async function appendMemo(text: string): Promise<void> {
     const time = jst.toISOString().substring(11, 16);
     const entry = `- ${time} ${text}`;
     await appendToSection(path, "📝 メモ", entry);
-    console.log(`[Obsidian] Memo: ${text.substring(0, 50)}`);
+    log.info(`[Obsidian] Memo: ${text.substring(0, 50)}`);
   } catch (error) {
-    console.error('[Obsidian] Memo error:', error);
+    log.error('[Obsidian] Memo error:', error);
   }
 }
 
@@ -138,9 +141,9 @@ export async function appendTask(text: string): Promise<void> {
     const time = jst.toISOString().substring(11, 16);
     const entry = `- [ ] ${time} ${text}`;
     await appendToSection(path, '📋 Tasks', entry);
-    console.log(`[Obsidian] Task: ${text.substring(0, 50)}`);
+    log.info(`[Obsidian] Task: ${text.substring(0, 50)}`);
   } catch (error) {
-    console.error('[Obsidian] Task error:', error);
+    log.error('[Obsidian] Task error:', error);
   }
 }
 
@@ -215,7 +218,7 @@ tags:
 `;
   
   await writeFile(filePath, template, "utf-8");
-  console.log(`[Obsidian] Created project note: ${fileName}`);
+  log.info(`[Obsidian] Created project note: ${fileName}`);
   return filePath;
 }
 
@@ -270,12 +273,12 @@ export async function routeToProjectNotes(
           routed.push(pNum);
         }
       } catch (err) {
-        console.error(`[Obsidian] Project route error for ${pNum}:`, err);
+        log.error(`[Obsidian] Project route error for ${pNum}:`, err);
         // Non-fatal: continue with other project numbers
       }
     }
   } catch (error) {
-    console.error("[Obsidian] Project routing error:", error);
+    log.error("[Obsidian] Project routing error:", error);
     // Non-fatal
   }
   return routed;

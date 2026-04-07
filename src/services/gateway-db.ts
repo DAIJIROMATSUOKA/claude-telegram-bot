@@ -3,6 +3,9 @@
  * Grammy Bot → HTTP → Memory Gateway → D1
  */
 
+import { createLogger } from "../utils/logger";
+const log = createLogger("gateway-db");
+
 import { gatewayRateLimiter } from "../utils/rate-limiter";
 import { withRetry } from "../utils/retry";
 
@@ -40,7 +43,7 @@ export async function gatewayQuery(
       return { results: data.results || [], meta: data.meta };
     });
   } catch (error) {
-    console.error("[GatewayDB] Error:", error);
+    log.error("[GatewayDB] Error:", error);
     return null;
   }
 }

@@ -4,6 +4,9 @@
  * Phase D: Notification Budget
  */
 
+import { createLogger } from "./logger";
+const log = createLogger("control-tower-helper");
+
 import type { Context } from 'grammy';
 import { updateTower } from './tower-manager.js';
 import type { TowerState } from './tower-renderer.js';
@@ -80,10 +83,10 @@ export async function startPhase(
       current_action: undefined,
     });
   } catch (error) {
-    console.error('[ControlTowerHelper] Failed to write to D1:', error);
+    log.error('[ControlTowerHelper] Failed to write to D1:', error);
   }
 
-  console.log(`[ControlTowerHelper] Phase started: ${phaseName}`);
+  log.info(`[ControlTowerHelper] Phase started: ${phaseName}`);
 }
 
 /**
@@ -114,10 +117,10 @@ async function completePhase(
       current_action: undefined,
     });
   } catch (error) {
-    console.error('[ControlTowerHelper] Failed to write to D1:', error);
+    log.error('[ControlTowerHelper] Failed to write to D1:', error);
   }
 
-  console.log(`[ControlTowerHelper] Phase completed: ${phaseName} (${success ? 'success' : 'error'})`);
+  log.info(`[ControlTowerHelper] Phase completed: ${phaseName} (${success ? 'success' : 'error'})`);
 }
 
 /**
@@ -148,10 +151,10 @@ export async function updateStatus(
       current_action: detail ?? undefined,
     });
   } catch (error) {
-    console.error('[ControlTowerHelper] Failed to write to D1:', error);
+    log.error('[ControlTowerHelper] Failed to write to D1:', error);
   }
 
-  console.log(`[ControlTowerHelper] Status updated: ${statusType} - ${detail}`);
+  log.info(`[ControlTowerHelper] Status updated: ${statusType} - ${detail}`);
 }
 
 // ============================================================================
@@ -167,7 +170,7 @@ export async function sendStartNotification(
   taskTitle: string
 ): Promise<void> {
   // 開始通知は送らない（完了時のみ通知する仕様）
-  console.log(`[ControlTowerHelper] Start logged (no notification): ${taskTitle}`);
+  log.info(`[ControlTowerHelper] Start logged (no notification): ${taskTitle}`);
 }
 
 /**
@@ -195,5 +198,5 @@ export async function sendEndNotification(
   await ctx.reply(`━━━━━━━━━━━━━━━\n${message}\n━━━━━━━━━━━━━━━`, {
     disable_notification: false, // Loud
   });
-  console.log(`[ControlTowerHelper] End notification sent (loud): ${taskTitle} [${traceId || 'no-trace'}]`);
+  log.info(`[ControlTowerHelper] End notification sent (loud): ${taskTitle} [${traceId || 'no-trace'}]`);
 }

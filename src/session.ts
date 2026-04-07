@@ -5,6 +5,9 @@
  * V1 supports full options (cwd, mcpServers, settingSources, etc.)
  */
 
+import { createLogger } from "./utils/logger";
+const log = createLogger("session");
+
 import {
   query,
   type Options,
@@ -89,7 +92,7 @@ async function fetchJarvisContext(): Promise<string> {
     logger.info("session", "Reading jarvis_context fallback file", { path: contextPath });
     const content = (await readFile(contextPath, 'utf-8')).trim();
     if (!content) {
-      console.log("[fetchJarvisContext] File is empty");
+      log.info("[fetchJarvisContext] File is empty");
       return "";
     }
 
@@ -113,7 +116,7 @@ async function fetchJarvisContext(): Promise<string> {
     }
 
     const result = parts.length > 0 ? parts.join("\n") : "";
-    console.log(`[fetchJarvisContext] Parsed ${parts.length} fields from fallback file`);
+    log.info(`[fetchJarvisContext] Parsed ${parts.length} fields from fallback file`);
     return result;
   } catch (error) {
     logger.warn("session", "Failed to read jarvis_context file", error);
@@ -156,7 +159,7 @@ async function fetchChatHistory(): Promise<string> {
     };
 
     if (!data.results?.length) {
-      console.log("[fetchChatHistory] No chat history returned from DB");
+      log.info("[fetchChatHistory] No chat history returned from DB");
       return "";
     }
 
@@ -172,7 +175,7 @@ async function fetchChatHistory(): Promise<string> {
       return `${item.role}: ${truncated}${suffix}`;
     });
 
-    console.log(`[fetchChatHistory] Fetched ${lines.length} messages (${reversed.length - Math.min(reversed.length, 15)} summarized + ${Math.min(reversed.length, 15)} full)`);
+    log.info(`[fetchChatHistory] Fetched ${lines.length} messages (${reversed.length - Math.min(reversed.length, 15)} summarized + ${Math.min(reversed.length, 15)} full)`);
     return lines.join("\n");
   }, "" /* fallback: empty string */);
 }
@@ -357,7 +360,7 @@ class ClaudeSession {
     ]);
 
     const contextFetchMs = Date.now() - contextFetchStart;
-    console.log(`[Context Injection] Fetched in ${contextFetchMs}ms — jarvis:${jarvisContext ? 'ok' : 'empty'} chat:${chatHistory ? chatHistory.split('\n').length + 'lines' : 'empty'} learned:${learnedMemories.length} summaries:${sessionSummaries.length}`);
+    log.info(`[Context Injection] Fetched in ${contextFetchMs}ms — jarvis:${jarvisContext ? 'ok' : 'empty'} chat:${chatHistory ? chatHistory.split('\n').length + 'lines' : 'empty'} learned:${learnedMemories.length} summaries:${sessionSummaries.length}`);
 
     // ── MEMORY V2 CONTEXT ──
     let memoryContext = '';
@@ -413,7 +416,7 @@ class ClaudeSession {
     }
 
     const contextBlock = contextParts.length > 0 ? contextParts.join("\n") + "\n" : "";
-    console.log("[Context Injection] Final context block length:", contextBlock.length);
+    log.info("[Context Injection] Final context block length:", contextBlock.length);
     messageToSend = datePrefix + contextBlock + message;
 
     // Build SDK V1 options - supports all features
@@ -444,7 +447,7 @@ class ClaudeSession {
 
     // Check if stop was requested during processing phase
     if (this.stopRequested) {
-      console.log(
+      log.info(
         "Query cancelled before starting (stop was requested during processing)"
       );
       this.stopRequested = false;
@@ -493,14 +496,14 @@ class ClaudeSession {
 
         // Check for abort
         if (this.stopRequested) {
-          console.log("Query aborted by user");
+          log.info("Query aborted by user");
           break;
         }
 
         // Capture session_id from first message
         if (!this.sessionId && event.session_id) {
           this.sessionId = event.session_id;
-          console.log(`GOT session_id: ${this.sessionId!.slice(0, 8)}...`);
+          log.info(`GOT session_id: ${this.sessionId!.slice(0, 8)}...`);
           this.saveSession();
           // Update pending task with confirmed session_id for resume after restart
           updatePendingTaskSessionId(this.sessionId);
@@ -513,7 +516,7 @@ class ClaudeSession {
             if (block.type === "thinking") {
               const thinkingText = block.thinking;
               if (thinkingText) {
-                console.log(`THINKING BLOCK: ${thinkingText.slice(0, 100)}...`);
+                log.info(`THINKING BLOCK: ${thinkingText.slice(0, 100)}...`);
                 await statusCallback("thinking", thinkingText);
               }
             }
@@ -546,7 +549,7 @@ class ClaudeSession {
               const toolDisplay = formatToolStatus(toolName, toolInput);
               this.currentTool = toolDisplay;
               this.lastTool = toolDisplay;
-              console.log(`Tool: ${toolDisplay}`);
+              log.info(`Tool: ${toolDisplay}`);
 
               // Don't show tool status for ask_user - the buttons are self-explanatory
               if (!toolName.startsWith("mcp__ask-user")) {
@@ -602,14 +605,14 @@ class ClaudeSession {
 
         // Result message
         if (event.type === "result") {
-          console.log("Response complete");
+          log.info("Response complete");
           queryCompleted = true;
 
           // Capture usage if available
           if ("usage" in event && event.usage) {
             this.lastUsage = event.usage as TokenUsage;
             const u = this.lastUsage;
-            console.log(
+            log.info(
               `Usage: in=${u.input_tokens} out=${u.output_tokens} cache_read=${
                 u.cache_read_input_tokens || 0
               } cache_create=${u.cache_creation_input_tokens || 0}`
@@ -635,7 +638,7 @@ class ClaudeSession {
         this.lastError = "timeout (partial response returned)";
         this.lastErrorTime = new Date();
       } else {
-        console.error(`Error in query: ${error}`);
+        log.error(`Error in query: ${error}`);
         this.lastError = String(error).slice(0, 100);
         this.lastErrorTime = new Date();
         throw error;
@@ -675,7 +678,7 @@ class ClaudeSession {
     this.sessionId = null;
     this.lastActivity = null;
     this.conversationTitle = null;
-    console.log("Session cleared");
+    log.info("Session cleared");
   }
 
   /**
@@ -713,7 +716,7 @@ class ClaudeSession {
 
       // Save
       Bun.write(SESSION_FILE, JSON.stringify(history, null, 2));
-      console.log(`Session saved to ${SESSION_FILE}`);
+      log.info(`Session saved to ${SESSION_FILE}`);
     } catch (error) {
       console.warn(`Failed to save session: ${error}`);
     }
@@ -768,7 +771,7 @@ class ClaudeSession {
     this.conversationTitle = sessionData.title;
     this.lastActivity = new Date();
 
-    console.log(
+    log.info(
       `Resumed session ${sessionData.session_id.slice(0, 8)}... - "${sessionData.title}"`
     );
 

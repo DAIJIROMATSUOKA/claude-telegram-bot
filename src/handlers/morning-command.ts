@@ -2,6 +2,9 @@
  * /morning — Morning briefing: Gmail count, calendar events, pending tasks, git activity.
  */
 
+import { createLogger } from "../utils/logger";
+const log = createLogger("morning-command");
+
 import type { Context } from "grammy";
 import { ALLOWED_USERS } from "../config";
 import { isAuthorized } from "../security";
@@ -110,6 +113,6 @@ export async function handleMorning(ctx: Context): Promise<void> {
       writeFileSync(obsFile, `# ${y}-${mo}-${dd}\n${section}`);
     }
   } catch (e) {
-    console.error("[Morning] Obsidian write error:", e);
+    log.error("[Morning] Obsidian write error:", e);
   }
 }

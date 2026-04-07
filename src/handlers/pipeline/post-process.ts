@@ -5,6 +5,9 @@
  * BgTaskManager経由で実行する。
  */
 
+import { createLogger } from "../../utils/logger";
+const log = createLogger("post-process");
+
 import type { Context } from "grammy";
 import { autoReviewWithGemini } from "../../utils/auto-review";
 import { processAndLearn } from "../../utils/learned-memory";
@@ -78,7 +81,7 @@ export async function runPostProcess(opts: PostProcessOptions): Promise<void> {
   // 5. Auto-Resume Detection
   const detectionResult = detectInterruptableTask(response, 'bot');
   if (detectionResult.detected && detectionResult.confidence >= 0.85) {
-    console.log('[Auto-Resume] Interruptable task detected:', {
+    log.info('[Auto-Resume] Interruptable task detected:', {
       task: detectionResult.taskDescription,
       phase: detectionResult.phase,
       priority: detectionResult.priority,

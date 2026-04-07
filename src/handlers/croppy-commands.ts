@@ -6,6 +6,9 @@
  * `/croppy status` - 現在の状態と統計を表示
  */
 
+import { createLogger } from "../utils/logger";
+const log = createLogger("croppy-commands");
+
 import { Context } from 'grammy';
 import { callMemoryGateway } from '../handlers/ai-router';
 
@@ -22,13 +25,13 @@ async function getGlobalEnabled(): Promise<boolean> {
     });
 
     if (response.error || !response.data?.results?.[0]) {
-      console.error('[Croppy] Failed to get global_enabled:', response.error);
+      log.error('[Croppy] Failed to get global_enabled:', response.error);
       return true; // デフォルトはON
     }
 
     return response.data.results[0].config_value === '1';
   } catch (error) {
-    console.error('[Croppy] Error fetching global_enabled:', error);
+    log.error('[Croppy] Error fetching global_enabled:', error);
     return true;
   }
 }
@@ -43,7 +46,7 @@ async function setGlobalEnabled(enabled: boolean): Promise<void> {
       params: [enabled ? '1' : '0'],
     });
   } catch (error) {
-    console.error('[Croppy] Error setting global_enabled:', error);
+    log.error('[Croppy] Error setting global_enabled:', error);
   }
 }
 
@@ -63,7 +66,7 @@ async function getDailyStats(): Promise<{ goCount: number; stopCount: number }> 
     });
 
     if (response.error || !response.data?.results?.[0]) {
-      console.error('[Croppy] Failed to get daily stats:', response.error);
+      log.error('[Croppy] Failed to get daily stats:', response.error);
       return { goCount: 0, stopCount: 0 };
     }
 
@@ -73,7 +76,7 @@ async function getDailyStats(): Promise<{ goCount: number; stopCount: number }> 
       stopCount: result.stop_count || 0,
     };
   } catch (error) {
-    console.error('[Croppy] Error fetching daily stats:', error);
+    log.error('[Croppy] Error fetching daily stats:', error);
     return { goCount: 0, stopCount: 0 };
   }
 }
@@ -91,7 +94,7 @@ export async function isAutoApprovalEnabled(): Promise<boolean> {
   // 1日10回制限チェック
   const stats = await getDailyStats();
   if (stats.goCount >= MAX_DAILY_GO) {
-    console.log('[Croppy] 1日GO上限到達:', stats.goCount);
+    log.info('[Croppy] 1日GO上限到達:', stats.goCount);
     return false;
   }
 
@@ -103,7 +106,7 @@ export async function isAutoApprovalEnabled(): Promise<boolean> {
  */
 export function recordGoApproval() {
   // この関数は下位互換性のため残すが、実際のカウントはDBログから自動集計
-  console.log('[Croppy] GO記録（DBログから集計）');
+  log.info('[Croppy] GO記録（DBログから集計）');
 }
 
 /**
@@ -111,7 +114,7 @@ export function recordGoApproval() {
  */
 export function recordStopDecision() {
   // この関数は下位互換性のため残すが、実際のカウントはDBログから自動集計
-  console.log('[Croppy] STOP記録（DBログから集計）');
+  log.info('[Croppy] STOP記録（DBログから集計）');
 }
 
 /**
@@ -128,7 +131,7 @@ export async function handleCroppyDisable(ctx: Context) {
     { parse_mode: 'HTML' }
   );
 
-  console.log('[Croppy] 自動承認を無効化しました');
+  log.info('[Croppy] 自動承認を無効化しました');
 }
 
 /**
@@ -147,7 +150,7 @@ export async function handleCroppyEnable(ctx: Context) {
     { parse_mode: 'HTML' }
   );
 
-  console.log('[Croppy] 自動承認を有効化しました');
+  log.info('[Croppy] 自動承認を有効化しました');
 }
 
 /**

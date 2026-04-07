@@ -3,6 +3,9 @@
  * /todoist, /task_start, /task_stop, /task_pause, /focus, /alarm, /reminder, /recall, /croppy-dispatch
  */
 
+import { createLogger } from "../../utils/logger";
+const log = createLogger("tool-commands");
+
 import type { Context } from "grammy";
 import { session } from "../../session";
 import { WORKING_DIR, ALLOWED_USERS } from "../../config";
@@ -70,7 +73,7 @@ export async function handleTaskStart(ctx: Context): Promise<void> {
     const scriptPath = join(PROJECT_ROOT, "scripts", "timer-sync.sh");
     await execAsync(`"${scriptPath}" START "${taskName}"`);
   } catch (error: any) {
-    console.error("[task_start] Timer sync failed (non-fatal):", error.message);
+    log.error("[task_start] Timer sync failed (non-fatal):", error.message);
   }
 
   await ctx.reply(`⏱ タスク開始: ${taskName}`);
@@ -106,7 +109,7 @@ export async function handleTaskStop(ctx: Context): Promise<void> {
     const scriptPath = join(PROJECT_ROOT, "scripts", "timer-sync.sh");
     await execAsync(`"${scriptPath}" STOP "${taskName}"`);
   } catch (error: any) {
-    console.error("[task_stop] Timer sync failed (non-fatal):", error.message);
+    log.error("[task_stop] Timer sync failed (non-fatal):", error.message);
   }
 
   await ctx.reply(`⏹ タスク停止: ${taskName}`);
@@ -142,7 +145,7 @@ export async function handleTaskPause(ctx: Context): Promise<void> {
     const scriptPath = join(PROJECT_ROOT, "scripts", "timer-sync.sh");
     await execAsync(`"${scriptPath}" PAUSE "${taskName}"`);
   } catch (error: any) {
-    console.error("[task_pause] Timer sync failed (non-fatal):", error.message);
+    log.error("[task_pause] Timer sync failed (non-fatal):", error.message);
   }
 
   await ctx.reply(`⏸ タスク一時停止: ${taskName}`);
@@ -659,7 +662,7 @@ export async function handleRecall(ctx: Context): Promise<void> {
       sections.push('');
     }
   } catch (e) {
-    console.error('[Recall] chat_history search error:', e);
+    log.error('[Recall] chat_history search error:', e);
   }
 
   // B) jarvis_session_summaries
@@ -681,7 +684,7 @@ export async function handleRecall(ctx: Context): Promise<void> {
       sections.push('');
     }
   } catch (e) {
-    console.error('[Recall] session_summaries search error:', e);
+    log.error('[Recall] session_summaries search error:', e);
   }
 
   // C) jarvis_learned_memory
@@ -704,7 +707,7 @@ export async function handleRecall(ctx: Context): Promise<void> {
       sections.push('');
     }
   } catch (e) {
-    console.error('[Recall] learned_memory search error:', e);
+    log.error('[Recall] learned_memory search error:', e);
   }
 
   // D) git log --grep
@@ -726,7 +729,7 @@ export async function handleRecall(ctx: Context): Promise<void> {
   } catch (e) {
     const stderr = (e as any)?.stderr || '';
     if (stderr.trim().length > 0) {
-      console.error('[Recall] git log error:', e);
+      log.error('[Recall] git log error:', e);
     }
   }
 

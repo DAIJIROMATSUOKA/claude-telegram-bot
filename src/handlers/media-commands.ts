@@ -12,6 +12,9 @@
  * Results are sent back to Telegram as photos/videos.
  */
 
+import { createLogger } from "../utils/logger";
+const log = createLogger("media-commands");
+
 import { Context } from "grammy";
 import { spawn, exec } from "child_process";
 import { promisify } from "util";
@@ -92,11 +95,11 @@ function resolveLocalImage(localPath: string): string | null {
     try {
       const proc = Bun.spawnSync(["sips", "-s", "format", "jpeg", localPath, "--out", jpegPath]);
       if (proc.exitCode === 0 && existsSync(jpegPath)) {
-        console.log(`[media] Local HEIC → JPEG: ${jpegPath}`);
+        log.info(`[media] Local HEIC → JPEG: ${jpegPath}`);
         return jpegPath;
       }
     } catch (e) {
-      console.error("[media] Local HEIC conversion failed:", e);
+      log.error("[media] Local HEIC conversion failed:", e);
     }
   }
 
@@ -185,7 +188,7 @@ async function runAiMedia(args: string[], opts: RunOptions): Promise<MediaResult
       stderr += data.toString();
       const line = data.toString().trim();
       if (line) {
-        console.log(`[media] ${line}`);
+        log.info(`[media] ${line}`);
         if (onStderr) onStderr(line)
         resetTimeout();;
       }
@@ -200,11 +203,11 @@ async function runAiMedia(args: string[], opts: RunOptions): Promise<MediaResult
       if (hardTimer) if (hardTimer) clearTimeout(hardTimer);
       softTimer = setTimeout(() => {
         timedOut = true;
-        console.log(`[media]     TIMEOUT (no activity for ${Math.round(timeout / 60000)}min) -> sending SIGTERM`);
+        log.info(`[media]     TIMEOUT (no activity for ${Math.round(timeout / 60000)}min) -> sending SIGTERM`);
         try { proc.kill('SIGTERM'); } catch {}
       }, timeout);
       hardTimer = setTimeout(() => {
-        console.log(`[media]     SIGTERM ignored -> sending SIGKILL`);
+        log.info(`[media]     SIGTERM ignored -> sending SIGKILL`);
         try { proc.kill('SIGKILL'); } catch {}
       }, timeout + 5_000);
     };
@@ -213,9 +216,9 @@ async function runAiMedia(args: string[], opts: RunOptions): Promise<MediaResult
     proc.on("close", (code: number | null, signal: NodeJS.Signals | null) => {
       if (softTimer) clearTimeout(softTimer);
       if (hardTimer) clearTimeout(hardTimer);
-      console.log(`[media-debug] exit=${code} signal=${signal} timedOut=${timedOut} stdout=${stdout.length}B stderr=${stderr.length}B`);
-      console.log(`[media-debug] stdout-tail: ${stdout.slice(-300)}`);
-      console.log(`[media-debug] stderr-tail: ${stderr.slice(-300)}`);
+      log.info(`[media-debug] exit=${code} signal=${signal} timedOut=${timedOut} stdout=${stdout.length}B stderr=${stderr.length}B`);
+      log.info(`[media-debug] stdout-tail: ${stdout.slice(-300)}`);
+      log.info(`[media-debug] stderr-tail: ${stderr.slice(-300)}`);
       if (timedOut) {
         resolve({
           ok: false,
@@ -296,17 +299,17 @@ async function downloadPhoto(ctx: Context): Promise<string | null> {
         const proc = Bun.spawnSync(["sips", "-s", "format", "jpeg", localPath, "--out", jpegPath]);
         if (proc.exitCode === 0 && existsSync(jpegPath)) {
           try { await unlink(localPath); } catch {}
-          console.log(`[media] Converted HEIC → JPEG: ${jpegPath}`);
+          log.info(`[media] Converted HEIC → JPEG: ${jpegPath}`);
           return jpegPath;
         }
       } catch (e) {
-        console.error("[media] HEIC conversion failed, using original:", e);
+        log.error("[media] HEIC conversion failed, using original:", e);
       }
     }
 
     return localPath;
   } catch (e) {
-    console.error("[media] Photo download error:", e);
+    log.error("[media] Photo download error:", e);
     return null;
   }
 }
@@ -423,7 +426,7 @@ export async function handleEdit(ctx: Context): Promise<void> {
         );
         return;
       }
-      console.log(`[media] Privacy mode: using local file ${imagePath}`);
+      log.info(`[media] Privacy mode: using local file ${imagePath}`);
     } else {
       imagePath = await downloadPhoto(ctx);
       if (!imagePath) {
@@ -558,16 +561,16 @@ export async function handleEdit(ctx: Context): Promise<void> {
       const filename = `edit_${Date.now()}.png`;
       const caption = `✏️ ${prompt}\n⏱ ${result.elapsed}秒`;
       const fileSize = (await stat(result.path)).size;
-      console.log(`[media-upload] /edit starting upload: ${result.path} (${fileSize}B)`);
+      log.info(`[media-upload] /edit starting upload: ${result.path} (${fileSize}B)`);
       const t0 = Date.now();
       await ctx.replyWithPhoto(new InputFile(result.path), { caption });
-      console.log(`[media-upload] /edit photo sent in ${Date.now() - t0}ms`);
+      log.info(`[media-upload] /edit photo sent in ${Date.now() - t0}ms`);
       const t1 = Date.now();
       await ctx.replyWithDocument(new InputFile(result.path, filename), {
         caption: `📎 原寸: ${filename}`,
         disable_content_type_detection: true,
       });
-      console.log(`[media-upload] /edit document sent in ${Date.now() - t1}ms (total ${Date.now() - t0}ms)`);
+      log.info(`[media-upload] /edit document sent in ${Date.now() - t1}ms (total ${Date.now() - t0}ms)`);
       await ctx.api.deleteMessage(ctx.chat!.id, statusMsg.message_id).catch(() => {});
       await cleanupFile(imagePath);
       await cleanupFile(result.path);
@@ -630,7 +633,7 @@ export async function handleOutpaint(ctx: Context): Promise<void> {
         );
         return;
       }
-      console.log(`[media] Privacy mode: using local file ${imagePath}`);
+      log.info(`[media] Privacy mode: using local file ${imagePath}`);
     } else {
       imagePath = await downloadPhoto(ctx);
       if (!imagePath) {
@@ -786,7 +789,7 @@ export async function handleAnimate(ctx: Context): Promise<void> {
       const imagePath = resolveLocalImage(localPathInfo!.localPath);
       if (imagePath) {
         args.push("--image", imagePath);
-        console.log(`[media] Privacy mode: using local file ${imagePath}`);
+        log.info(`[media] Privacy mode: using local file ${imagePath}`);
       } else {
         await ctx.api.editMessageText(
           ctx.chat!.id,
@@ -904,7 +907,7 @@ export async function handleUndress(ctx: Context): Promise<void> {
         );
         return;
       }
-      console.log(`[media] Privacy mode: using local file ${imagePath}`);
+      log.info(`[media] Privacy mode: using local file ${imagePath}`);
     } else {
       imagePath = await downloadPhoto(ctx);
       if (!imagePath) {
@@ -1105,7 +1108,7 @@ async function createProcessGif(
     }
     return null;
   } catch (e: any) {
-    console.error(`[media] GIF generation failed: ${e.message}`);
+    log.error(`[media] GIF generation failed: ${e.message}`);
     return null;
   }
 }

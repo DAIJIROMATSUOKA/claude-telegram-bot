@@ -1,3 +1,6 @@
+import { createLogger } from "./logger";
+const log = createLogger("notification-bundler");
+
 /**
  * notification-bundler.ts — Buffer and bundle outgoing Telegram notifications
  *
@@ -51,7 +54,7 @@ export function queueNotification(opts: BundleOptions, sendFn: SendFn): void {
 
   if (immediate || isEscalation || isError) {
     sendFn(chatId, text).catch((e) =>
-      console.error("[NotificationBundler] immediate send failed:", e)
+      log.error("[NotificationBundler] immediate send failed:", e)
     );
     return;
   }
@@ -86,7 +89,7 @@ function flush(key: string, sendFn: SendFn): void {
   }
 
   sendFn(chatId, combined).catch((e) =>
-    console.error("[NotificationBundler] flush send failed:", e)
+    log.error("[NotificationBundler] flush send failed:", e)
   );
 }
 

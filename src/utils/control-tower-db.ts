@@ -4,6 +4,9 @@
  * Manages jarvis_control_tower, jarvis_action_trace, and jarvis_settings tables
  */
 
+import { createLogger } from "./logger";
+const log = createLogger("control-tower-db");
+
 import { Database } from 'bun:sqlite';
 import { readFileSync, existsSync } from 'fs';
 import { resolve } from 'path';
@@ -114,7 +117,7 @@ export class ControlTowerDB {
     if (existsSync(migrationPath)) {
       const sql = readFileSync(migrationPath, 'utf-8');
       this.db.exec(sql);
-      console.log('[ControlTowerDB] Migration applied successfully');
+      log.info('[ControlTowerDB] Migration applied successfully');
     } else {
       // Fallback: create tables inline
       this.db.exec(`
@@ -179,7 +182,7 @@ export class ControlTowerDB {
           ('spam_prevention_threshold', '10', strftime('%s', 'now')),
           ('why_allowlist_user_ids', '[]', strftime('%s', 'now'));
       `);
-      console.log('[ControlTowerDB] Fallback migration applied');
+      log.info('[ControlTowerDB] Fallback migration applied');
     }
   }
 

@@ -4,6 +4,9 @@
  * Audit logging, typing indicator.
  */
 
+import { createLogger } from "./utils/logger";
+const log = createLogger("utils");
+
 import type { Context } from "grammy";
 import type { AuditEvent } from "./types";
 import {
@@ -38,7 +41,7 @@ async function writeAuditLog(event: AuditEvent): Promise<void> {
     const fs = await import("fs/promises");
     await fs.appendFile(AUDIT_LOG_PATH, content);
   } catch (error) {
-    console.error("Failed to write audit log:", error);
+    log.error("Failed to write audit log:", error);
   }
 }
 
@@ -188,7 +191,7 @@ export async function checkInterrupt(text: string): Promise<string> {
   const strippedText = text.slice(1).trimStart();
 
   if (sessionModule.session.isRunning) {
-    console.log("! prefix - interrupting current query");
+    log.info("! prefix - interrupting current query");
     sessionModule.session.markInterrupt();
     await sessionModule.session.stop();
     await Bun.sleep(100);

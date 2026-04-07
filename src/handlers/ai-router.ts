@@ -13,6 +13,9 @@
  * プレフィックスなし → Jarvis (デフォルト)
  */
 
+import { createLogger } from "../utils/logger";
+const log = createLogger("ai-router");
+
 import { CMD_TIMEOUT_LONG_MS, COUNCIL_TIMEOUT_MS } from "../constants";
 import { logger } from "../utils/logger";
 import { fetchWithTimeout } from "../utils/fetch-with-timeout";
@@ -158,7 +161,7 @@ export async function getMemoryPack(
       }
     }
 
-    console.log(`[AI Router] AI_MEMORY retrieved: ${content.length} chars`);
+    log.info(`[AI Router] AI_MEMORY retrieved: ${content.length} chars`);
 
     // 長すぎる場合は要約（今後強化予定）
     if (content.length > 5000) {
@@ -209,12 +212,12 @@ export async function callClaudeCLI(
       jarvisContext = await getJarvisContext(userId);
       chatHistory = await getChatHistory(userId, 50); // 直近50件
 
-      console.log('[AI Router] 🦞 Context loaded:', {
+      log.info('[AI Router] 🦞 Context loaded:', {
         hasContext: !!jarvisContext,
         historyCount: chatHistory.length,
       });
     } else {
-      console.log('[AI Router] 🦞 Context skipped (userId:', userId, 'skipContext:', skipContext, ')');
+      log.info('[AI Router] 🦞 Context skipped (userId:', userId, 'skipContext:', skipContext, ')');
     }
 
     // フォールバック情報（取得失敗時に必ず含める）
@@ -268,8 +271,8 @@ ${memoryPack}
     // フルプロンプトを作成
     const fullPrompt = `${systemPrompt}\n\n${prompt}`;
 
-    console.log('[AI Router] 🦞 Full prompt length:', fullPrompt.length);
-    console.log('[AI Router] 🦞 Executing via temp file (safer than pipe)...');
+    log.info('[AI Router] 🦞 Full prompt length:', fullPrompt.length);
+    log.info('[AI Router] 🦞 Executing via temp file (safer than pipe)...');
     const startTime = Date.now();
 
     // Use temp file instead of echo pipe (avoids escaping issues)
@@ -296,12 +299,12 @@ ${memoryPack}
         }
       );
 
-      console.log(`[AI Router] 🦞 Claude CLI completed in ${Date.now() - startTime}ms`);
-      console.log('[AI Router] 🦞 Output length:', stdout.length);
-      console.log('[AI Router] 🦞 Output preview:', stdout.slice(0, 200));
+      log.info(`[AI Router] 🦞 Claude CLI completed in ${Date.now() - startTime}ms`);
+      log.info('[AI Router] 🦞 Output length:', stdout.length);
+      log.info('[AI Router] 🦞 Output preview:', stdout.slice(0, 200));
 
       if (stderr) {
-        console.log('[AI Router] 🦞 stderr:', stderr);
+        log.info('[AI Router] 🦞 stderr:', stderr);
       }
 
       return {
@@ -317,8 +320,8 @@ ${memoryPack}
       }
     }
   } catch (error: any) {
-    console.error('[AI Router] 🦞 Claude CLI error:', error.message);
-    console.error('[AI Router] 🦞 Error stack:', error.stack);
+    log.error('[AI Router] 🦞 Claude CLI error:', error.message);
+    log.error('[AI Router] 🦞 Error stack:', error.stack);
     return {
       provider: 'croppy',
       content: '',
@@ -338,8 +341,8 @@ export async function callGeminiAPI(
   memoryPack: string
 ): Promise<AIResponse> {
   try {
-    console.log('[AI Router] 🔮 Calling Gemini CLI...');
-    console.log('[AI Router] 🔮 memoryPack length:', memoryPack.length);
+    log.info('[AI Router] 🔮 Calling Gemini CLI...');
+    log.info('[AI Router] 🔮 memoryPack length:', memoryPack.length);
 
     const { askGemini } = await import('../utils/multi-ai');
 
@@ -360,10 +363,10 @@ ${memoryPack}
     const fullPrompt = systemPrompt + '\n\n' + prompt;
     const result = await askGemini(fullPrompt, 180_000);
 
-    console.log('[AI Router] 🔮 Gemini CLI completed, latency:', result.latency_ms, 'ms');
+    log.info('[AI Router] 🔮 Gemini CLI completed, latency:', result.latency_ms, 'ms');
 
     if (result.error) {
-      console.error('[AI Router] 🔮 Gemini CLI error:', result.error);
+      log.error('[AI Router] 🔮 Gemini CLI error:', result.error);
       return {
         provider: 'gemini',
         content: '',
@@ -376,7 +379,7 @@ ${memoryPack}
       content: result.output,
     };
   } catch (error: any) {
-    console.error('[AI Router] 🔮 Gemini CLI error:', error.message);
+    log.error('[AI Router] 🔮 Gemini CLI error:', error.message);
     return {
       provider: 'gemini',
       content: '',
@@ -393,9 +396,9 @@ export async function callCodexCLI(
   memoryPack: string
 ): Promise<AIResponse> {
   try {
-    console.log('[AI Router] 🤖 Calling Codex CLI...');
-    console.log('[AI Router] 🤖 memoryPack length:', memoryPack.length);
-    console.log('[AI Router] 🤖 memoryPack preview:', memoryPack.slice(0, 200));
+    log.info('[AI Router] 🤖 Calling Codex CLI...');
+    log.info('[AI Router] 🤖 memoryPack length:', memoryPack.length);
+    log.info('[AI Router] 🤖 memoryPack preview:', memoryPack.slice(0, 200));
 
     const systemPrompt = `あなたはチャッピー🧠（Chappy）です。
 
@@ -414,8 +417,8 @@ ${memoryPack}
     // フルプロンプトを作成
     const fullPrompt = `${systemPrompt}\n\n${prompt}`;
 
-    console.log('[AI Router] 🤖 Full prompt length:', fullPrompt.length);
-    console.log('[AI Router] 🤖 Executing via temp file (safer than pipe)...');
+    log.info('[AI Router] 🤖 Full prompt length:', fullPrompt.length);
+    log.info('[AI Router] 🤖 Executing via temp file (safer than pipe)...');
     const startTime = Date.now();
 
     // Use temp file instead of echo pipe (avoids escaping issues)
@@ -443,12 +446,12 @@ ${memoryPack}
         }
       );
 
-      console.log(`[AI Router] 🤖 Codex CLI completed in ${Date.now() - startTime}ms`);
-      console.log('[AI Router] 🤖 Output length:', stdout.length);
-      console.log('[AI Router] 🤖 Output preview:', stdout.slice(0, 200));
+      log.info(`[AI Router] 🤖 Codex CLI completed in ${Date.now() - startTime}ms`);
+      log.info('[AI Router] 🤖 Output length:', stdout.length);
+      log.info('[AI Router] 🤖 Output preview:', stdout.slice(0, 200));
 
       if (stderr) {
-        console.log('[AI Router] 🤖 stderr:', stderr);
+        log.info('[AI Router] 🤖 stderr:', stderr);
       }
 
       return {
@@ -464,8 +467,8 @@ ${memoryPack}
       }
     }
   } catch (error: any) {
-    console.error('[AI Router] 🤖 Codex CLI error:', error.message);
-    console.error('[AI Router] 🤖 Error stack:', error.stack);
+    log.error('[AI Router] 🤖 Codex CLI error:', error.message);
+    log.error('[AI Router] 🤖 Error stack:', error.stack);
     return {
       provider: 'gpt',
       content: '',
@@ -505,29 +508,29 @@ export async function callAllAIs(
   memoryPack: string,
   userId?: string | number
 ): Promise<AIResponse> {
-  console.log('[AI Router] 🌟 Calling all AIs...');
-  console.log('[AI Router] 🌟 memoryPack for all AIs:');
-  console.log('[AI Router] 🌟   - length:', memoryPack.length);
-  console.log('[AI Router] 🌟   - preview:', memoryPack.slice(0, 300));
-  console.log('[AI Router] 🌟   - contains error?:', memoryPack.includes('取得失敗'));
-  console.log('[AI Router] 🌟   - full memoryPack:', memoryPack);
+  log.info('[AI Router] 🌟 Calling all AIs...');
+  log.info('[AI Router] 🌟 memoryPack for all AIs:');
+  log.info('[AI Router] 🌟   - length:', memoryPack.length);
+  log.info('[AI Router] 🌟   - preview:', memoryPack.slice(0, 300));
+  log.info('[AI Router] 🌟   - contains error?:', memoryPack.includes('取得失敗'));
+  log.info('[AI Router] 🌟   - full memoryPack:', memoryPack);
 
   // 各AI応答の最大文字数
   const MAX_RESPONSE_LENGTH = 500;
 
   // 順次実行（デバッグ用 - 並列だとどこでタイムアウトか分からない）
-  console.log('[AI Router] 🌟 Starting Gemini first (fastest)...');
-  console.log('[AI Router] 🌟 Passing memoryPack to Gemini:', { length: memoryPack.length, hasError: memoryPack.includes('取得失敗') });
+  log.info('[AI Router] 🌟 Starting Gemini first (fastest)...');
+  log.info('[AI Router] 🌟 Passing memoryPack to Gemini:', { length: memoryPack.length, hasError: memoryPack.includes('取得失敗') });
   const geminiResponse = await callGeminiAPI(prompt, memoryPack);
-  console.log('[AI Router] 🌟 Gemini done, result:', geminiResponse.error ? `ERROR: ${geminiResponse.error}` : 'OK');
+  log.info('[AI Router] 🌟 Gemini done, result:', geminiResponse.error ? `ERROR: ${geminiResponse.error}` : 'OK');
 
-  console.log('[AI Router] 🌟 Starting Claude CLI...');
+  log.info('[AI Router] 🌟 Starting Claude CLI...');
   const claudeResponse = await callClaudeCLI(prompt, memoryPack, false, userId);
-  console.log('[AI Router] 🌟 Claude done, result:', claudeResponse.error ? `ERROR: ${claudeResponse.error}` : 'OK');
+  log.info('[AI Router] 🌟 Claude done, result:', claudeResponse.error ? `ERROR: ${claudeResponse.error}` : 'OK');
 
-  console.log('[AI Router] 🌟 Starting Codex CLI...');
+  log.info('[AI Router] 🌟 Starting Codex CLI...');
   const gptResponse = await callCodexCLI(prompt, memoryPack);
-  console.log('[AI Router] 🌟 Codex done, result:', gptResponse.error ? `ERROR: ${gptResponse.error}` : 'OK');
+  log.info('[AI Router] 🌟 Codex done, result:', gptResponse.error ? `ERROR: ${gptResponse.error}` : 'OK');
 
   // 統合結果を作成（各応答を500文字に切り詰め）
   let combined = '🌟 **All AIs Response**\n\n';
@@ -566,18 +569,18 @@ export async function callAICouncil(
   prompt: string,
   memoryPack: string
 ): Promise<Omit<AICouncilResponse, 'provider'>> {
-  console.log('[AI Council] 🏛️ Calling AI Council...');
-  console.log('[AI Council] 🏛️ memoryPack length:', memoryPack.length);
+  log.info('[AI Council] 🏛️ Calling AI Council...');
+  log.info('[AI Council] 🏛️ memoryPack length:', memoryPack.length);
 
   // 3つのAIに並行で諮問（個別エラーハンドリング付き）
-  console.log('[AI Council] 🏛️ Consulting advisors in parallel with individual error handling...');
+  log.info('[AI Council] 🏛️ Consulting advisors in parallel with individual error handling...');
 
   // 各AIを個別にtry-catchでラップ + 10秒タイムアウト
   const callWithFallback = async (
     fn: () => Promise<AIResponse>,
     providerName: string
   ): Promise<AIResponse> => {
-    console.log(`[AI Council] 🏛️ Starting ${providerName} call...`);
+    log.info(`[AI Council] 🏛️ Starting ${providerName} call...`);
     const startTime = Date.now();
 
     try {
@@ -589,13 +592,13 @@ export async function callAICouncil(
       const result = await Promise.race([fn(), timeoutPromise]);
 
       const duration = Date.now() - startTime;
-      console.log(`[AI Council] 🏛️ ${providerName} completed in ${duration}ms`);
+      log.info(`[AI Council] 🏛️ ${providerName} completed in ${duration}ms`);
       return result;
     } catch (error: any) {
       const duration = Date.now() - startTime;
 
       if (error.message === 'COUNCIL_TIMEOUT') {
-        console.error(`[AI Council] COUNCIL_TIMEOUT: ${providerName} (${duration}ms)`);
+        log.error(`[AI Council] COUNCIL_TIMEOUT: ${providerName} (${duration}ms)`);
         return {
           provider: providerName.toLowerCase() as any,
           content: '',
@@ -603,7 +606,7 @@ export async function callAICouncil(
         };
       }
 
-      console.error(`[AI Council] ${providerName} failed in ${duration}ms:`, error.message);
+      log.error(`[AI Council] ${providerName} failed in ${duration}ms:`, error.message);
       return {
         provider: providerName.toLowerCase() as any,
         content: '',
@@ -619,10 +622,10 @@ export async function callAICouncil(
     callWithFallback(() => callCodexCLI(prompt, memoryPack), 'GPT'),
   ]);
 
-  console.log('[AI Council] 🏛️ All advisors responded (some may have errors)');
-  console.log('[AI Council] 🏛️ Gemini:', geminiResponse.error ? `Error: ${geminiResponse.error}` : 'OK');
-  console.log('[AI Council] 🏛️ Claude:', claudeResponse.error ? `Error: ${claudeResponse.error}` : 'OK');
-  console.log('[AI Council] 🏛️ GPT:', gptResponse.error ? `Error: ${gptResponse.error}` : 'OK');
+  log.info('[AI Council] 🏛️ All advisors responded (some may have errors)');
+  log.info('[AI Council] 🏛️ Gemini:', geminiResponse.error ? `Error: ${geminiResponse.error}` : 'OK');
+  log.info('[AI Council] 🏛️ Claude:', claudeResponse.error ? `Error: ${claudeResponse.error}` : 'OK');
+  log.info('[AI Council] 🏛️ GPT:', gptResponse.error ? `Error: ${gptResponse.error}` : 'OK');
 
   // アドバイザーの応答をまとめる
   let advisorResponses = '## AI Council Advisors\n\n';
@@ -660,7 +663,7 @@ async function routeToAI(
   credentialsPath: string,
   documentId: string
 ): Promise<AIResponse | AICouncilResponse> {
-  console.log(`[AI Router] Routing to: ${provider}`);
+  log.info(`[AI Router] Routing to: ${provider}`);
 
   // 1. Memory Pack取得
   const memoryPack = await getMemoryPack(credentialsPath, documentId);
@@ -745,8 +748,8 @@ export async function extractAndSaveMemory(
       },
     });
 
-    console.log(`[AI Router] ✅ Saved to AI_MEMORY: ${memoryContent}`);
+    log.info(`[AI Router] ✅ Saved to AI_MEMORY: ${memoryContent}`);
   } catch (error) {
-    console.error('[AI Router] Failed to save memory:', error);
+    log.error('[AI Router] Failed to save memory:', error);
   }
 }

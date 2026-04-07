@@ -5,6 +5,9 @@
  * Callback: task:done:<id>, task:postpone:<id>
  */
 
+import { createLogger } from "../utils/logger";
+const log = createLogger("task-command");
+
 import { Context } from 'grammy';
 import { DEFAULT_GATEWAY_URL } from '../constants';
 import { fetchWithTimeout } from '../utils/fetch-with-timeout';
@@ -27,7 +30,7 @@ async function apiPost(path: string, body: any): Promise<any> {
     });
     return res.json();
   } catch (e) {
-    console.error('[TaskCommand] apiPost failed:', path, e);
+    log.error('[TaskCommand] apiPost failed:', path, e);
     throw e;
   }
 }
@@ -37,7 +40,7 @@ async function apiGet(path: string): Promise<any> {
     const res = await fetchWithTimeout(`${GATEWAY_URL}${path}`);
     return res.json();
   } catch (e) {
-    console.error('[TaskCommand] apiGet failed:', path, e);
+    log.error('[TaskCommand] apiGet failed:', path, e);
     throw e;
   }
 }

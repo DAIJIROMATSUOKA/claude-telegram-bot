@@ -10,6 +10,9 @@
  * - AbortController on all fetch calls
  */
 
+import { createLogger } from "../utils/logger";
+const log = createLogger("task-poller");
+
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { readFileSync, unlinkSync, existsSync, readdirSync } from 'fs';
@@ -37,16 +40,6 @@ const MAX_CONCURRENT = 3;
 const instanceToken = Math.random().toString(36).substring(2);
 const errorTimestamps: number[] = [];
 
-// === Logging ===
-function log(msg: string): void {
-  const ts = new Date().toISOString();
-  console.log(`[${ts}] [Task Poller] ${msg}`);
-}
-
-function logError(msg: string): void {
-  const ts = new Date().toISOString();
-  console.error(`[${ts}] [Task Poller] ERROR: ${msg}`);
-}
 
 // === Lockfile ===
 async function acquireLock(): Promise<boolean> {
@@ -59,15 +52,15 @@ async function acquireLock(): Promise<boolean> {
         try {
           process.kill(pid, 0);
           // Process alive - check it's actually a poller (via token)
-          log(`Lock held by PID ${pid} (alive). Exiting.`);
+          log.info(`Lock held by PID ${pid} (alive). Exiting.`);
           return false;
         } catch {
           // PID dead, stale lock
-          log(`Stale lock from dead PID ${pid}. Taking over.`);
+          log.info(`Stale lock from dead PID ${pid}. Taking over.`);
         }
       }
     } catch {
-      log('Corrupt lock file. Taking over.');
+      log.info('Corrupt lock file. Taking over.');
     }
   }
 
@@ -76,7 +69,7 @@ async function acquireLock(): Promise<boolean> {
   const lockContent = `${process.pid}\n${Date.now()}\n${instanceToken}`;
   await writeFile(tmpLock, lockContent);
   await rename(tmpLock, LOCK_PATH);
-  log(`Lock acquired (PID ${process.pid}, token ${instanceToken})`);
+  log.info(`Lock acquired (PID ${process.pid}, token ${instanceToken})`);
   return true;
 }
 
@@ -86,7 +79,7 @@ function releaseLock(): void {
       const content = readFileSync(LOCK_PATH, 'utf-8');
       if (content.includes(instanceToken)) {
         unlinkSync(LOCK_PATH);
-        log('Lock released');
+        log.info('Lock released');
       }
     }
   } catch {
@@ -159,7 +152,7 @@ async function executeCommand(
       });
 
       if (attempt > 0) {
-        log(`ENOENT recovered: attempt=${attempt} shell=${shell}`);
+        log.info(`ENOENT recovered: attempt=${attempt} shell=${shell}`);
       }
 
       return {
@@ -177,7 +170,7 @@ async function executeCommand(
         const zshOk = existsSync('/bin/zsh');
         let fdCount = -1;
         try { fdCount = readdirSync('/dev/fd').length; } catch {}
-        log(`ENOENT retry ${attempt + 1}/${MAX_RETRIES}: shell=${shell} cwd=${resolvedCwd} cwd_ok=${cwdOk} zsh_ok=${zshOk} fd=${fdCount} errno=${error.errno} syscall=${error.syscall} path=${error.path}`);
+        log.info(`ENOENT retry ${attempt + 1}/${MAX_RETRIES}: shell=${shell} cwd=${resolvedCwd} cwd_ok=${cwdOk} zsh_ok=${zshOk} fd=${fdCount} errno=${error.errno} syscall=${error.syscall} path=${error.path}`);
 
         // Exponential backoff with jitter (200ms -> 500ms -> 1250ms)
         const delay = BACKOFF_BASE_MS * Math.pow(2.5, attempt) * (0.7 + Math.random() * 0.6);
@@ -187,7 +180,7 @@ async function executeCommand(
 
       // Final failure or non-ENOENT error
       if (isEnoent) {
-        logError(`ENOENT persisted after ${MAX_RETRIES} retries. errno=${error.errno} syscall=${error.syscall} path=${error.path}`);
+        log.error(`ENOENT persisted after ${MAX_RETRIES} retries. errno=${error.errno} syscall=${error.syscall} path=${error.path}`);
       }
 
       return {
@@ -210,7 +203,7 @@ async function executeAndComplete(task: any): Promise<void> {
       task.timeout_seconds || 300
     );
 
-    log(`Done: ${task.id} [${activeTasks}/${MAX_CONCURRENT}] | exit=${result.exitCode} | stdout=${result.stdout.length}B`);
+    log.info(`Done: ${task.id} [${activeTasks}/${MAX_CONCURRENT}] | exit=${result.exitCode} | stdout=${result.stdout.length}B`);
     lastTaskTime = Date.now();
 
     await fetchWithTimeout(`${GATEWAY_URL}/v1/exec/complete`, {
@@ -225,7 +218,7 @@ async function executeAndComplete(task: any): Promise<void> {
     });
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
-    logError(`Task ${task.id} failed: ${msg}`);
+    log.error(`Task ${task.id} failed: ${msg}`);
     // Try to report failure to gateway
     try {
       await fetchWithTimeout(`${GATEWAY_URL}/v1/exec/complete`, {
@@ -241,7 +234,7 @@ async function executeAndComplete(task: any): Promise<void> {
     } catch {}
     recordError();
     if (shouldEnterSafeMode()) {
-      logError(`SAFE MODE triggered from background task`);
+      log.error(`SAFE MODE triggered from background task`);
       running = false;
       releaseLock();
       process.exit(0);
@@ -266,23 +259,23 @@ async function pollAndExecute(): Promise<void> {
 
     const task = pollData.task;
     activeTasks++;
-    log(`Spawning: ${task.id} [${activeTasks}/${MAX_CONCURRENT}] | ${task.command.substring(0, 80)}...`);
+    log.info(`Spawning: ${task.id} [${activeTasks}/${MAX_CONCURRENT}] | ${task.command.substring(0, 80)}...`);
 
     // Fire-and-forget: execute in background, poll loop continues
     executeAndComplete(task).catch(err => {
-      logError(`Task ${task.id} uncaught: ${err instanceof Error ? err.message : err}`);
+      log.error(`Task ${task.id} uncaught: ${err instanceof Error ? err.message : err}`);
     });
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
     if (msg.includes('aborted') || msg.includes('AbortError')) {
-      logError('Gateway fetch timeout (network issue, not crashing)');
+      log.error('Gateway fetch timeout (network issue, not crashing)');
     } else {
-      logError(msg);
+      log.error(msg);
     }
     recordError();
 
     if (shouldEnterSafeMode()) {
-      logError(`SAFE MODE: ${ERROR_BURST_LIMIT} errors in ${ERROR_BURST_WINDOW_MS / 60000}min. Stopping.`);
+      log.error(`SAFE MODE: ${ERROR_BURST_LIMIT} errors in ${ERROR_BURST_WINDOW_MS / 60000}min. Stopping.`);
       running = false;
       releaseLock();
       process.exit(0);
@@ -316,15 +309,15 @@ async function startupCleanup(): Promise<void> {
       });
       drained++;
     }
-    if (drained > 0) log(`Startup drain: ${drained} stale tasks cleared`);
+    if (drained > 0) log.info(`Startup drain: ${drained} stale tasks cleared`);
   } catch (err) {
-    logError(`Startup cleanup failed: ${err instanceof Error ? err.message : err}`);
+    log.error(`Startup cleanup failed: ${err instanceof Error ? err.message : err}`);
   }
 }
 
 // === Main Loop ===
 async function main(): Promise<void> {
-  log('Starting independent task poller...');
+  log.info('Starting independent task poller...');
 
   // Acquire lock
   if (!await acquireLock()) {
@@ -333,7 +326,7 @@ async function main(): Promise<void> {
 
   // SIGTERM/SIGINT handler
   const shutdown = (signal: string) => {
-    log(`Received ${signal}. Shutting down gracefully.`);
+    log.info(`Received ${signal}. Shutting down gracefully.`);
     running = false;
     releaseLock();
     // SIGTERM (OS/memory pressure) -> exit(143) -> launchd restarts
@@ -345,14 +338,14 @@ async function main(): Promise<void> {
 
   // Uncaught exception handler
   process.on('uncaughtException', (err) => {
-    logError(`Uncaught exception: ${err.message}`);
+    log.error(`Uncaught exception: ${err.message}`);
     releaseLock();
     process.exit(1); // Crash = launchd restarts
   });
 
   await startupCleanup();
 
-  log(`Polling ${GATEWAY_URL} (adaptive: ${POLL_INTERVAL_IDLE_MS}ms idle / ${POLL_INTERVAL_ACTIVE_MS}ms active)`);
+  log.info(`Polling ${GATEWAY_URL} (adaptive: ${POLL_INTERVAL_IDLE_MS}ms idle / ${POLL_INTERVAL_ACTIVE_MS}ms active)`);
 
   // Main loop
   while (running) {
@@ -367,7 +360,7 @@ async function main(): Promise<void> {
 }
 
 main().catch((err) => {
-  logError(`Fatal: ${err.message}`);
+  log.error(`Fatal: ${err.message}`);
   releaseLock();
   process.exit(1); // Crash = launchd restarts
 });

@@ -1,3 +1,6 @@
+import { createLogger } from "./logger";
+const log = createLogger("web-search");
+
 /**
  * ジェミー先行Web検索パイプライン
  *
@@ -123,17 +126,17 @@ export async function maybeEnrichWithWebSearch(message: string): Promise<string>
     return message;
   }
 
-  console.log('[Web Search] 検索必要と判定、ジェミー💎に問い合わせ中...');
+  log.info('[Web Search] 検索必要と判定、ジェミー💎に問い合わせ中...');
   const startTime = Date.now();
   const results = await searchWithGemini(strippedMessage);
   const elapsed = Date.now() - startTime;
 
   if (!results) {
-    console.log(`[Web Search] 結果なし (${elapsed}ms)、検索なしで続行`);
+    log.info(`[Web Search] 結果なし (${elapsed}ms)、検索なしで続行`);
     return message;
   }
 
-  console.log(`[Web Search] 取得完了 (${elapsed}ms, ${results.length}文字)`);
+  log.info(`[Web Search] 取得完了 (${elapsed}ms, ${results.length}文字)`);
 
   return message + `\n\n[WEB SEARCH RESULTS]\n${results}\n[END WEB SEARCH RESULTS]`;
 }

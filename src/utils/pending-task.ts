@@ -11,6 +11,9 @@
  *   4. 起動時: getPendingTask() で検出 → 自動再送
  */
 
+import { createLogger } from "./logger";
+const log = createLogger("pending-task");
+
 import { existsSync, unlinkSync, writeFileSync } from "fs";
 import { PENDING_TASK_FILE } from "../config";
 import { loadConfig, invalidateConfig } from "./config-loader";
@@ -43,9 +46,9 @@ export function savePendingTask(task: Omit<PendingTask, "saved_at">): void {
     };
     writeFileSync(PENDING_TASK_FILE, JSON.stringify(data, null, 2));
     invalidateConfig(PENDING_TASK_FILE);
-    console.log("[PendingTask] Saved:", task.original_message.slice(0, 50));
+    log.info("[PendingTask] Saved:", task.original_message.slice(0, 50));
   } catch (error) {
-    console.error("[PendingTask] Failed to save:", error);
+    log.error("[PendingTask] Failed to save:", error);
   }
 }
 
@@ -57,10 +60,10 @@ export function clearPendingTask(): void {
     if (existsSync(PENDING_TASK_FILE)) {
       unlinkSync(PENDING_TASK_FILE);
       invalidateConfig(PENDING_TASK_FILE);
-      console.log("[PendingTask] Cleared");
+      log.info("[PendingTask] Cleared");
     }
   } catch (error) {
-    console.error("[PendingTask] Failed to clear:", error);
+    log.error("[PendingTask] Failed to clear:", error);
   }
 }
 
@@ -79,15 +82,15 @@ export function getPendingTask(): PendingTask | null {
     // 24時間以上前のタスクは無視（十分な余裕を持たせる）
     const age = Date.now() - task.saved_at;
     if (age > 24 * 60 * 60 * 1000) {
-      console.log(`[PendingTask] Expired (age=${Math.round(age / 1000)}s), clearing`);
+      log.info(`[PendingTask] Expired (age=${Math.round(age / 1000)}s), clearing`);
       clearPendingTask();
       return null;
     }
 
-    console.log(`[PendingTask] Found pending task (age=${Math.round(age / 1000)}s):`, task.original_message.slice(0, 50));
+    log.info(`[PendingTask] Found pending task (age=${Math.round(age / 1000)}s):`, task.original_message.slice(0, 50));
     return task;
   } catch (error) {
-    console.error("[PendingTask] Failed to read:", error);
+    log.error("[PendingTask] Failed to read:", error);
     clearPendingTask();
     return null;
   }
@@ -104,8 +107,8 @@ export function updatePendingTaskSessionId(sessionId: string): void {
     task.session_id = sessionId;
     writeFileSync(PENDING_TASK_FILE, JSON.stringify(task, null, 2));
     invalidateConfig(PENDING_TASK_FILE);
-    console.log("[PendingTask] Updated session_id:", sessionId.slice(0, 8));
+    log.info("[PendingTask] Updated session_id:", sessionId.slice(0, 8));
   } catch (error) {
-    console.error("[PendingTask] Failed to update session_id:", error);
+    log.error("[PendingTask] Failed to update session_id:", error);
   }
 }

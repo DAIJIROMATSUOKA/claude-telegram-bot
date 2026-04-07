@@ -19,6 +19,9 @@
  * 実行タイミング: Bot起動時 + 24時間毎
  */
 
+import { createLogger } from "./logger";
+const log = createLogger("memory-gc");
+
 import { callMemoryGateway } from '../handlers/ai-router';
 
 import { MAX_LEARNED_MEMORIES, LEARNED_MEMORY_EXPIRE_DAYS, LEARNED_MEMORY_MIN_CONFIDENCE, SESSION_SUMMARY_EXPIRE_DAYS, SESSION_SUMMARY_KEEP_RECENT, PERMANENT_PURGE_AGE_DAYS } from '../constants';
@@ -46,7 +49,7 @@ async function gcLearnedMemory(): Promise<{ deactivated: number; message: string
     const expiredCount = expireResult.data?.meta?.changes || 0;
     deactivated += expiredCount;
     if (expiredCount > 0) {
-      console.log(`[Memory GC] learned_memory: ${expiredCount}件を期限切れで無効化`);
+      log.info(`[Memory GC] learned_memory: ${expiredCount}件を期限切れで無効化`);
     }
 
     // 2. active件数チェック → 上限超過なら低信頼度から無効化
@@ -80,7 +83,7 @@ async function gcLearnedMemory(): Promise<{ deactivated: number; message: string
 
       deactivated += ids.length;
       if (ids.length > 0) {
-        console.log(`[Memory GC] learned_memory: ${ids.length}件を上限超過で無効化（残り${MAX_LEARNED_MEMORIES}件）`);
+        log.info(`[Memory GC] learned_memory: ${ids.length}件を上限超過で無効化（残り${MAX_LEARNED_MEMORIES}件）`);
       }
     }
 
@@ -94,7 +97,7 @@ async function gcLearnedMemory(): Promise<{ deactivated: number; message: string
 
     const purgedCount = purgeResult.data?.meta?.changes || 0;
     if (purgedCount > 0) {
-      console.log(`[Memory GC] learned_memory: ${purgedCount}件を物理削除（${PERMANENT_PURGE_AGE_DAYS}日超え非アクティブ）`);
+      log.info(`[Memory GC] learned_memory: ${purgedCount}件を物理削除（${PERMANENT_PURGE_AGE_DAYS}日超え非アクティブ）`);
     }
 
     return {
@@ -102,7 +105,7 @@ async function gcLearnedMemory(): Promise<{ deactivated: number; message: string
       message: `learned_memory: ${deactivated}件無効化, ${purgedCount}件削除, 残り${activeCount - deactivated}件`,
     };
   } catch (error) {
-    console.error('[Memory GC] learned_memory GC error:', error);
+    log.error('[Memory GC] learned_memory GC error:', error);
     return { deactivated: 0, message: `learned_memory GC error: ${error}` };
   }
 }
@@ -127,7 +130,7 @@ async function gcSessionSummaries(): Promise<{ deleted: number; message: string 
     const expiredCount = expireResult.data?.meta?.changes || 0;
     deleted += expiredCount;
     if (expiredCount > 0) {
-      console.log(`[Memory GC] session_summaries: ${expiredCount}件を30日超えで削除`);
+      log.info(`[Memory GC] session_summaries: ${expiredCount}件を30日超えで削除`);
     }
 
     // 2. ユーザー毎に最新N件のみ残す
@@ -156,7 +159,7 @@ async function gcSessionSummaries(): Promise<{ deleted: number; message: string 
       const trimmedCount = trimResult.data?.meta?.changes || 0;
       deleted += trimmedCount;
       if (trimmedCount > 0) {
-        console.log(`[Memory GC] session_summaries: user=${userId} ${trimmedCount}件を上限超過で削除`);
+        log.info(`[Memory GC] session_summaries: user=${userId} ${trimmedCount}件を上限超過で削除`);
       }
     }
 
@@ -165,7 +168,7 @@ async function gcSessionSummaries(): Promise<{ deleted: number; message: string 
       message: `session_summaries: ${deleted}件削除`,
     };
   } catch (error) {
-    console.error('[Memory GC] session_summaries GC error:', error);
+    log.error('[Memory GC] session_summaries GC error:', error);
     return { deleted: 0, message: `session_summaries GC error: ${error}` };
   }
 }
@@ -176,7 +179,7 @@ async function gcSessionSummaries(): Promise<{ deleted: number; message: string 
  * Bot起動時 + 24時間毎に実行
  */
 export async function runMemoryGC(): Promise<string> {
-  console.log('[Memory GC] 🗑️ Starting memory garbage collection...');
+  log.info('[Memory GC] 🗑️ Starting memory garbage collection...');
   const startTime = Date.now();
 
   const [learnedResult, summaryResult] = await Promise.all([
@@ -186,7 +189,7 @@ export async function runMemoryGC(): Promise<string> {
 
   const duration = Date.now() - startTime;
   const report = `[Memory GC] 完了 (${duration}ms)\n  ${learnedResult.message}\n  ${summaryResult.message}`;
-  console.log(report);
+  log.info(report);
 
   return report;
 }
@@ -201,18 +204,18 @@ let gcTimer: ReturnType<typeof setInterval> | null = null;
  */
 function startMemoryGCScheduler(): void {
   if (gcTimer) {
-    console.log('[Memory GC] Scheduler already running');
+    log.info('[Memory GC] Scheduler already running');
     return;
   }
 
   // 起動時に即実行（非同期、ブロックしない）
-  runMemoryGC().catch(err => console.error('[Memory GC] Initial run error:', err));
+  runMemoryGC().catch(err => log.error('[Memory GC] Initial run error:', err));
 
   // 24時間毎に実行
   const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
   gcTimer = setInterval(() => {
-    runMemoryGC().catch(err => console.error('[Memory GC] Scheduled run error:', err));
+    runMemoryGC().catch(err => log.error('[Memory GC] Scheduled run error:', err));
   }, TWENTY_FOUR_HOURS);
 
-  console.log('[Memory GC] Scheduler started (interval: 24h)');
+  log.info('[Memory GC] Scheduler started (interval: 24h)');
 }

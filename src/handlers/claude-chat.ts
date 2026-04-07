@@ -1,3 +1,6 @@
+import { createLogger } from "../utils/logger";
+const log = createLogger("claude-chat");
+
 import { writeFileSync, existsSync } from "fs";
 import { loadJsonFile } from "../utils/json-loader";
 import type { Context } from "grammy";
@@ -46,7 +49,7 @@ function loadChatMap(): void {
           chatReplyMap.set(Number(k), v as ChatEntry);
         }
       }
-      console.log(`[ClaudeChat] Loaded ${chatReplyMap.size} chat mappings`);
+      log.info(`[ClaudeChat] Loaded ${chatReplyMap.size} chat mappings`);
     }
   } catch (e) {
     console.warn("[ClaudeChat] Failed to load chat map:", e);
@@ -242,7 +245,7 @@ async function maybeAutoHandoff(
       await ctx.reply("\u{1F504} \u5F15\u3066\u7D99\u304E\u5B8C\u4E86\u3002\u6B21\u306E\u30E1\u30C3\u30BB\u30FC\u30B8\u304B\u3089\u65B0\u30C1\u30E3\u30C3\u30C8\u3067\u7D99\u7D9A\u3057\u307E\u3059\u3002");
     }
   } catch (e) {
-    console.error("[ClaudeChat] maybeAutoHandoff error:", e);
+    log.error("[ClaudeChat] maybeAutoHandoff error:", e);
   }
 }
 
@@ -317,7 +320,7 @@ export async function handleChatCommand(ctx: Context): Promise<void> {
       chatReplyMap.set(responseMsgId, entry);
       saveChatMap();
       maybeAutoHandoff(ctx, entry, chatReplyMap).catch(() => {});
-    })().catch(e => console.error("[ClaudeChat] handleChatCommand async error:", e));
+    })().catch(e => log.error("[ClaudeChat] handleChatCommand async error:", e));
 
   } catch (e: any) {
     await ctx.api.editMessageText(
@@ -375,7 +378,7 @@ export async function handlePostCommand(ctx: Context): Promise<void> {
         entry.notifMsgId = responseMsgId;
         chatReplyMap.set(responseMsgId, entry);
         saveChatMap();
-      })().catch(e => console.error("[ClaudeChat] post relay error:", e));
+      })().catch(e => log.error("[ClaudeChat] post relay error:", e));
     } else {
       await ctx.reply(`✅ → <b>${escapeHtml(chatName)}</b>`, { parse_mode: "HTML" });
     }
@@ -516,7 +519,7 @@ export async function handleChatReply(ctx: Context): Promise<boolean> {
     chatReplyMap.set(responseMsgId, entry);
     saveChatMap();
     maybeAutoHandoff(ctx, entry, chatReplyMap).catch(() => {});
-  })().catch(e => console.error("[ClaudeChat] handleChatReply async error:", e));
+  })().catch(e => log.error("[ClaudeChat] handleChatReply async error:", e));
 
   return true;
 }

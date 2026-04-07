@@ -2,6 +2,9 @@
  * Contact Log — Log customer contacts to D1 via Memory Gateway
  */
 
+import { createLogger } from "./logger";
+const log = createLogger("contact-log");
+
 import { gatewayQuery } from "../services/gateway-db";
 
 /**
@@ -20,7 +23,7 @@ export async function logContact(
   );
 
   if (!result) {
-    console.error("[ContactLog] Failed to log contact:", { source, customerId, direction });
+    log.error("[ContactLog] Failed to log contact:", { source, customerId, direction });
     return false;
   }
 

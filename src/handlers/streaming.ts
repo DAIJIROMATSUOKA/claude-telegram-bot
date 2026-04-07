@@ -4,6 +4,9 @@
  * Provides a reusable status callback for streaming Claude responses.
  */
 
+import { createLogger } from "../utils/logger";
+const log = createLogger("streaming");
+
 import type { Context } from "grammy";
 import type { Message } from "grammy/types";
 import { InlineKeyboard } from "grammy";
@@ -105,7 +108,7 @@ export function createStatusCallback(ctx: Context, state: StreamingState): Statu
       if (statusType === "thinking") {
         // Log thinking (no Telegram notification)
         const preview = content.length > 500 ? content.slice(0, 500) + "..." : content;
-        console.log(`🧠 Thinking: ${preview}`);
+        log.info(`🧠 Thinking: ${preview}`);
         setClaudeStatus('processing', 'thinking');
 
         // Record to D1
@@ -123,7 +126,7 @@ export function createStatusCallback(ctx: Context, state: StreamingState): Statu
         }
       } else if (statusType === "tool") {
         // Log tool execution (no Telegram notification)
-        console.log(`🔧 Tool: ${content}`);
+        log.info(`🔧 Tool: ${content}`);
         setClaudeStatus('tool', content);
 
         // Record to D1
@@ -297,7 +300,7 @@ export function createStatusCallback(ctx: Context, state: StreamingState): Statu
                 });
               }
             } catch (error) {
-              console.error(`Failed to complete action trace ${traceId}:`, error);
+              log.error(`Failed to complete action trace ${traceId}:`, error);
             }
           }
           state.actionTraceIds.clear();
@@ -331,7 +334,7 @@ export function createStatusCallback(ctx: Context, state: StreamingState): Statu
         }
       }
     } catch (error) {
-      console.error("Status callback error:", error);
+      log.error("Status callback error:", error);
     }
   };
 }

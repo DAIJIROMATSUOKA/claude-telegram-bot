@@ -2,6 +2,9 @@
  * Dropbox File Upload + Share Link Generator
  */
 
+import { createLogger } from "../utils/logger";
+const log = createLogger("dropbox-share");
+
 import { fetchWithTimeout } from '../utils/fetch-with-timeout';
 
 const DROPBOX_TOKEN = process.env.DROPBOX_ACCESS_TOKEN || '';
@@ -13,7 +16,7 @@ export async function uploadAndShare(
   filename: string
 ): Promise<{ url: string; path: string } | null> {
   if (!DROPBOX_TOKEN) {
-    console.error('[Dropbox] No DROPBOX_ACCESS_TOKEN');
+    log.error('[Dropbox] No DROPBOX_ACCESS_TOKEN');
     return null;
   }
   try {
@@ -67,10 +70,10 @@ export async function uploadAndShare(
       }
     }
 
-    console.log(`[Dropbox] Uploaded: ${dbxPath}`);
+    log.info(`[Dropbox] Uploaded: ${dbxPath}`);
     return { url: shareUrl, path: dbxPath };
   } catch (error) {
-    console.error('[Dropbox] Error:', error);
+    log.error('[Dropbox] Error:', error);
     return null;
   }
 }

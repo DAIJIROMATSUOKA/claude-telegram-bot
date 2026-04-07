@@ -7,6 +7,9 @@
  * テーブル: jarvis_session_summaries
  */
 
+import { createLogger } from "./logger";
+const log = createLogger("session-summary");
+
 import { callMemoryGateway } from '../handlers/ai-router';
 import { ulid } from 'ulidx';
 
@@ -80,9 +83,9 @@ export async function ensureSessionSummaryTable(): Promise<void> {
       )`,
       params: [],
     });
-    console.log('[Session Summary] Table ensured');
+    log.info('[Session Summary] Table ensured');
   } catch (error) {
-    console.error('[Session Summary] Table creation error:', error);
+    log.error('[Session Summary] Table creation error:', error);
   }
 }
 
@@ -219,7 +222,7 @@ async function generateSummaryWithGemini(
       unfinished_tasks?: string[];
     };
 
-    console.log('[Session Summary] Gemini CLI summary generated successfully');
+    log.info('[Session Summary] Gemini CLI summary generated successfully');
 
     return {
       summary: parsed.summary || '',
@@ -281,7 +284,7 @@ async function generateSummaryWithCroppy(
       unfinished_tasks?: string[];
     };
 
-    console.log('[Session Summary] 🦞 Croppy summary generated successfully');
+    log.info('[Session Summary] 🦞 Croppy summary generated successfully');
 
     return {
       summary: parsed.summary || '',
@@ -305,7 +308,7 @@ export async function saveSessionSummary(
   messages: Array<{ role: string; content: string; timestamp: string }>
 ): Promise<void> {
   if (messages.length < 3) {
-    console.log('[Session Summary] Too few messages, skipping summary');
+    log.info('[Session Summary] Too few messages, skipping summary');
     return;
   }
 
@@ -337,9 +340,9 @@ export async function saveSessionSummary(
       ],
     });
 
-    console.log(`[Session Summary] Saved: ${topics.join(', ')}`);
+    log.info(`[Session Summary] Saved: ${topics.join(', ')}`);
   } catch (error) {
-    console.error('[Session Summary] Save error:', error);
+    log.error('[Session Summary] Save error:', error);
   }
 }
 
@@ -381,7 +384,7 @@ export async function getRecentSessionSummaries(
 
     return response.data.results as SessionSummary[];
   } catch (error) {
-    console.error('[Session Summary] Fetch error:', error);
+    log.error('[Session Summary] Fetch error:', error);
     return [];
   }
 }

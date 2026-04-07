@@ -3,6 +3,9 @@
  * Run via setInterval in bot startup or as cron job
  */
 
+import { createLogger } from "../utils/logger";
+const log = createLogger("snooze");
+
 import { Bot } from "grammy";
 import { gatewayQuery } from "./gateway-db";
 import { buildTimerText } from "../handlers/timetimer-command";
@@ -17,7 +20,7 @@ let snoozeTimer: ReturnType<typeof setInterval> | null = null;
 export function startSnoozeChecker(bot: Bot): void {
   if (snoozeTimer) return;
 
-  console.log("[Snooze] Checker started (60s interval)");
+  log.info("[Snooze] Checker started (60s interval)");
   snoozeTimer = setInterval(() => { checkSnoozeQueue(bot); checkJarvisNotifs(bot); checkTimeTimers(bot); }, CHECK_INTERVAL);
   // Also check immediately
   checkSnoozeQueue(bot);
@@ -32,7 +35,7 @@ export function stopSnoozeChecker(): void {
   if (snoozeTimer) {
     clearInterval(snoozeTimer);
     snoozeTimer = null;
-    console.log("[Snooze] Checker stopped");
+    log.info("[Snooze] Checker stopped");
   }
 }
 
@@ -80,13 +83,13 @@ async function checkSnoozeQueue(bot: Bot): Promise<void> {
         // Mark as notified
         await gatewayQuery("UPDATE snooze_queue SET notified = 1 WHERE id = ?", [item.id]);
 
-        console.log(`[Snooze] Re-notified: mapping=${item.mapping_id}`);
+        log.info(`[Snooze] Re-notified: mapping=${item.mapping_id}`);
       } catch (e) {
-        console.error("[Snooze] Re-notify error:", e);
+        log.error("[Snooze] Re-notify error:", e);
       }
     }
   } catch (error) {
-    console.error("[Snooze] Queue check error:", error);
+    log.error("[Snooze] Queue check error:", error);
   }
 }
 
@@ -146,13 +149,13 @@ export async function checkJarvisNotifs(bot: Bot): Promise<void> {
           [sent.message_id, nextFire, item.id]
         );
 
-        console.log(`[Notif] Fired: id=${item.id} label="${label}"`);
+        log.info(`[Notif] Fired: id=${item.id} label="${label}"`);
       } catch (e) {
-        console.error("[Notif] Fire error:", e);
+        log.error("[Notif] Fire error:", e);
       }
     }
   } catch (error) {
-    console.error("[Notif] Check error:", error);
+    log.error("[Notif] Check error:", error);
   }
 }
 
@@ -207,11 +210,11 @@ export async function checkTimeTimers(bot: Bot): Promise<void> {
           });
         }
       } catch (e) {
-        console.error("[Timer] Update error:", e);
+        log.error("[Timer] Update error:", e);
       }
     }
   } catch (error) {
-    console.error("[Timer] Check error:", error);
+    log.error("[Timer] Check error:", error);
   }
 }
 
@@ -239,11 +242,11 @@ export async function midnightInboxCheck(bot: Bot): Promise<void> {
     );
 
     if (!unprocessed?.results?.length) {
-      console.log("[Midnight] No unprocessed messages");
+      log.info("[Midnight] No unprocessed messages");
       return;
     }
 
-    console.log(`[Midnight] Found ${unprocessed.results.length} unprocessed messages`);
+    log.info(`[Midnight] Found ${unprocessed.results.length} unprocessed messages`);
 
     // Schedule re-notification for tomorrow 7:00 JST
     const tomorrow7am = new Date();
@@ -263,8 +266,8 @@ export async function midnightInboxCheck(bot: Bot): Promise<void> {
       );
     }
 
-    console.log(`[Midnight] Scheduled ${unprocessed.results.length} re-notifications for tomorrow 7:00`);
+    log.info(`[Midnight] Scheduled ${unprocessed.results.length} re-notifications for tomorrow 7:00`);
   } catch (error) {
-    console.error("[Midnight] Check error:", error);
+    log.error("[Midnight] Check error:", error);
   }
 }

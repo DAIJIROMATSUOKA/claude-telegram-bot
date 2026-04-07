@@ -8,6 +8,9 @@
  * テーブル: jarvis_learned_memory
  */
 
+import { createLogger } from "./logger";
+const log = createLogger("learned-memory");
+
 import { callMemoryGateway } from '../handlers/ai-router';
 import { ulid } from 'ulidx';
 
@@ -40,9 +43,9 @@ export async function ensureLearnedMemoryTable(): Promise<void> {
       )`,
       params: [],
     });
-    console.log('[Learned Memory] Table ensured');
+    log.info('[Learned Memory] Table ensured');
   } catch (error) {
-    console.error('[Learned Memory] Table creation error:', error);
+    log.error('[Learned Memory] Table creation error:', error);
   }
 }
 
@@ -185,7 +188,7 @@ export async function saveLearnedMemory(
       });
 
       if (existing.data?.results?.length > 0) {
-        console.log('[Learned Memory] Duplicate skipped:', item.content.slice(0, 50));
+        log.info('[Learned Memory] Duplicate skipped:', item.content.slice(0, 50));
         continue;
       }
 
@@ -196,9 +199,9 @@ export async function saveLearnedMemory(
         params: [id, userIdStr, item.category, item.content, sourceMessage.slice(0, 500), item.confidence],
       });
 
-      console.log(`[Learned Memory] Saved: [${item.category}] ${item.content.slice(0, 80)}`);
+      log.info(`[Learned Memory] Saved: [${item.category}] ${item.content.slice(0, 80)}`);
     } catch (error) {
-      console.error('[Learned Memory] Save error:', error);
+      log.error('[Learned Memory] Save error:', error);
     }
   }
 }
@@ -241,7 +244,7 @@ export async function getLearnedMemories(
 
     return response.data.results as LearnedMemory[];
   } catch (error) {
-    console.error('[Learned Memory] Fetch error:', error);
+    log.error('[Learned Memory] Fetch error:', error);
     return [];
   }
 }
@@ -319,7 +322,7 @@ export function filterRelevantMemories(
   ];
 
   if (memories.length > selected.length) {
-    console.log(`[Learned Memory] Filtered ${memories.length} → ${selected.length} items (relevance-based)`);
+    log.info(`[Learned Memory] Filtered ${memories.length} → ${selected.length} items (relevance-based)`);
   }
 
   return selected;
@@ -382,6 +385,6 @@ export async function processAndLearn(
       await saveLearnedMemory(userId, items, userMessage);
     }
   } catch (error) {
-    console.error('[Learned Memory] Process error:', error);
+    log.error('[Learned Memory] Process error:', error);
   }
 }

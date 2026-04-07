@@ -9,6 +9,9 @@
  * /remember <key> <value> → 手動メモリ登録（confidence=1.0, source=manual）
  */
 
+import { createLogger } from "../utils/logger";
+const log = createLogger("memory-commands");
+
 import { Context } from 'grammy';
 import { callMemoryGateway } from './ai-router';
 import { fetchWithTimeout } from '../utils/fetch-with-timeout';
@@ -171,7 +174,7 @@ export async function handleForget(ctx: Context): Promise<void> {
       results.push(`Profile: ${r.key} (${r.value.substring(0, 40)})`);
     }
   } catch (e) {
-    console.error('[Memory Forget] Profile search failed:', e);
+    log.error('[Memory Forget] Profile search failed:', e);
   }
 
   // 2. Projects: id or name match
@@ -186,7 +189,7 @@ export async function handleForget(ctx: Context): Promise<void> {
       results.push(`Project: ${r.id} (${r.name})`);
     }
   } catch (e) {
-    console.error('[Memory Forget] Project search failed:', e);
+    log.error('[Memory Forget] Project search failed:', e);
   }
 
   // 3. Summaries: keyword match
@@ -204,7 +207,7 @@ export async function handleForget(ctx: Context): Promise<void> {
       results.push(`Summary: ${r.summary.substring(0, 50)}`);
     }
   } catch (e) {
-    console.error('[Memory Forget] Summary search failed:', e);
+    log.error('[Memory Forget] Summary search failed:', e);
   }
 
   // 4. Vector: semantic search + delete
@@ -223,7 +226,7 @@ export async function handleForget(ctx: Context): Promise<void> {
       } catch {}
     }
   } catch (e) {
-    console.error('[Memory Forget] Vector search failed:', e);
+    log.error('[Memory Forget] Vector search failed:', e);
   }
 
   // 5. Pending memories

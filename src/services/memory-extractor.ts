@@ -10,6 +10,9 @@
  *   - 日本語最適化プロンプト
  */
 
+import { createLogger } from "../utils/logger";
+const log = createLogger("memory-extractor");
+
 import { spawn } from 'node:child_process';
 import { ulid } from 'ulidx';
 import {
@@ -95,7 +98,7 @@ ${assistantResponse.substring(0, 1000)}
       clearTimeout(timer);
 
       if (code !== 0) {
-        console.error('[Memory Extractor] Gemini failed:', code, stderr.substring(0, 200));
+        log.error('[Memory Extractor] Gemini failed:', code, stderr.substring(0, 200));
         resolve(null);
         return;
       }
@@ -112,12 +115,12 @@ ${assistantResponse.substring(0, 1000)}
           cleaned = cleaned.substring(jsonStart, jsonEnd + 1);
         }
 
-        console.log('[Memory Extractor] Raw length:', stdout.length, 'cleaned:', cleaned.substring(0, 80));
+        log.info('[Memory Extractor] Raw length:', stdout.length, 'cleaned:', cleaned.substring(0, 80));
         const result = JSON.parse(cleaned);
         resolve(result as ExtractionResult);
       } catch (e) {
-        console.error('[Memory Extractor] JSON parse failed:', (e as Error).message);
-        console.error('[Memory Extractor] Raw:', stdout.substring(0, 300));
+        log.error('[Memory Extractor] JSON parse failed:', (e as Error).message);
+        log.error('[Memory Extractor] Raw:', stdout.substring(0, 300));
         resolve(null);
       }
     });
@@ -162,7 +165,7 @@ async function storeExtractionResults(
       });
       projectsStored++;
     } catch (e) {
-      console.error('[Memory Extractor] Project store failed:', proj.id, e);
+      log.error('[Memory Extractor] Project store failed:', proj.id, e);
     }
   }
 
@@ -211,7 +214,7 @@ export async function extractAndStoreMemories(
 
   const conversationId = `conv_${ulid()}`;
   const start = Date.now();
-  console.log('[Memory Extractor] Starting extraction...');
+  log.info('[Memory Extractor] Starting extraction...');
 
   // Get existing profile keys for dedup
   let existingKeys: string[] = [];
@@ -222,14 +225,14 @@ export async function extractAndStoreMemories(
 
   const result = await extractWithGemini(userMessage, assistantResponse, existingKeys);
   if (!result) {
-    console.log('[Memory Extractor] No result (timeout or error)');
+    log.info('[Memory Extractor] No result (timeout or error)');
     return;
   }
 
   const stored = await storeExtractionResults(result, userMessage, conversationId);
   const elapsed = Date.now() - start;
 
-  console.log(
+  log.info(
     `[Memory Extractor] Done in ${elapsed}ms: facts=${stored.facts} pending=${stored.pending} projects=${stored.projects} embedded=${stored.embedded} summary=${result.summary ? 'yes' : 'no'}`
   );
 }

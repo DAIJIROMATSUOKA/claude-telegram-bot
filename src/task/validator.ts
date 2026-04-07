@@ -12,6 +12,9 @@
  * 6. All PASS → OK / Any FAIL → rollback
  */
 
+import { createLogger } from "../utils/logger";
+const log = createLogger("validator");
+
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
 import { readFileSync, existsSync } from "node:fs";
@@ -520,7 +523,7 @@ export async function validate(
     }
   } else {
     result.symbol_check_ok = true; // Docker sandbox handles this
-    console.log("[Validator] Docker mode: Tier 3 (dangerous symbols) skipped - sandbox provides isolation");
+    log.info("[Validator] Docker mode: Tier 3 (dangerous symbols) skipped - sandbox provides isolation");
   }
 
   // 5. Test file line count (warning only, does NOT fail validation)

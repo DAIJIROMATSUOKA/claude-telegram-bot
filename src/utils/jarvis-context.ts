@@ -4,6 +4,9 @@
  * jarvis_context テーブルの更新・取得
  */
 
+import { createLogger } from "./logger";
+const log = createLogger("jarvis-context");
+
 import { callMemoryGateway } from '../handlers/ai-router';
 import { detectWorkMode, getRecommendedAI } from './context-detector';
 
@@ -41,14 +44,14 @@ export async function getJarvisContext(
     });
 
     if (response.error || !response.data?.results?.[0]) {
-      console.log('[Jarvis Context] コンテキスト未登録:', userIdStr);
+      log.info('[Jarvis Context] コンテキスト未登録:', userIdStr);
       return null;
     }
 
-    console.log('[Jarvis Context] 取得成功');
+    log.info('[Jarvis Context] 取得成功');
     return response.data.results[0] as JarvisContext;
   } catch (error) {
-    console.error('[Jarvis Context] 取得エラー:', error);
+    log.error('[Jarvis Context] 取得エラー:', error);
     return null;
   }
 }
@@ -104,7 +107,7 @@ export async function updateJarvisContext(
         params: [newTask, newPhase, newAssumption, newDecisions, newWorkMode, newFocusMode, newRecommendedAI, newModeConfidence, userIdStr],
       });
 
-      console.log('[Jarvis Context] 更新成功:', updates);
+      log.info('[Jarvis Context] 更新成功:', updates);
     } else {
       // 新規作成
       await callMemoryGateway('/v1/db/query', 'POST', {
@@ -124,10 +127,10 @@ export async function updateJarvisContext(
         ],
       });
 
-      console.log('[Jarvis Context] 新規作成成功:', updates);
+      log.info('[Jarvis Context] 新規作成成功:', updates);
     }
   } catch (error) {
-    console.error('[Jarvis Context] 更新エラー:', error);
+    log.error('[Jarvis Context] 更新エラー:', error);
   }
 }
 
@@ -289,7 +292,7 @@ export async function autoUpdateContext(
   // 更新がある場合のみDB更新
   if (Object.keys(updates).length > 0) {
     await updateJarvisContext(userId, updates);
-    console.log('[Jarvis Context] 自動更新:', updates);
+    log.info('[Jarvis Context] 自動更新:', updates);
   }
 }
 
@@ -336,7 +339,7 @@ export async function autoDetectAndUpdateWorkMode(
     const detection = detectWorkMode(message);
     const recommendedAI = getRecommendedAI(detection.mode);
 
-    console.log(`[Smart AI Router] Detected: ${detection.mode} (confidence: ${detection.confidence})`);
+    log.info(`[Smart AI Router] Detected: ${detection.mode} (confidence: ${detection.confidence})`);
 
     await updateJarvisContext(userId, {
       work_mode: detection.mode,
@@ -344,6 +347,6 @@ export async function autoDetectAndUpdateWorkMode(
       mode_confidence: detection.confidence,
     });
   } catch (error) {
-    console.error('[Smart AI Router] Error:', error);
+    log.error('[Smart AI Router] Error:', error);
   }
 }

@@ -3,6 +3,9 @@
  * /new, /stop, /restart, /resume, /retry
  */
 
+import { createLogger } from "../../utils/logger";
+const log = createLogger("system-commands");
+
 import type { Context } from "grammy";
 import { session } from "../../session";
 import { ALLOWED_USERS, RESTART_FILE } from "../../config";
@@ -38,10 +41,10 @@ export async function handleNew(ctx: Context): Promise<void> {
         const history = await getChatHistory(userId, 50);
         if (history.length >= 3) {
           await saveSessionSummary(userId, sessionId, history);
-          console.log('[/new] Session summary saved in background');
+          log.info('[/new] Session summary saved in background');
         }
       } catch (err) {
-        console.error('[/new] Failed to save session summary:', err);
+        log.error('[/new] Failed to save session summary:', err);
       }
     })();
   }

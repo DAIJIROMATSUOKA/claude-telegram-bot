@@ -11,6 +11,9 @@
  * 5. Cleanup worktree (keep if DJ wants to inspect)
  */
 
+import { createLogger } from "../utils/logger";
+const log = createLogger("orchestrate");
+
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
 import { existsSync } from "node:fs";
@@ -57,12 +60,12 @@ const abortController = new AbortController();
 
 // === SIGTERM handler ===
 process.on("SIGTERM", () => {
-  console.log("[Orchestrator] SIGTERM received, aborting...");
+  log.info("[Orchestrator] SIGTERM received, aborting...");
   abortController.abort();
 });
 
 process.on("SIGINT", () => {
-  console.log("[Orchestrator] SIGINT received, aborting...");
+  log.info("[Orchestrator] SIGINT received, aborting...");
   abortController.abort();
 });
 
@@ -132,7 +135,7 @@ async function createWorktree(planId: string): Promise<{ path: string; baseCommi
   const nmWorktree = join(worktreePath, "node_modules");
   try {
     await execAsync(`ln -s "${nmMain}" "${nmWorktree}"`, { timeout: 5_000 });
-    console.log(`[Orchestrator] node_modules symlinked`);
+    log.info(`[Orchestrator] node_modules symlinked`);
   } catch {}
 
   // Record base commit for validator (Claude CLI may auto-commit)
@@ -140,10 +143,10 @@ async function createWorktree(planId: string): Promise<{ path: string; baseCommi
   try {
     const { stdout } = await execAsync("git rev-parse HEAD", { cwd: worktreePath });
     baseCommit = stdout.trim();
-    console.log(`[Orchestrator] Base commit: ${baseCommit.slice(0, 8)}`);
+    log.info(`[Orchestrator] Base commit: ${baseCommit.slice(0, 8)}`);
   } catch {}
 
-  console.log(`[Orchestrator] Worktree created: ${worktreePath}`);
+  log.info(`[Orchestrator] Worktree created: ${worktreePath}`);
   return { path: worktreePath, baseCommit };
 }
 
@@ -158,7 +161,7 @@ async function gitCommit(worktreePath: string, taskId: string, goal: string): Pr
       { cwd: worktreePath, timeout: 10_000 },
     );
   } catch (err) {
-    console.error(`[Orchestrator] Git commit failed:`, err);
+    log.error(`[Orchestrator] Git commit failed:`, err);
   }
 }
 
@@ -204,7 +207,7 @@ async function cleanOldWorktrees(basePath: string, maxAgeMs: number): Promise<vo
       try {
         const statResult = await stat(fullPath);
         if (statResult.isDirectory() && (now - statResult.mtimeMs) > maxAgeMs) {
-          console.log(`[Orchestrator] Removing stale worktree: ${entry}`);
+          log.info(`[Orchestrator] Removing stale worktree: ${entry}`);
           try {
             await execAsync(`git worktree remove --force "${fullPath}" 2>/dev/null; rm -rf "${fullPath}"`, {
               cwd: MAIN_REPO, timeout: 10_000,
@@ -214,7 +217,7 @@ async function cleanOldWorktrees(basePath: string, maxAgeMs: number): Promise<vo
       } catch {}
     }
   } catch (err) {
-    console.error('[Orchestrator] Worktree cleanup error:', err);
+    log.error('[Orchestrator] Worktree cleanup error:', err);
   }
 }
 
@@ -241,7 +244,7 @@ async function main(): Promise<void> {
   // Parse args
   const planPath = process.argv[2];
   if (!planPath) {
-    console.error("Usage: bun run src/task/orchestrate.ts <taskplan.json>");
+    log.error("Usage: bun run src/task/orchestrate.ts <taskplan.json>");
     process.exit(1);
   }
 
@@ -256,19 +259,19 @@ async function main(): Promise<void> {
     if (existingPid) {
       try {
         process.kill(existingPid, 0); // throws if not alive
-        console.error(`[Orchestrator] ABORT: Another instance running (PID ${existingPid})`);
+        log.error(`[Orchestrator] ABORT: Another instance running (PID ${existingPid})`);
         process.exit(1);
       } catch (e: any) {
         if (e.code !== "ESRCH") {
-          console.error(`[Orchestrator] ABORT: PID check failed:`, e);
+          log.error(`[Orchestrator] ABORT: PID check failed:`, e);
           process.exit(1);
         }
-        console.log("[Orchestrator] Stale PID file found, cleaning up");
+        log.info("[Orchestrator] Stale PID file found, cleaning up");
       }
     }
   } catch (e: any) {
     if (e.code !== "ENOENT") {
-      console.error(`[Orchestrator] ABORT: PID file read failed:`, e);
+      log.error(`[Orchestrator] ABORT: PID file read failed:`, e);
       process.exit(1);
     }
   }
@@ -281,7 +284,7 @@ async function main(): Promise<void> {
   try {
     await execAsync("git worktree prune", { cwd: MAIN_REPO, timeout: 10_000 });
     await cleanOldWorktrees(WORKTREE_BASE, 24 * 60 * 60 * 1000); // 24h
-    console.log("[Orchestrator] Worktree cleanup done");
+    log.info("[Orchestrator] Worktree cleanup done");
   } catch (err) {
     console.warn("[Orchestrator] Worktree cleanup warning:", err);
   }
@@ -291,31 +294,31 @@ async function main(): Promise<void> {
   try {
     plan = loadJsonFile<TaskPlan>(planPath);
   } catch (err) {
-    console.error("[Orchestrator] Failed to read TaskPlan:", err);
+    log.error("[Orchestrator] Failed to read TaskPlan:", err);
     process.exit(1);
   }
 
-  console.log(`[Orchestrator] Plan: ${plan.plan_id} | ${plan.title} | ${plan.micro_tasks.length} tasks`);
+  log.info(`[Orchestrator] Plan: ${plan.plan_id} | ${plan.title} | ${plan.micro_tasks.length} tasks`);
 
   // Health Check (Phase 2a)
   if (plan.on_failure === 'retry_then_stop') {
-    console.log('[Orchestrator] Running health check...');
+    log.info('[Orchestrator] Running health check...');
     const healthResult = runHealthCheck();
     if (!healthResult.passed) {
-      console.error('[Orchestrator] Health check failed:', healthResult.errors);
+      log.error('[Orchestrator] Health check failed:', healthResult.errors);
       await notifyHealthCheckFailed(healthResult);
       throw new Error(`Health check failed: ${healthResult.errors.join(', ')}`);
     }
-    console.log(`[Orchestrator] Health check passed: Claude ${healthResult.claudeVersion}`);
+    log.info(`[Orchestrator] Health check passed: Claude ${healthResult.claudeVersion}`);
   }
 
   // === Docker Availability Check ===
   const dockerCheck = checkDockerAvailable();
   const validatorMode: ValidatorMode = dockerCheck.available ? 'docker' : 'host';
   if (dockerCheck.available) {
-    console.log("[Orchestrator] Docker sandbox available - using Three-Tier Validator (Tier 3 skipped)");
+    log.info("[Orchestrator] Docker sandbox available - using Three-Tier Validator (Tier 3 skipped)");
   } else {
-    console.log(`[Orchestrator] Docker unavailable (${dockerCheck.reason}) - using strict Host mode (all tiers active)`);
+    log.info(`[Orchestrator] Docker unavailable (${dockerCheck.reason}) - using strict Host mode (all tiers active)`);
   }
 
   // === Run Logger ===
@@ -325,7 +328,7 @@ async function main(): Promise<void> {
     title: plan.title,
     task_count: plan.micro_tasks.length,
   });
-  console.log(`[Orchestrator] RunID: ${runLogger.runId}`);
+  log.info(`[Orchestrator] RunID: ${runLogger.runId}`);
 
   await notifyOrchestratorStarted(plan, runLogger.runId);
 
@@ -337,7 +340,7 @@ async function main(): Promise<void> {
     worktreePath = wt.path;
     baseCommit = wt.baseCommit;
   } catch (err) {
-    console.error("[Orchestrator] Worktree creation failed:", err);
+    log.error("[Orchestrator] Worktree creation failed:", err);
     process.exit(1);
   }
 
@@ -352,7 +355,7 @@ async function main(): Promise<void> {
 
     // Check /stop
     if (isStopRequested()) {
-      console.log("[Orchestrator] Stop requested, aborting...");
+      log.info("[Orchestrator] Stop requested, aborting...");
       runLogger.logEvent("run_stopped", { reason: "/stop before task" });
       await notifyOrchestratorStopped(plan, runLogger.runId);
       break;
@@ -366,7 +369,7 @@ async function main(): Promise<void> {
       }
     }
 
-    console.log(`[Orchestrator] Task ${i + 1}/${plan.micro_tasks.length}: ${task.id} - ${task.goal}`);
+    log.info(`[Orchestrator] Task ${i + 1}/${plan.micro_tasks.length}: ${task.id} - ${task.goal}`);
     await notifyTaskStarted(plan, task, i, plan.micro_tasks.length, runLogger.runId);
 
     const taskStart = Date.now();
@@ -384,7 +387,7 @@ async function main(): Promise<void> {
       abortController.signal,
     );
 
-    console.log(`[Orchestrator] Exec done: exit=${execResult.exit_code} timeout=${execResult.timed_out}`);
+    log.info(`[Orchestrator] Exec done: exit=${execResult.exit_code} timeout=${execResult.timed_out}`);
     runLogger.logEvent("task_exec_done", {
       task_id: task.id,
       exit_code: execResult.exit_code,
@@ -392,9 +395,9 @@ async function main(): Promise<void> {
       stdout_len: execResult.stdout.length,
       stderr_preview: maskSecrets(execResult.stderr.slice(0, 300)),
     });
-    console.log(`[Orchestrator] STDOUT (last 1000): ${maskSecrets(execResult.stdout.slice(-1000))}`);
+    log.info(`[Orchestrator] STDOUT (last 1000): ${maskSecrets(execResult.stdout.slice(-1000))}`);
     if (execResult.stderr) {
-      console.log(`[Orchestrator] STDERR: ${maskSecrets(execResult.stderr.slice(0, 500))}`);
+      log.info(`[Orchestrator] STDERR: ${maskSecrets(execResult.stderr.slice(0, 500))}`);
     }
 
     // Build task result
@@ -432,7 +435,7 @@ async function main(): Promise<void> {
       let validation = await validate(task, plan, worktreePath, mainRepoPath, baseCommit, validatorMode);
       taskResult.validation = validation;
 
-      console.log(`[Orchestrator] Validation: passed=${validation.passed} files=${validation.changed_files.length} violations=${validation.violations.join('; ')}`);
+      log.info(`[Orchestrator] Validation: passed=${validation.passed} files=${validation.changed_files.length} violations=${validation.violations.join('; ')}`);
       runLogger.logEvent("task_validation", {
         task_id: task.id,
         passed: validation.passed,
@@ -459,7 +462,7 @@ async function main(): Promise<void> {
             violations: [...validation.violations, violation],
           };
           taskResult.validation = validation;
-          console.log(`[Orchestrator] Resource limit exceeded: ${violation}`);
+          log.info(`[Orchestrator] Resource limit exceeded: ${violation}`);
           runLogger.logEvent("resource_limit_exceeded", {
             task_id: task.id,
             check: resourceFailed.check,
@@ -484,7 +487,7 @@ async function main(): Promise<void> {
       } else if (plan.on_failure === "retry_then_stop") {
         // Phase 2a: 1回リトライ
         const failureReason = summarizeFailureReason("failed", validation.violations, execResult.exit_code);
-        console.log(`[Orchestrator] Retrying: ${failureReason}`);
+        log.info(`[Orchestrator] Retrying: ${failureReason}`);
         runLogger.logEvent("task_retry_start", {
           task_id: task.id,
           failure_reason: failureReason,
@@ -579,7 +582,7 @@ async function main(): Promise<void> {
 
     // Stop conditions
     if (consecutiveFailures >= 2) {
-      console.log("[Orchestrator] 2 consecutive failures, stopping.");
+      log.info("[Orchestrator] 2 consecutive failures, stopping.");
       runLogger.logEvent("consecutive_failure_stop", {
         task_id: task.id,
         consecutive_failures: consecutiveFailures,
@@ -587,7 +590,7 @@ async function main(): Promise<void> {
       break;
     }
     if (plan.on_failure === "stop" && taskResult.status !== "success") {
-      console.log("[Orchestrator] on_failure=stop, halting after failure.");
+      log.info("[Orchestrator] on_failure=stop, halting after failure.");
       break;
     }
   }
@@ -633,16 +636,16 @@ async function main(): Promise<void> {
   await sendCompletionReport(report);
 
   // Log summary
-  console.log(`[Orchestrator] Done: ${report.final_status} | ${passed}/${plan.micro_tasks.length} passed | ${Math.round(report.total_duration_seconds)}s | RunID: ${runLogger.runId}`);
-  console.log(`[Orchestrator] Worktree preserved: ${worktreePath}`);
-  console.log(`[Orchestrator] To merge: cd ${MAIN_REPO} && git merge --ff-only $(cd ${worktreePath} && git rev-parse HEAD)`);
+  log.info(`[Orchestrator] Done: ${report.final_status} | ${passed}/${plan.micro_tasks.length} passed | ${Math.round(report.total_duration_seconds)}s | RunID: ${runLogger.runId}`);
+  log.info(`[Orchestrator] Worktree preserved: ${worktreePath}`);
+  log.info(`[Orchestrator] To merge: cd ${MAIN_REPO} && git merge --ff-only $(cd ${worktreePath} && git rev-parse HEAD)`);
 
   // Cleanup PID file
   try { await unlink(PID_FILE); } catch {}
 }
 
 main().catch(async (err) => {
-  console.error("[Orchestrator] Fatal:", err);
+  log.error("[Orchestrator] Fatal:", err);
   try { await unlink(PID_FILE); } catch {}
   process.exit(1);
 });

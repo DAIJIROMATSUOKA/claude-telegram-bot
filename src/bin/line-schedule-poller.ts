@@ -5,6 +5,9 @@
  * テキスト/Dropbox: LINE Worker text で送信
  */
 
+import { createLogger } from "../utils/logger";
+const log = createLogger("line-schedule-poller");
+
 import { fetchWithTimeout } from '../utils/fetch-with-timeout';
 
 const GATEWAY_URL = process.env.GATEWAY_URL || 'https://jarvis-memory-gateway.jarvis-matsuoka.workers.dev';
@@ -83,7 +86,7 @@ async function sendToLine(task: any): Promise<boolean> {
   }
 
   if (errors.length > 0) {
-    console.error(`[LineSchedule] Errors: ${errors.join(', ')}`);
+    log.error(`[LineSchedule] Errors: ${errors.join(', ')}`);
     // Partial success is still success (e.g. text OK but video fallback)
     if (errors.every(e => e.includes('未対応'))) return true;
     return false;
@@ -93,7 +96,7 @@ async function sendToLine(task: any): Promise<boolean> {
 
 async function main() {
   if (!LINE_WORKER_URL) {
-    console.error('[LineSchedule] LINE_WORKER_URL not set');
+    log.error('[LineSchedule] LINE_WORKER_URL not set');
     process.exit(1);
   }
 
@@ -107,7 +110,7 @@ async function main() {
   if (tasks.length === 0) process.exit(0);
 
   for (const task of tasks) {
-    console.log(`[LineSchedule] Sending: ${task.id} → ${task.target_name}`);
+    log.info(`[LineSchedule] Sending: ${task.id} → ${task.target_name}`);
 
     try {
       const ok = await sendToLine(task);
@@ -130,6 +133,6 @@ async function main() {
 }
 
 main().catch(e => {
-  console.error('[LineSchedule] Fatal:', e);
+  log.error('[LineSchedule] Fatal:', e);
   process.exit(1);
 });

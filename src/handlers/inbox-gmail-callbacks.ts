@@ -2,6 +2,9 @@
  * Gmail Action Callbacks - full text, attachments, reply, AI draft, Gmail reply.
  */
 
+import { createLogger } from "../utils/logger";
+const log = createLogger("inbox-gmail-callbacks");
+
 import type { Context } from "grammy";
 import { fetchWithTimeout } from "../utils/fetch-with-timeout";
 import { archiveToObsidian } from "../services/obsidian-writer";
@@ -39,7 +42,7 @@ async function handleGmailAction(
       try {
         await ctx.api.deleteMessage(chatId, msgId);
       } catch (e) {
-        console.log("[Inbox] Delete failed (already deleted?):", e);
+        log.info("[Inbox] Delete failed (already deleted?):", e);
       }
     }
   } else {
@@ -209,7 +212,7 @@ export async function handleAiDraft(
     const chatId = ctx.chat?.id!;
     try { await ctx.api.deleteMessage(chatId, draftMsg.message_id); } catch {}
 
-    console.log("[AiDraft] exitCode=", exitCode, "stdout_len=", stdout.length, "stdout_start=", stdout.substring(0, 80));
+    log.info("[AiDraft] exitCode=", exitCode, "stdout_len=", stdout.length, "stdout_start=", stdout.substring(0, 80));
     if (stdout.trim()) {
       const draft = stdout.trim();
       await ctx.reply(
@@ -220,7 +223,7 @@ export async function handleAiDraft(
         }
       );
     } else {
-      console.error("[AiDraft] FAILED exitCode=", exitCode, "stdout=", stdout.substring(0, 200));
+      log.error("[AiDraft] FAILED exitCode=", exitCode, "stdout=", stdout.substring(0, 200));
       await ctx.reply("❌ AI下書き生成失敗 (exit=" + exitCode + ")", { reply_to_message_id: msgId });
     }
   } catch (e) {

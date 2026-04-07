@@ -6,6 +6,9 @@
  * @module auto-resume
  */
 
+import { createLogger } from "./logger";
+const log = createLogger("auto-resume");
+
 import { callMemoryGateway } from '../handlers/ai-router';
 
 // ============================================================================
@@ -71,13 +74,13 @@ export async function saveInterruptSnapshot(
       ],
     });
 
-    console.log('[Auto-Resume] ✅ Snapshot saved:', {
+    log.info('[Auto-Resume] ✅ Snapshot saved:', {
       task: snapshotData.task_description,
       phase: currentPhase,
       priority: snapshotData.priority,
     });
   } catch (error) {
-    console.error('[Auto-Resume] ❌ Failed to save snapshot:', error);
+    log.error('[Auto-Resume] ❌ Failed to save snapshot:', error);
   }
 }
 
@@ -102,15 +105,15 @@ export async function getLatestSnapshot(userId: string): Promise<InterruptSnapsh
     });
 
     if (!response.data?.results?.[0]) {
-      console.log('[Auto-Resume] No unrestored snapshot found');
+      log.info('[Auto-Resume] No unrestored snapshot found');
       return null;
     }
 
     const snapshot = response.data.results[0] as InterruptSnapshot;
-    console.log('[Auto-Resume] 📋 Latest snapshot:', snapshot.id);
+    log.info('[Auto-Resume] 📋 Latest snapshot:', snapshot.id);
     return snapshot;
   } catch (error) {
-    console.error('[Auto-Resume] ❌ Failed to get snapshot:', error);
+    log.error('[Auto-Resume] ❌ Failed to get snapshot:', error);
     return null;
   }
 }
@@ -133,9 +136,9 @@ async function markAsRestored(snapshotId: number): Promise<void> {
       params: [snapshotId],
     });
 
-    console.log('[Auto-Resume] ✅ Snapshot marked as restored:', snapshotId);
+    log.info('[Auto-Resume] ✅ Snapshot marked as restored:', snapshotId);
   } catch (error) {
-    console.error('[Auto-Resume] ❌ Failed to mark as restored:', error);
+    log.error('[Auto-Resume] ❌ Failed to mark as restored:', error);
   }
 }
 
@@ -164,7 +167,7 @@ export async function getAllPendingSnapshots(userId: string): Promise<InterruptS
 
     return response.data.results as InterruptSnapshot[];
   } catch (error) {
-    console.error('[Auto-Resume] ❌ Failed to get all snapshots:', error);
+    log.error('[Auto-Resume] ❌ Failed to get all snapshots:', error);
     return [];
   }
 }
@@ -183,8 +186,8 @@ async function cleanupOldSnapshots(daysOld: number = 7): Promise<void> {
     `;
 
     await callMemoryGateway('/v1/db/query', 'POST', { sql });
-    console.log(`[Auto-Resume] 🧹 Cleaned up snapshots older than ${daysOld} days`);
+    log.info(`[Auto-Resume] 🧹 Cleaned up snapshots older than ${daysOld} days`);
   } catch (error) {
-    console.error('[Auto-Resume] ❌ Failed to cleanup snapshots:', error);
+    log.error('[Auto-Resume] ❌ Failed to cleanup snapshots:', error);
   }
 }

@@ -1,3 +1,6 @@
+import { createLogger } from "./logger";
+const log = createLogger("circuit-breaker");
+
 /**
  * Circuit Breaker - 外部サービス障害時にfail-fast & 段階的フォールバック
  *
@@ -51,7 +54,7 @@ export class CircuitBreaker {
       const elapsed = Date.now() - this.lastFailureTime;
       if (elapsed >= this.resetTimeoutMs) {
         this.state = 'HALF_OPEN';
-        console.log(`[CircuitBreaker:${this.name}] OPEN → HALF_OPEN (${Math.round(elapsed / 1000)}s経過)`);
+        log.info(`[CircuitBreaker:${this.name}] OPEN → HALF_OPEN (${Math.round(elapsed / 1000)}s経過)`);
       } else {
         // まだOPEN → 即fallback
         return fallback;
@@ -74,7 +77,7 @@ export class CircuitBreaker {
     this.successCount++;
     if (this.state === 'HALF_OPEN') {
       this.state = 'CLOSED';
-      console.log(`[CircuitBreaker:${this.name}] HALF_OPEN → CLOSED (回復)`);
+      log.info(`[CircuitBreaker:${this.name}] HALF_OPEN → CLOSED (回復)`);
     }
   }
 
@@ -85,7 +88,7 @@ export class CircuitBreaker {
 
     if (this.failureCount >= this.failureThreshold) {
       this.state = 'OPEN';
-      console.log(`[CircuitBreaker:${this.name}] → OPEN (${this.failureCount}回連続失敗, ${Math.round(this.resetTimeoutMs / 1000)}s後にリトライ)`);
+      log.info(`[CircuitBreaker:${this.name}] → OPEN (${this.failureCount}回連続失敗, ${Math.round(this.resetTimeoutMs / 1000)}s後にリトライ)`);
     }
   }
 
@@ -112,7 +115,7 @@ export class CircuitBreaker {
   reset(): void {
     this.state = 'CLOSED';
     this.failureCount = 0;
-    console.log(`[CircuitBreaker:${this.name}] Manual reset → CLOSED`);
+    log.info(`[CircuitBreaker:${this.name}] Manual reset → CLOSED`);
   }
 }
 

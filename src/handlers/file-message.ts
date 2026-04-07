@@ -5,6 +5,9 @@
  * If photo caption contains M-number (M\d{4}), auto-saves to Dropbox project folder.
  */
 
+import { createLogger } from "../utils/logger";
+const log = createLogger("file-message");
+
 import type { Context } from "grammy";
 import { isAuthorized } from "../security";
 import { ALLOWED_USERS, TELEGRAM_TOKEN } from "../config";
@@ -32,7 +35,7 @@ async function autoSortPhoto(ctx: Context, mNumber: string): Promise<string | nu
 
     return savePath;
   } catch (err: any) {
-    console.error("[FileMessage] autoSortPhoto error:", err.message);
+    log.error("[FileMessage] autoSortPhoto error:", err.message);
     return null;
   }
 }

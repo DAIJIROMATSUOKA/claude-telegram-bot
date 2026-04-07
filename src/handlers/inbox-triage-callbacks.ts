@@ -2,6 +2,9 @@
  * Triage Callback Handlers - Batch queue, snooze, and action logging for inbox.
  */
 
+import { createLogger } from "../utils/logger";
+const log = createLogger("inbox-triage-callbacks");
+
 import { logger } from "../utils/logger";
 import { archiveToObsidian } from "../services/obsidian-writer";
 import { fetchWithTimeout } from "../utils/fetch-with-timeout";
@@ -122,14 +125,14 @@ async function executeBatch(chatId: number): Promise<void> {
               [mappingId || 0, JSON.stringify({ text: e.msgText, reply_markup: e.replyMarkup }), until]
             );
           } catch (err) {
-            console.error("[Batch] Snooze store error:", err);
+            log.error("[Batch] Snooze store error:", err);
           }
           await q.botApi.deleteMessage(chatId, e.msgId).catch(() => {});
           break;
         }
       }
     } catch (err) {
-      console.error("[Batch] Action error:", e.action, err);
+      log.error("[Batch] Action error:", e.action, err);
     }
   }
 }
@@ -161,7 +164,7 @@ export async function logInboxAction(
       [source, email, domain, action, responseSec, sourceId]
     );
   } catch (e) {
-    console.error("[Inbox] Action log error:", e);
+    log.error("[Inbox] Action log error:", e);
   }
 }
 
@@ -217,7 +220,7 @@ export async function handleSnooze(
       [mappingId || 0, JSON.stringify({ text: msgText, reply_markup: replyMarkup }), until]
     );
   } catch (e) {
-    console.error("[Inbox] Snooze store error:", e);
+    log.error("[Inbox] Snooze store error:", e);
   }
 
   await ctx.answerCallbackQuery({ text: `⏰ ${hours}h後に再通知` });
@@ -226,7 +229,7 @@ export async function handleSnooze(
     try {
       await ctx.api.deleteMessage(chatId, msgId);
     } catch (e) {
-      console.log("[Inbox] Snooze delete failed:", e);
+      log.info("[Inbox] Snooze delete failed:", e);
     }
   }
 }

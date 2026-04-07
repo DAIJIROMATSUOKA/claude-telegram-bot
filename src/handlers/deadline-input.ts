@@ -9,6 +9,9 @@
  *   M1319の納期2026-03-09
  */
 
+import { createLogger } from "../utils/logger";
+const log = createLogger("deadline-input");
+
 import { exec } from 'child_process';
 import type { Context } from 'grammy';
 
@@ -50,7 +53,7 @@ export async function handleDeadlineInput(ctx: Context): Promise<boolean> {
       if (error) {
         const errMsg = stderr || error.message || 'Unknown error';
         bot.sendMessage(chatId, `❌ 納期更新エラー: ${errMsg.substring(0, 200)}`).catch(() => {});
-        console.error('[Deadline] exec error:', errMsg.substring(0, 200));
+        log.error('[Deadline] exec error:', errMsg.substring(0, 200));
         return;
       }
 
@@ -60,10 +63,10 @@ export async function handleDeadlineInput(ctx: Context): Promise<boolean> {
       } else {
         bot.sendMessage(chatId, `✅ ${output}`).catch(() => {});
       }
-      console.log('[Deadline] result:', output.substring(0, 100));
+      log.info('[Deadline] result:', output.substring(0, 100));
     }
   );
 
-  console.log(`[Deadline] fired: M${machineNo} ${deadline}`);
+  log.info(`[Deadline] fired: M${machineNo} ${deadline}`);
   return true;
 }

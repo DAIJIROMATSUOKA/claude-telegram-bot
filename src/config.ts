@@ -4,6 +4,9 @@
  * All environment variables, paths, constants, and safety settings.
  */
 
+import { createLogger } from "./utils/logger";
+const log = createLogger("config");
+
 import { homedir } from "os";
 import { resolve, dirname } from "path";
 import type { McpServerConfig } from "./types";
@@ -61,12 +64,12 @@ try {
   const mcpModule = await import(mcpConfigPath).catch(() => null);
   if (mcpModule?.MCP_SERVERS) {
     MCP_SERVERS = mcpModule.MCP_SERVERS;
-    console.log(
+    log.info(
       `Loaded ${Object.keys(MCP_SERVERS).length} MCP servers from mcp-config.ts`
     );
   }
 } catch {
-  console.log("No mcp-config.ts found - running without MCPs");
+  log.info("No mcp-config.ts found - running without MCPs");
 }
 
 export { MCP_SERVERS };
@@ -204,12 +207,12 @@ await Bun.write(`${TEMP_DIR}/.keep`, "");
 // ============== Validation ==============
 
 if (!TELEGRAM_TOKEN) {
-  console.error("ERROR: TELEGRAM_BOT_TOKEN environment variable is required");
+  log.error("ERROR: TELEGRAM_BOT_TOKEN environment variable is required");
   process.exit(1);
 }
 
 if (ALLOWED_USERS.length === 0) {
-  console.error(
+  log.error(
     "ERROR: TELEGRAM_ALLOWED_USERS environment variable is required"
   );
   process.exit(1);
@@ -228,6 +231,6 @@ if (!process.env.GAS_GMAIL_URL) {
   console.warn("WARN: GAS_GMAIL_URL is not set — Gmail GAS actions (archive/trash) will be unavailable");
 }
 
-console.log(
+log.info(
   `Config loaded: ${ALLOWED_USERS.length} allowed users, working dir: ${WORKING_DIR}`
 );

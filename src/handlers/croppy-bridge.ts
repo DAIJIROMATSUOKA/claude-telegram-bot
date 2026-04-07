@@ -8,6 +8,9 @@
  *   /workers           - Alias for /bridge status
  */
 
+import { createLogger } from "../utils/logger";
+const log = createLogger("croppy-bridge");
+
 import { exec } from 'child_process';
 import { writeFileSync as bwSync } from 'fs';
 import { loadJsonFile } from '../utils/json-loader';
@@ -64,7 +67,7 @@ async function processQueue(): Promise<void> {
     await next.ctx.reply(`📤 Dequeued task (was queued ${Math.floor((Date.now() - next.queuedAt) / 1000)}s)`);
     await injectAndNotify(next.ctx, readyWT.trim(), next.task, next.raw);
   } catch (e) {
-    console.error('[Bridge] Queue dispatch error:', e);
+    log.error('[Bridge] Queue dispatch error:', e);
   }
 }
 
@@ -127,7 +130,7 @@ async function formatConversationTitle(wt: string): Promise<void> {
 
     const escaped = formatted.replace(/'/g, "'\\''" );
     await runLocal(`bash ${TAB_MANAGER} rename-conversation "${wt}" '${escaped}'`, 15000);
-    console.log(`[Bridge] Renamed conversation: ${formatted}`);
+    log.info(`[Bridge] Renamed conversation: ${formatted}`);
 
     // Re-mark worker tab (rename-conversation triggers title update that overwrites [J-WORKER-N])
     const workerMatch = raw.match(/\[J-WORKER-(\d+)\]/);
@@ -135,7 +138,7 @@ async function formatConversationTitle(wt: string): Promise<void> {
       await runLocal(`bash ${TAB_MANAGER} mark ${wt} ${workerMatch[1]}`, 8000);
     }
   } catch (e) {
-    console.error("[Bridge] formatConversationTitle error:", e);
+    log.error("[Bridge] formatConversationTitle error:", e);
   }
 }
 
@@ -350,14 +353,14 @@ export async function dispatchToWorker(ctx: Context, task: string, options?: { r
       await ctx.reply(`🟡 All workers busy. Queued (#${taskQueue.length}/${TASK_QUEUE_MAX}). Will auto-dispatch when a worker is free.`);
     } else if (health.includes('NO_WORKERS') || health.includes('CHROME_NOT_RUNNING')) {
       // Auto-recover: restore worker tabs from config
-      console.log('[Bridge] No workers found, attempting auto-recover...');
+      log.info('[Bridge] No workers found, attempting auto-recover...');
       const recoverResult = await runLocal(`bash ${TAB_MANAGER} recover`, 30000);
       if (recoverResult.includes('RESTORED')) {
         // Wait for tabs to load
         await new Promise(r => setTimeout(r, 8000));
         const recoveredWT = await runLocal(`bash ${TAB_MANAGER} ready`);
         if (recoveredWT && recoveredWT.trim() !== '' && !recoveredWT.includes('ERROR')) {
-          console.log(`[Bridge] Auto-recovered, dispatching to ${recoveredWT.trim()}`);
+          log.info(`[Bridge] Auto-recovered, dispatching to ${recoveredWT.trim()}`);
           await injectAndNotify(ctx, recoveredWT.trim(), task, options?.raw);
           return;
         }
@@ -415,7 +418,7 @@ async function injectAndNotify(ctx: Context, wt: string, task: string, raw = fal
     // Wait for response and relay to Telegram (non-blocking for handoff case)
     if (count < INJECT_HANDOFF_THRESHOLD) {
       waitAndRelayResponse(ctx, wt, WORKER_RESPONSE_TIMEOUT_MS, undefined, dispatchHeader).catch(e =>
-        console.error('[Bridge] Relay error:', e)
+        log.error('[Bridge] Relay error:', e)
       );
     }
   } else if (result.includes('BLOCKED')) {
@@ -481,7 +484,7 @@ export async function waitAndRelayResponse(ctx: Context, wt: string, maxWaitMs =
             const sent = await ctx.reply(text, { parse_mode: i === 0 && dispatchHeader ? 'HTML' : undefined });
             registerBridgeReply(sent.message_id, wt);
           } catch (e) {
-            console.error('[Bridge] Reply error:', e);
+            log.error('[Bridge] Reply error:', e);
           }
         }
       }
@@ -492,7 +495,7 @@ export async function waitAndRelayResponse(ctx: Context, wt: string, maxWaitMs =
       // Skip rename/re-mark for project tabs (they have their own naming)
       if (!isProjectTab(wt)) {
         // Fire-and-forget: rename conversation with date prefix
-        formatConversationTitle(wt).catch(e => console.error('[Bridge] Title format error:', e));
+        formatConversationTitle(wt).catch(e => log.error('[Bridge] Title format error:', e));
 
         // Re-mark tab title (claude.ai overwrites it with conversation title)
         const workerList = await runLocal(`bash ${TAB_MANAGER} list`);

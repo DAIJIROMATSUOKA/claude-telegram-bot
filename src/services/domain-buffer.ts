@@ -6,6 +6,9 @@
  * A global relay-tab lock serializes all relay operations across domains.
  * Per-domain handoff locks are separate (handoff uses different mechanism).
  */
+import { createLogger } from "../utils/logger";
+const log = createLogger("domain-buffer");
+
 import { spawn } from "child_process";
 import { readFileSync, writeFileSync, appendFileSync, unlinkSync, existsSync, readdirSync } from "fs";
 import { loadJsonFile } from "../utils/json-loader";
@@ -50,7 +53,7 @@ function getGlobalRelayLock(): GlobalRelayLock | null {
     const age = Date.now() - new Date(data.since).getTime();
     if (age > 600_000) {
       // Absolute max 10min - always stale
-      console.log(`[Buffer] Stale global relay lock (${Math.round(age / 1000)}s, absolute max), removing`);
+      log.info(`[Buffer] Stale global relay lock (${Math.round(age / 1000)}s, absolute max), removing`);
       try { unlinkSync(GLOBAL_RELAY_LOCK); } catch (e) {}
       return null;
     }
@@ -59,7 +62,7 @@ function getGlobalRelayLock(): GlobalRelayLock | null {
       let pidAlive = false;
       try { process.kill(data.pid, 0); pidAlive = true; } catch (e) {}
       if (!pidAlive) {
-        console.log(`[Buffer] Stale global relay lock (${Math.round(age / 1000)}s, PID ${data.pid} dead), removing`);
+        log.info(`[Buffer] Stale global relay lock (${Math.round(age / 1000)}s, PID ${data.pid} dead), removing`);
         try { unlinkSync(GLOBAL_RELAY_LOCK); } catch (e) {}
         return null;
       }
@@ -92,7 +95,7 @@ export function getLock(domain: string): DomainLock | null {
     const age = Date.now() - new Date(data.since).getTime();
     const maxAge = data.type === "handoff" ? 600_000 : 120_000;
     if (age > maxAge) {
-      console.log(`[Buffer] Stale ${data.type} lock for ${domain} (${Math.round(age / 1000)}s), removing`);
+      log.info(`[Buffer] Stale ${data.type} lock for ${domain} (${Math.round(age / 1000)}s), removing`);
       try { unlinkSync(p); } catch (e) {}
       return null;
     }
@@ -220,7 +223,7 @@ async function pollTabUntilReady(maxMs = 600_000): Promise<string | null> {
           if (currLen > 30 && currLen === prevLen) {
             stableCount++;
             if (stableCount >= 2) {
-              console.log(`[Buffer] Late response stable: ${currLen} chars after ${Math.round((Date.now() - start) / 1000)}s`);
+              log.info(`[Buffer] Late response stable: ${currLen} chars after ${Math.round((Date.now() - start) / 1000)}s`);
               return response.includes("NO_RESPONSE") ? null : response;
             }
           } else { stableCount = 0; }
@@ -231,7 +234,7 @@ async function pollTabUntilReady(maxMs = 600_000): Promise<string | null> {
       }
     } catch(e) { /* check-status failed, continue */ }
   }
-  console.log("[Buffer] Late response: gave up after " + Math.round(maxMs / 1000) + "s");
+  log.info("[Buffer] Late response: gave up after " + Math.round(maxMs / 1000) + "s");
   return null;
 }
 
@@ -248,7 +251,7 @@ export async function relayDomain(
     const count = getBufferCount(domain);
     if (count >= MAX_BUFFER) return null;
     addToBuffer(domain, message);
-    console.log(`[Buffer] ${domain} HANDOFF中, buffered (${count + 1}/${MAX_BUFFER})`);
+    log.info(`[Buffer] ${domain} HANDOFF中, buffered (${count + 1}/${MAX_BUFFER})`);
     return "BUFFERED";
   }
 
@@ -258,7 +261,7 @@ export async function relayDomain(
     const count = getBufferCount(domain);
     if (count >= MAX_BUFFER) return null;
     addToBuffer(domain, message);
-    console.log(`[Buffer] Relay tab busy (${lock?.domain}), buffered ${domain} (${count + 1}/${MAX_BUFFER})`);
+    log.info(`[Buffer] Relay tab busy (${lock?.domain}), buffered ${domain} (${count + 1}/${MAX_BUFFER})`);
     return "BUFFERED";
   }
 
@@ -268,14 +271,14 @@ export async function relayDomain(
 
     // If relay timed out, poll tab directly (Claude may still be generating)
     if (response === null) {
-      console.log(`[Buffer] Relay timeout for ${domain}, polling tab for late response...`);
+      log.info(`[Buffer] Relay timeout for ${domain}, polling tab for late response...`);
       const lateResponse = await pollTabUntilReady(300_000);
       if (lateResponse) {
         // Got late response — proceed as normal
         let combinedResponse: string | null = lateResponse;
         const buffered = drainBuffer(domain);
         if (buffered.length > 0) {
-          console.log(`[Buffer] Flushing ${buffered.length} buffered messages to ${domain}`);
+          log.info(`[Buffer] Flushing ${buffered.length} buffered messages to ${domain}`);
           const flushMsg = formatBufferFlush(buffered);
           const flushResponse = await execRelay(domain, flushMsg, undefined, timeoutMs);
           if (flushResponse) combinedResponse += "\n\n─── バッファ分応答 ───\n" + flushResponse;
@@ -288,7 +291,7 @@ export async function relayDomain(
     let combinedResponse = response;
     const buffered = drainBuffer(domain);
     if (buffered.length > 0) {
-      console.log(`[Buffer] Flushing ${buffered.length} buffered messages to ${domain}`);
+      log.info(`[Buffer] Flushing ${buffered.length} buffered messages to ${domain}`);
       const flushMsg = formatBufferFlush(buffered);
       const flushResponse = await execRelay(domain, flushMsg, undefined, timeoutMs);
       if (flushResponse) {
@@ -301,7 +304,7 @@ export async function relayDomain(
     for (const otherDomain of otherDomains) {
       const otherBuffered = drainBuffer(otherDomain);
       if (otherBuffered.length > 0) {
-        console.log(`[Buffer] Sequential flush: ${otherBuffered.length} messages to ${otherDomain}`);
+        log.info(`[Buffer] Sequential flush: ${otherBuffered.length} messages to ${otherDomain}`);
         const flushMsg = formatBufferFlush(otherBuffered);
         await execRelay(otherDomain, flushMsg, undefined, timeoutMs);
       }

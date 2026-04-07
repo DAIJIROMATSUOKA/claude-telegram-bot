@@ -4,6 +4,9 @@
  * jarvis_chat_history テーブルへの保存・取得
  */
 
+import { createLogger } from "./logger";
+const log = createLogger("chat-history");
+
 import { callMemoryGateway } from '../handlers/ai-router';
 import { ulid } from 'ulidx';
 
@@ -30,9 +33,9 @@ export async function saveChatMessage(
       params: [id, userIdStr, timestamp, role, content],
     });
 
-    console.log('[Chat History] 保存成功:', { role, length: content.length });
+    log.info('[Chat History] 保存成功:', { role, length: content.length });
   } catch (error) {
-    console.error('[Chat History] 保存失敗:', error);
+    log.error('[Chat History] 保存失敗:', error);
     // 保存失敗は致命的ではないので処理継続
   }
 }
@@ -61,17 +64,17 @@ export async function getChatHistory(
     });
 
     if (response.error || !response.data?.results) {
-      console.error('[Chat History] 取得失敗:', response.error);
+      log.error('[Chat History] 取得失敗:', response.error);
       return [];
     }
 
     // 時系列順に並び替え（降順→昇順）
     const history = response.data.results.reverse();
 
-    console.log('[Chat History] 取得成功:', { count: history.length });
+    log.info('[Chat History] 取得成功:', { count: history.length });
     return history;
   } catch (error) {
-    console.error('[Chat History] 取得エラー:', error);
+    log.error('[Chat History] 取得エラー:', error);
     return [];
   }
 }
@@ -90,14 +93,14 @@ export async function cleanupOldHistory(): Promise<void> {
     });
 
     if (response.error) {
-      console.error('[Chat History] 削除失敗:', response.error);
+      log.error('[Chat History] 削除失敗:', response.error);
       return;
     }
 
     const deletedCount = response.data?.meta?.changes || 0;
-    console.log('[Chat History] 30日以前のデータ削除:', { count: deletedCount });
+    log.info('[Chat History] 30日以前のデータ削除:', { count: deletedCount });
   } catch (error) {
-    console.error('[Chat History] 削除エラー:', error);
+    log.error('[Chat History] 削除エラー:', error);
   }
 }
 

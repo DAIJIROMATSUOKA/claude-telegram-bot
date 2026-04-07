@@ -1,3 +1,6 @@
+import { createLogger } from "./logger";
+const log = createLogger("x-summary");
+
 /**
  * X (Twitter) URL要約パイプライン
  *
@@ -225,7 +228,7 @@ export async function maybeEnrichWithXSummary(message: string): Promise<string> 
     return message;
   }
 
-  console.log(`[X Summary] ${urls.length}件のX URLを検出、取得中...`);
+  log.info(`[X Summary] ${urls.length}件のX URLを検出、取得中...`);
   const startTime = Date.now();
 
   // 複数URLは並列取得
@@ -241,11 +244,11 @@ export async function maybeEnrichWithXSummary(message: string): Promise<string> 
   const elapsed = Date.now() - startTime;
 
   if (validResults.length === 0) {
-    console.log(`[X Summary] 取得失敗 (${elapsed}ms)、元メッセージで続行`);
+    log.info(`[X Summary] 取得失敗 (${elapsed}ms)、元メッセージで続行`);
     return message;
   }
 
-  console.log(`[X Summary] ${validResults.length}件取得完了 (${elapsed}ms)`);
+  log.info(`[X Summary] ${validResults.length}件取得完了 (${elapsed}ms)`);
 
   const tweetContext = validResults.join('\n\n---\n\n');
 

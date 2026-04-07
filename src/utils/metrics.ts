@@ -5,6 +5,9 @@
  * /status コマンドで直近のP50/P99レイテンシなどを表示可能。
  */
 
+import { createLogger } from "./logger";
+const log = createLogger("metrics");
+
 import { Database } from 'bun:sqlite';
 import { homedir } from 'os';
 import { join } from 'path';
@@ -88,7 +91,7 @@ export function recordMessageMetrics(metrics: MessageMetrics): void {
       ]
     );
   } catch (error) {
-    console.error('[Metrics] Record error:', error);
+    log.error('[Metrics] Record error:', error);
   }
 }
 
@@ -110,7 +113,7 @@ export function recordBgTaskMetrics(
       [Math.floor(Date.now() / 1000), taskName, success ? 1 : 0, durationMs, errorMessage || null]
     );
   } catch (error) {
-    console.error('[Metrics] BgTask record error:', error);
+    log.error('[Metrics] BgTask record error:', error);
   }
 }
 
@@ -192,7 +195,7 @@ export function getMetricsSummary(hoursBack: number = 1): MetricsSummary {
       bgTaskTotal: bgTotal,
     };
   } catch (error) {
-    console.error('[Metrics] Summary error:', error);
+    log.error('[Metrics] Summary error:', error);
     return {
       totalMessages: 0, successRate: 100, avgTotalMs: 0,
       p50TotalMs: 0, p99TotalMs: 0, avgEnrichmentMs: 0,
@@ -232,6 +235,6 @@ export function cleanupOldMetrics(): void {
     d.run('DELETE FROM message_metrics WHERE timestamp < ?', [threshold]);
     d.run('DELETE FROM bg_task_metrics WHERE timestamp < ?', [threshold]);
   } catch (error) {
-    console.error('[Metrics] Cleanup error:', error);
+    log.error('[Metrics] Cleanup error:', error);
   }
 }

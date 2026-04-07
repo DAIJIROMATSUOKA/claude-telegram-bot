@@ -4,6 +4,9 @@
  *   "read"    → Read/Glob/Grep only, no file writes or bash. For bootstrap, investigation, summaries.
  *   "execute" → Full tool access. For implementation, fixes, deployments.
  */
+import { createLogger } from "../utils/logger";
+const log = createLogger("agent-task");
+
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { Api } from "grammy";
 
@@ -118,7 +121,7 @@ export async function handleAgentTask(
     const abortController = new AbortController();
     const abortTimer = setTimeout(() => {
       abortController.abort();
-      console.error("[AgentTask] Timeout: aborting SDK process");
+      log.error("[AgentTask] Timeout: aborting SDK process");
     }, (timeoutMs ?? 720000) - 5000); // 5s before HTTP timeout
     try {
     for await (const msg of query({

@@ -5,6 +5,9 @@
  * with configurable processing callbacks.
  */
 
+import { createLogger } from "../utils/logger";
+const log = createLogger("media-group");
+
 import type { Context } from "grammy";
 import type { Message } from "grammy/types";
 import type { PendingMediaGroup } from "../types";
@@ -63,13 +66,13 @@ export function createMediaGroupBuffer(config: MediaGroupConfig) {
 
     if (!userId || !chatId) return;
 
-    console.log(
+    log.info(
       `Processing ${group.items.length} ${config.itemLabelPlural} from @${username}`
     );
 
     // No caption: save silently, don't invoke Claude
     if (!group.caption) {
-      console.log(`Album saved without caption: ${group.items.length} ${config.itemLabelPlural}`);
+      log.info(`Album saved without caption: ${group.items.length} ${config.itemLabelPlural}`);
       if (group.statusMsg) {
         try {
           await group.ctx.api.editMessageText(
@@ -144,7 +147,7 @@ export function createMediaGroupBuffer(config: MediaGroupConfig) {
       }
 
       // Create new group
-      console.log(`Receiving ${config.itemLabel} album from @${username}`);
+      log.info(`Receiving ${config.itemLabel} album from @${username}`);
       const statusMsg = await ctx.reply(
         `${config.emoji} Receiving ${config.itemLabelPlural}...`
       );
@@ -197,7 +200,7 @@ export async function handleProcessingError(
   error: unknown,
   toolMessages: Message[]
 ): Promise<void> {
-  console.error("[MediaGroup] Error processing media:", error);
+  log.error("[MediaGroup] Error processing media:", error);
 
   // Clean up tool messages
   for (const toolMsg of toolMessages) {

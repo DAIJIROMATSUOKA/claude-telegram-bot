@@ -2,6 +2,9 @@
  * LINE / iMessage / Slack Action Callbacks - reply prompts and reply handlers.
  */
 
+import { createLogger } from "../utils/logger";
+const log = createLogger("inbox-line-callbacks");
+
 import type { Context } from "grammy";
 import { fetchWithTimeout } from "../utils/fetch-with-timeout";
 import { archiveToObsidian } from "../services/obsidian-writer";
@@ -43,9 +46,9 @@ export async function handleLineReplyPrompt(
         "INSERT INTO message_mappings (telegram_msg_id, telegram_chat_id, source, source_id, source_detail) VALUES (?, ?, 'line', ?, ?)",
         [sent.message_id, ctx.chat.id, targetId, detail]
       );
-      console.log('[Inbox] LINE reply prompt registered: msg=' + sent.message_id);
+      log.info('[Inbox] LINE reply prompt registered: msg=' + sent.message_id);
     } catch (e) {
-      console.error('[Inbox] LINE prompt mapping error:', e);
+      log.error('[Inbox] LINE prompt mapping error:', e);
     }
   }
 }

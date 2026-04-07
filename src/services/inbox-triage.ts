@@ -5,6 +5,9 @@
  * Flow: Gateway dequeue → Worker inject → DOM read → JSON parse → action → Gateway result
  */
 
+import { createLogger } from "../utils/logger";
+const log = createLogger("inbox-triage");
+
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { existsSync } from 'fs';
@@ -73,16 +76,16 @@ async function executeTriageBatch(chatId: number): Promise<void> {
   const okEntries = q.entries.filter(e => e.action === 'ok');
   const undoEntries = q.entries.filter(e => e.action === 'undo');
 
-  console.log(`[TriageBatch] Executing: ${okEntries.length} ok, ${undoEntries.length} undo in chat ${chatId}`);
+  log.info(`[TriageBatch] Executing: ${okEntries.length} ok, ${undoEntries.length} undo in chat ${chatId}`);
 
   // Process OK entries - report feedback + unpin + delete messages
   for (const e of okEntries) {
     try {
       await reportFeedback(e.itemId, 'approved', 'manual-ok');
       try { await botApi.unpinChatMessage(e.chatId, e.msgId); } catch {}
-      await botApi.deleteMessage(e.chatId, e.msgId).catch((e: unknown) => console.error('[inbox-triage]', e));
+      await botApi.deleteMessage(e.chatId, e.msgId).catch((e: unknown) => log.error('[inbox-triage]', e));
     } catch (err) {
-      console.error('[TriageBatch] OK action error:', err);
+      log.error('[TriageBatch] OK action error:', err);
     }
   }
 
@@ -99,9 +102,9 @@ async function executeTriageBatch(chatId: number): Promise<void> {
             ],
           ],
         },
-      }).catch((e: unknown) => console.error('[inbox-triage]', e));
+      }).catch((e: unknown) => log.error('[inbox-triage]', e));
     } catch (err) {
-      console.error('[TriageBatch] Undo action error:', err);
+      log.error('[TriageBatch] Undo action error:', err);
     }
   }
 }
@@ -157,7 +160,7 @@ async function dequeueItems(): Promise<TriageItem[]> {
     const data: any = await res.json();
     return data.ok ? (data.items || []) : [];
   } catch (e) {
-    console.error('[Triage] Dequeue error:', e);
+    log.error('[Triage] Dequeue error:', e);
     return [];
   }
 }
@@ -170,7 +173,7 @@ async function reportResult(id: string, action: string, confidence: number, reas
       body: JSON.stringify({ id, action, confidence, reason, executed }),
     });
   } catch (e) {
-    console.error('[Triage] Report error:', e);
+    log.error('[Triage] Report error:', e);
   }
 }
 
@@ -182,7 +185,7 @@ async function reportFeedback(id: string, feedback: string, reason?: string): Pr
       body: JSON.stringify({ id, feedback, reason: reason || undefined }),
     });
   } catch (e) {
-    console.error('[Triage] Feedback error:', e);
+    log.error('[Triage] Feedback error:', e);
   }
 }
 
@@ -229,7 +232,7 @@ async function domainTriageInject(domain: string, item: TriageItem, learningCont
     try {
       await runLocal(`cat > ${tmpFile} << 'DTEOF'\n${prompt}\nDTEOF`);
     } catch (e) {
-      console.error('[inbox-triage]', e);
+      log.error('[inbox-triage]', e);
       return null;
     }
     const result = await runLocal(
@@ -240,7 +243,7 @@ async function domainTriageInject(domain: string, item: TriageItem, learningCont
     const response = result.match(/^RESPONSE: ([\s\S]+)$/m)?.[1]?.trim();
     return response || null;
   } catch (e: any) {
-    console.error(`[Triage] Domain relay error (${domain}):`, e?.message);
+    log.error(`[Triage] Domain relay error (${domain}):`, e?.message);
     return null;
   }
 }
@@ -251,7 +254,7 @@ async function injectTriage(wt: string, item: TriageItem, learningContext: strin
   try {
     await runLocal(`cat > ${tmpFile} << 'TRIAGEEOF'\n${prompt}\nTRIAGEEOF`);
   } catch (e) {
-    console.error('[inbox-triage]', e);
+    log.error('[inbox-triage]', e);
     return false;
   }
 
@@ -309,7 +312,7 @@ async function fetchCorrections(limit = 20): Promise<CorrectionItem[]> {
     const data: any = await res.json();
     return data.ok ? (data.corrections || []) : [];
   } catch (e) {
-    console.error('[Triage] Corrections fetch error:', e);
+    log.error('[Triage] Corrections fetch error:', e);
     return [];
   }
 }
@@ -410,7 +413,7 @@ function parseTriageResponse(raw: string): TriageJudgment | null {
     return { action: 'escalate', confidence: 50, reason: 'Keyword match: escalate' };
   }
 
-  console.error('[Triage] Parse failed, raw:', raw.substring(0, 300));
+  log.error('[Triage] Parse failed, raw:', raw.substring(0, 300));
   return null;
 }
 
@@ -447,9 +450,9 @@ function buildOpenButton(item: TriageItem): { text: string; url: string } | null
 
 async function executeAction(item: TriageItem, judgment: TriageJudgment): Promise<void> {
   const chatId = item.telegram_chat_id || djChatId;
-  console.log(`[Triage] executeAction: action=${judgment.action}, chatId=${chatId}, botApi=${!!botApi}, djChatId=${djChatId}`);
+  log.info(`[Triage] executeAction: action=${judgment.action}, chatId=${chatId}, botApi=${!!botApi}, djChatId=${djChatId}`);
   if (!botApi || !chatId) {
-    console.error('[Triage] ABORT: botApi or chatId missing');
+    log.error('[Triage] ABORT: botApi or chatId missing');
     return;
   }
 
@@ -468,27 +471,27 @@ async function executeAction(item: TriageItem, judgment: TriageJudgment): Promis
         try {
           const res = await withRetry(() => fetchWithTimeout(url, { redirect: 'follow' }));
           if (!res.ok) {
-            console.error(`[Triage] Gmail ${action} HTTP ${res.status} ${res.statusText}`);
+            log.error(`[Triage] Gmail ${action} HTTP ${res.status} ${res.statusText}`);
           } else {
             const text = await res.text();
             try {
               const result: any = JSON.parse(text);
               if (!result.ok) {
-                console.error(`[Triage] Gmail ${action} failed:`, result);
+                log.error(`[Triage] Gmail ${action} failed:`, result);
               }
             } catch (_parseErr) {
-              console.error(`[Triage] Gmail ${action} JSON parse error, body: ${text.substring(0, 100)}`);
+              log.error(`[Triage] Gmail ${action} JSON parse error, body: ${text.substring(0, 100)}`);
             }
           }
         } catch (e) {
-          console.error(`[Triage] Gmail ${action} error:`, e);
+          log.error(`[Triage] Gmail ${action} error:`, e);
         }
       }
       // Confirm to DJ
       const icon = judgment.action === 'archive' ? '📦' : '🗑';
       const bodyExcerpt = item.body.substring(0, 150).replace(/\n/g, " ").trim();
       const confirmText = `🦞 ${icon}${judgment.action === 'archive' ? 'アーカイブ' : '削除'}済み\n📧 ${item.sender_name}: ${item.subject || '(件名なし)'}\n📝 ${bodyExcerpt}\n\n💭 ${judgment.reason}`;
-      console.log('[Triage] Sending confirm to chatId:', chatId, 'text:', confirmText.substring(0, 80));
+      log.info('[Triage] Sending confirm to chatId:', chatId, 'text:', confirmText.substring(0, 80));
       let confirmMsg: any;
       try {
       const openBtn = buildOpenButton(item);
@@ -503,9 +506,9 @@ async function executeAction(item: TriageItem, judgment: TriageJudgment): Promis
         reply_markup: { inline_keyboard: archiveRows },
       });
       } catch (sendErr: any) {
-        console.error('[Triage] sendMessage FAILED:', sendErr?.message || sendErr);
+        log.error('[Triage] sendMessage FAILED:', sendErr?.message || sendErr);
       }
-      console.log('[Triage] Confirm sent, msgId:', confirmMsg?.message_id);
+      log.info('[Triage] Confirm sent, msgId:', confirmMsg?.message_id);
       // Auto-approve after 30s if DJ doesn't interact
       if (confirmMsg?.message_id) {
         const _iid = item.id, _mid = confirmMsg.message_id, _cid = chatId;
@@ -513,8 +516,8 @@ async function executeAction(item: TriageItem, judgment: TriageJudgment): Promis
           autoApproveTimers.delete(_iid);
           try {
             await reportFeedback(_iid, 'approved', 'auto-30min');
-            await botApi!.deleteMessage(_cid, _mid).catch((e: unknown) => console.error('[inbox-triage]', e));
-          } catch (e) { console.error('[Triage] Auto-approve error:', e); }
+            await botApi!.deleteMessage(_cid, _mid).catch((e: unknown) => log.error('[inbox-triage]', e));
+          } catch (e) { log.error('[Triage] Auto-approve error:', e); }
         }, AUTO_APPROVE_SECONDS * 1000);
         autoApproveTimers.set(_iid, tid);
       }
@@ -535,7 +538,7 @@ async function executeAction(item: TriageItem, judgment: TriageJudgment): Promis
         await botApi.sendMessage(chatId, draftText, {
           reply_markup: { inline_keyboard: replyRows },
         });
-      } catch (e) { console.error('[inbox-triage]', e); }
+      } catch (e) { log.error('[inbox-triage]', e); }
       break;
     }
 
@@ -552,7 +555,7 @@ async function executeAction(item: TriageItem, judgment: TriageJudgment): Promis
             ]],
           },
         });
-      } catch (e) { console.error('[inbox-triage]', e); }
+      } catch (e) { log.error('[inbox-triage]', e); }
       break;
     }
 
@@ -562,7 +565,7 @@ async function executeAction(item: TriageItem, judgment: TriageJudgment): Promis
         await botApi.sendMessage(chatId,
           `🦞 🔧バグ検出・自動修復中\n${judgment.reason}`
         );
-      } catch (e) { console.error('[inbox-triage]', e); }
+      } catch (e) { log.error('[inbox-triage]', e); }
       break;
     }
 
@@ -597,7 +600,7 @@ async function executeAction(item: TriageItem, judgment: TriageJudgment): Promis
           `🦞 ⚠️DJ確認\n📧 ${item.sender_name}: ${item.subject || '(件名なし)'}\n📝 ${item.body.substring(0, 300).replace(/\n/g, ' ')}\n\n💭 ${judgment.reason}${taskInfo}`,
           escOpts
         );
-      } catch (e) { console.error('[inbox-triage]', e); }
+      } catch (e) { log.error('[inbox-triage]', e); }
       // Pin the escalation message so DJ sees it immediately
       try {
         if (escMsg?.message_id) {
@@ -632,7 +635,7 @@ async function autoLogContact(item: TriageItem, summary: string): Promise<void> 
       [item.source, item.sender_name || 'unknown', 'inbound', summary.substring(0, 500), new Date().toISOString()]
     );
   } catch (e) {
-    console.error('[Triage] autoLogContact error:', e);
+    log.error('[Triage] autoLogContact error:', e);
   }
 }
 
@@ -650,14 +653,14 @@ async function triageCycle(): Promise<void> {
     const items = await dequeueItems();
     if (items.length === 0) return;
 
-    console.log(`[Triage] Processing ${items.length} items`);
+    log.info(`[Triage] Processing ${items.length} items`);
 
     // Fetch learning context once per cycle
     const corrections = await fetchCorrections(20);
     const learningContext = buildLearningContext(corrections);
     if (corrections.length > 0) {
       const rejected = corrections.filter(c => c.feedback === 'rejected').length;
-      console.log(`[Triage] Learning: ${corrections.length} items (${rejected} rejected)`);
+      log.info(`[Triage] Learning: ${corrections.length} items (${rejected} rejected)`);
     }
 
     for (const item of items) {
@@ -665,19 +668,19 @@ async function triageCycle(): Promise<void> {
 
       // Always route triage to INBOX domain (has JSON judgment bootstrap)
       let response: string | null = null;
-      console.log(`[Triage] Routing ${item.id} to inbox domain`);
+      log.info(`[Triage] Routing ${item.id} to inbox domain`);
       response = await domainTriageInject('inbox', item, learningContext);
 
       // Fallback: try specific domain if inbox fails
       if (!response) {
         const domain = await matchDomain(item);
         if (domain && domain !== 'inbox') {
-          console.log(`[Triage] Fallback to domain: ${domain}`);
+          log.info(`[Triage] Fallback to domain: ${domain}`);
           response = await domainTriageInject(domain, item, learningContext);
         }
       }
       if (!response) {
-        console.error(`[Triage] No response for ${item.id}`);
+        log.error(`[Triage] No response for ${item.id}`);
         await reportResult(item.id, 'escalate', 0, 'No response from 🦞', false);
         continue;
       }
@@ -685,12 +688,12 @@ async function triageCycle(): Promise<void> {
       // Parse judgment
       const judgment = parseTriageResponse(response);
       if (!judgment) {
-        console.error(`[Triage] Parse failed for ${item.id}:`, response.substring(0, 200));
+        log.error(`[Triage] Parse failed for ${item.id}:`, response.substring(0, 200));
         await reportResult(item.id, 'escalate', 0, 'Failed to parse 🦞 response', false);
         continue;
       }
 
-      console.log(`[Triage] ${item.id}: ${judgment.action} (${judgment.confidence})`);
+      log.info(`[Triage] ${item.id}: ${judgment.action} (${judgment.confidence})`);
 
       // Execute action
       const autoExecute = judgment.action === 'ignore' || judgment.action === 'bug_fix';
@@ -699,7 +702,7 @@ async function triageCycle(): Promise<void> {
       // Auto-log contact to D1
       if (item.source === 'gmail' || item.source === 'line') {
         const logSummary = `${item.subject ? item.subject + ' — ' : ''}${judgment.reason}`;
-        autoLogContact(item, logSummary).catch((e: unknown) => console.error('[inbox-triage]', e));
+        autoLogContact(item, logSummary).catch((e: unknown) => log.error('[inbox-triage]', e));
       }
 
       await reportResult(
@@ -711,7 +714,7 @@ async function triageCycle(): Promise<void> {
       );
     }
   } catch (e) {
-    console.error('[Triage] Cycle error:', e);
+    log.error('[Triage] Cycle error:', e);
   } finally {
     isProcessing = false;
   }
@@ -723,14 +726,14 @@ async function triageCycle(): Promise<void> {
 
 export function startInboxTriage(bot: any, chatId: number): void {
   if (triageTimer) {
-    console.log('[Triage] Already running');
+    log.info('[Triage] Already running');
     return;
   }
 
   botApi = bot.api;
   djChatId = chatId;
 
-  console.log(`[Triage] Started (interval: ${POLL_INTERVAL / 1000}s, buffer: ${BUFFER_SECONDS}s)`);
+  log.info(`[Triage] Started (interval: ${POLL_INTERVAL / 1000}s, buffer: ${BUFFER_SECONDS}s)`);
   triageTimer = setInterval(triageCycle, POLL_INTERVAL);
 
   // Run first cycle after 10s (let bot fully start)
@@ -741,7 +744,7 @@ export function stopInboxTriage(): void {
   if (triageTimer) {
     clearInterval(triageTimer);
     triageTimer = null;
-    console.log('[Triage] Stopped');
+    log.info('[Triage] Stopped');
   }
 }
 
@@ -769,15 +772,15 @@ export async function handleTriageCallback(
     case 'approve':
       await reportFeedback(itemId, 'approved', 'manual-approve');
       if (botApi && chatId && msgId) {
-        await botApi.editMessageText(chatId, msgId, '✅ 承認済み').catch((e: unknown) => console.error('[inbox-triage]', e));
-        setTimeout(() => botApi.deleteMessage(chatId, msgId).catch((e: unknown) => console.error('[inbox-triage]', e)), 5000);
+        await botApi.editMessageText(chatId, msgId, '✅ 承認済み').catch((e: unknown) => log.error('[inbox-triage]', e));
+        setTimeout(() => botApi.deleteMessage(chatId, msgId).catch((e: unknown) => log.error('[inbox-triage]', e)), 5000);
       }
       break;
 
     case 'reject':
       await reportFeedback(itemId, 'rejected', 'manual-reject');
       if (botApi && chatId && msgId) {
-        await botApi.editMessageText(chatId, msgId, '❌ 却下').catch((e: unknown) => console.error('[inbox-triage]', e));
+        await botApi.editMessageText(chatId, msgId, '❌ 却下').catch((e: unknown) => log.error('[inbox-triage]', e));
       }
       break;
 
@@ -832,18 +835,18 @@ export async function handleTriageCallback(
           const row = lookupData?.results?.[0];
           if (row?.source === 'gmail' && row?.source_id) {
             const unarchiveUrl = `${GAS_GMAIL_URL}?action=unarchive&gmail_id=${row.source_id}&key=${GAS_GMAIL_KEY}`;
-            await fetch(unarchiveUrl, { redirect: 'follow' }).catch((e: unknown) => console.error('[inbox-triage]', e));
+            await fetch(unarchiveUrl, { redirect: 'follow' }).catch((e: unknown) => log.error('[inbox-triage]', e));
           }
         } catch (e) {
-          console.error('[Triage] Un-archive error:', e);
+          log.error('[Triage] Un-archive error:', e);
         }
       }
 
       await reportFeedback(reasonItemId, 'rejected', reasonText);
       if (botApi && chatId && msgId) {
         try { await botApi.unpinChatMessage(chatId, msgId); } catch {}
-        await botApi.editMessageText(chatId, msgId, `⏪ \u53d6\u6d88\u6e08\u307f (${reasonText})`).catch((e: unknown) => console.error('[inbox-triage]', e));
-        setTimeout(() => botApi.deleteMessage(chatId, msgId).catch((e: unknown) => console.error('[inbox-triage]', e)), 5000);
+        await botApi.editMessageText(chatId, msgId, `⏪ \u53d6\u6d88\u6e08\u307f (${reasonText})`).catch((e: unknown) => log.error('[inbox-triage]', e));
+        setTimeout(() => botApi.deleteMessage(chatId, msgId).catch((e: unknown) => log.error('[inbox-triage]', e)), 5000);
       }
       break;
     }
@@ -888,13 +891,13 @@ export async function handleTriageCallback(
           }
         }
       } catch (e) {
-        console.error('[Triage] Send reply error:', e);
+        log.error('[Triage] Send reply error:', e);
       }
 
       await reportFeedback(itemId, sendOk ? 'approved' : 'failed', 'manual-send');
       if (botApi && chatId && msgId) {
         const statusText = sendOk ? '📤 送信済み' : '❌ 送信失敗';
-        await botApi.editMessageText(chatId, msgId, statusText).catch((e: unknown) => console.error('[inbox-triage]', e));
+        await botApi.editMessageText(chatId, msgId, statusText).catch((e: unknown) => log.error('[inbox-triage]', e));
       }
       break;
     }

@@ -7,6 +7,9 @@
  * [DECIDED] 2026-03-14: sessionKey API廃棄、Chrome Worker Tab一本化
  */
 
+import { createLogger } from "../utils/logger";
+const log = createLogger("orchestrator-chrome");
+
 import { exec } from "child_process";
 import { enqueueMessage, dequeueForProject } from "../utils/message-queue";
 import { promisify } from "util";
@@ -65,11 +68,11 @@ async function saveProjectSnapshot(
           summary.substring(0, 2000),
         ].join("\n");
         await writeFile(snapshotPath, content, "utf-8");
-        console.log(`[Snapshot] ${projectId}: saved to ${snapshotPath}`);
+        log.info(`[Snapshot] ${projectId}: saved to ${snapshotPath}`);
       }
     }
   } catch (e: any) {
-    console.error(`[Snapshot] ${projectId}: failed -`, e.message);
+    log.error(`[Snapshot] ${projectId}: failed -`, e.message);
     // Non-fatal: snapshot failure must not break message routing
   }
 }
@@ -231,7 +234,7 @@ async function withProjectLock<T>(projectId: string, fn: () => Promise<T>): Prom
   projectLocks.set(projectId, myLock);
 
   if (existing) {
-    console.log(`[ChromeOrch] ${projectId}: waiting for previous route() to complete...`);
+    log.info(`[ChromeOrch] ${projectId}: waiting for previous route() to complete...`);
     await existing;
   }
 
@@ -362,15 +365,15 @@ async function checkAndHandoff(
     );
     const pct = parseInt(estRaw) || 0;
     if (pct >= AUTO_HANDOFF_TOKEN_PCT) {
-      console.log(`[AutoHandoff] ${projectId}: token ${pct}% >= ${AUTO_HANDOFF_TOKEN_PCT}% → handoff`);
+      log.info(`[AutoHandoff] ${projectId}: token ${pct}% >= ${AUTO_HANDOFF_TOKEN_PCT}% → handoff`);
       shouldHandoff = true;
     }
   } catch (e: any) {
-    console.error(`[AutoHandoff] ${projectId}: token-estimate failed, falling back to count`);
+    log.error(`[AutoHandoff] ${projectId}: token-estimate failed, falling back to count`);
   }
 
   if (!shouldHandoff && injectCount >= AUTO_HANDOFF_INJECT_COUNT) {
-    console.log(`[AutoHandoff] ${projectId}: ${injectCount} injects >= ${AUTO_HANDOFF_INJECT_COUNT} → handoff`);
+    log.info(`[AutoHandoff] ${projectId}: ${injectCount} injects >= ${AUTO_HANDOFF_INJECT_COUNT} → handoff`);
     shouldHandoff = true;
   }
 
@@ -378,7 +381,7 @@ async function checkAndHandoff(
     return { triggered: false, newWT: null, error: null };
   }
 
-  console.log(`[AutoHandoff] ${projectId}: HANDOFF START (pct-based or count=${injectCount})`);
+  log.info(`[AutoHandoff] ${projectId}: HANDOFF START (pct-based or count=${injectCount})`);
 
   // --- Step 1: Try to get summary from current chat ---
   let summary = "";
@@ -392,7 +395,7 @@ async function checkAndHandoff(
       summary = resp.substring(0, 3000);
     }
   } catch (e: any) {
-    console.error(`[AutoHandoff] ${projectId}: summary failed -`, e.message);
+    log.error(`[AutoHandoff] ${projectId}: summary failed -`, e.message);
   }
 
   // --- Step 2: Build context (includes _ai-context.md from Defense Line 1) ---
@@ -464,7 +467,7 @@ async function checkAndHandoff(
       );
     }
   } catch (e: any) {
-    console.error(`[AutoHandoff] ${projectId}: new chat creation failed -`, e.message);
+    log.error(`[AutoHandoff] ${projectId}: new chat creation failed -`, e.message);
     try { await unlink(contextFile); } catch {}
     // CRITICAL: do NOT clear old mapping — old chat is still better than nothing
     return { triggered: true, newWT: null, error: e.message };
@@ -479,7 +482,7 @@ async function checkAndHandoff(
       10000
     );
   } catch (e: any) {
-    console.error(`[AutoHandoff] ${projectId}: D1 update failed -`, e.message);
+    log.error(`[AutoHandoff] ${projectId}: D1 update failed -`, e.message);
     // Fallback: update local JSON
     try {
       const localPath = `${homedir()}/.croppy-project-tabs.json`;
@@ -497,11 +500,11 @@ async function checkAndHandoff(
     const newUrl = newConvUrl.trim();
     if (newUrl && newUrl.includes("/chat/")) {
       await writeFile("/tmp/autokick-target-url", newUrl, "utf-8");
-      console.log(`[AutoHandoff] auto-kick target updated: ${newUrl.substring(0, 60)}`);
+      log.info(`[AutoHandoff] auto-kick target updated: ${newUrl.substring(0, 60)}`);
     }
   } catch {}
 
-  console.log(`[AutoHandoff] ${projectId}: ${tabWT} → ${newWT} (summary: ${summary ? "OK" : "FAILED, using ai-context.md"})`);
+  log.info(`[AutoHandoff] ${projectId}: ${tabWT} → ${newWT} (summary: ${summary ? "OK" : "FAILED, using ai-context.md"})`);
   return { triggered: true, newWT, error: null };
 }
 
@@ -541,9 +544,9 @@ export class ChromeOrchestrator {
     ctx?: any; // Grammy Context for G1 応答リレー
   }): Promise<RouteResult> {
     const now = new Date().toISOString();
-    console.log(`[ChromeOrch] route() called: source=${opts.source} autoPost=${opts.autoPost} hasCtx=${!!opts.ctx}`);
+    log.info(`[ChromeOrch] route() called: source=${opts.source} autoPost=${opts.autoPost} hasCtx=${!!opts.ctx}`);
     const decision = codeLayerRoute(opts.text, opts.source, opts.senderHint);
-    console.log(`[ChromeOrch] codeLayer: method=${decision.method} project=${decision.projectId} conf=${decision.confidence}`);
+    log.info(`[ChromeOrch] codeLayer: method=${decision.method} project=${decision.projectId} conf=${decision.confidence}`);
 
     // Audit
     await logAudit({
@@ -580,7 +583,7 @@ export class ChromeOrchestrator {
           });
         }
       } catch (e: any) {
-        console.error("[ChromeOrch] Inbox route error:", e.message, e.stack?.substring(0, 300));
+        log.error("[ChromeOrch] Inbox route error:", e.message, e.stack?.substring(0, 300));
       }
     }
 
@@ -601,7 +604,7 @@ export class ChromeOrchestrator {
       );
       if (result.startsWith("ERROR:") || !result.trim()) {
         // G6+G14: Resolve failed → try Inbox tab as fallback
-        console.log(`[ChromeOrch] resolve failed for ${decision.projectId}, trying Inbox fallback`);
+        log.info(`[ChromeOrch] resolve failed for ${decision.projectId}, trying Inbox fallback`);
         const inboxConfig = loadInboxConfig();
         if (inboxConfig.inbox_tab_wt) {
           const inboxStatus = await runShell(
@@ -609,7 +612,7 @@ export class ChromeOrchestrator {
           );
           if (inboxStatus === "READY") {
             tabWT = inboxConfig.inbox_tab_wt;
-            console.log(`[ChromeOrch] Inbox fallback: ${tabWT}`);
+            log.info(`[ChromeOrch] Inbox fallback: ${tabWT}`);
           }
         }
         if (!tabWT) {
@@ -646,7 +649,7 @@ export class ChromeOrchestrator {
           const qTmp = `/tmp/orch-queue-${Date.now()}.txt`;
           await writeFile(qTmp, `[キュー再送] ${qm.text}`, "utf-8");
           await runShell(`bash "${TAB_MANAGER}" inject-file "${tabWT}" "${qTmp}"; rm -f "${qTmp}"`, 20000);
-          console.log(`[ChromeOrch] Queue retry: ${qm.id} → ${tabWT}`);
+          log.info(`[ChromeOrch] Queue retry: ${qm.id} → ${tabWT}`);
         } catch {}
       }
     }
@@ -659,7 +662,7 @@ export class ChromeOrchestrator {
         for (let attempt = 0; attempt < 20; attempt++) {
           const st = await runShell(`bash "${TAB_MANAGER}" check-status "${tabWT}"`, 10000);
           if (st.trim() === "READY") { tabReady = true; break; }
-          console.log(`[ChromeOrch] Tab ${tabWT} is ${st.trim()}, waiting... (${attempt + 1}/20)`);
+          log.info(`[ChromeOrch] Tab ${tabWT} is ${st.trim()}, waiting... (${attempt + 1}/20)`);
           await new Promise(r => setTimeout(r, 3000));
         }
         if (!tabReady) {
@@ -676,7 +679,7 @@ export class ChromeOrchestrator {
             const accessCtx = getProjectContext(machineKey);
             if (accessCtx) {
               fullMessage = accessCtx + "\n---\n" + message;
-              console.log(`[ChromeOrch] Injected Access context for M${machineKey}`);
+              log.info(`[ChromeOrch] Injected Access context for M${machineKey}`);
             }
           }
         }
@@ -718,7 +721,7 @@ export class ChromeOrchestrator {
             // G1: Initial delay for Claude to start processing after inject
             // check-status BUSY detection is unreliable right after inject
             // (Claude needs ~3-5s to start showing Stop button)
-            console.log(`[ChromeOrch] G1: waiting 5s for Claude to start processing...`);
+            log.info(`[ChromeOrch] G1: waiting 5s for Claude to start processing...`);
             await new Promise(r => setTimeout(r, 5000));
 
             // G1: Wait for response and relay to Telegram
@@ -729,7 +732,7 @@ export class ChromeOrchestrator {
             } catch (relayErr: any) {
               // CONV_LIMIT or RATE_LIMIT from wait-response → force handoff
               if (relayErr?.message?.includes("CONV_LIMIT") || relayErr?.message?.includes("ERROR:CONV_LIMIT")) {
-                console.log(`[ChromeOrch] CONV_LIMIT detected on ${decision.projectId} — forcing handoff`);
+                log.info(`[ChromeOrch] CONV_LIMIT detected on ${decision.projectId} — forcing handoff`);
                 if (decision.projectId && tabWT) {
                   const emergencyHandoff = await checkAndHandoff(decision.projectId, tabWT);
                   if (emergencyHandoff.triggered && emergencyHandoff.newWT) {
@@ -747,7 +750,7 @@ export class ChromeOrchestrator {
               }
             }
           } catch (e: any) {
-            console.error("[ChromeOrch] G1 relay error:", e.message);
+            log.error("[ChromeOrch] G1 relay error:", e.message);
           }
         }
 
@@ -755,7 +758,7 @@ export class ChromeOrchestrator {
         if (decision.projectId && tabWT) {
           if (shouldTakeSnapshot(decision.projectId)) {
             saveProjectSnapshot(decision.projectId, tabWT).catch(e =>
-              console.error("[Snapshot] background error:", e.message)
+              log.error("[Snapshot] background error:", e.message)
             );
           }
         }
@@ -766,10 +769,10 @@ export class ChromeOrchestrator {
             const handoff = await checkAndHandoff(decision.projectId, tabWT);
             if (handoff.triggered && handoff.newWT) {
               tabWT = handoff.newWT;
-              console.log(`[ChromeOrch] G3 handoff: ${decision.projectId} → ${tabWT}`);
+              log.info(`[ChromeOrch] G3 handoff: ${decision.projectId} → ${tabWT}`);
             }
           } catch (e: any) {
-            console.error("[ChromeOrch] G3 handoff error:", e.message);
+            log.error("[ChromeOrch] G3 handoff error:", e.message);
           }
         }
 
@@ -827,7 +830,7 @@ export class ChromeOrchestrator {
     config.inbox_tab_wt = wt;
     if (url) config.inbox_tab_url = url;
     await saveInboxConfig(config);
-    console.log(`[ChromeOrchestrator] Inbox tab set: ${wt}`);
+    log.info(`[ChromeOrchestrator] Inbox tab set: ${wt}`);
   }
 
   /**
@@ -836,7 +839,7 @@ export class ChromeOrchestrator {
   async checkHandoff(projectId: string, tabWT: string): Promise<{ triggered: boolean; newWT: string | null }> {
     const result = await checkAndHandoff(projectId, tabWT);
     if (result.triggered) {
-      console.log(`[ChromeOrchestrator] Handoff: ${projectId} ${tabWT} -> ${result.newWT}`);
+      log.info(`[ChromeOrchestrator] Handoff: ${projectId} ${tabWT} -> ${result.newWT}`);
     }
     return result;
   }
@@ -853,6 +856,6 @@ export function getChromeOrchestrator(): ChromeOrchestrator {
 
 export function initChromeOrchestrator(): ChromeOrchestrator {
   _instance = new ChromeOrchestrator();
-  console.log("[ChromeOrchestrator] Initialized (no sessionKey, Chrome-native)");
+  log.info("[ChromeOrchestrator] Initialized (no sessionKey, Chrome-native)");
   return _instance;
 }

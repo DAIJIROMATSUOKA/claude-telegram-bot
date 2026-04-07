@@ -13,6 +13,9 @@
  * Spec: docs/docker-sandbox-spec.md
  */
 
+import { createLogger } from "../utils/logger";
+const log = createLogger("docker-runner");
+
 import { execSync } from "node:child_process";
 
 const DOCKER_IMAGE = "jarvis-test-runner:latest";
@@ -76,7 +79,7 @@ export function checkDockerAvailable(): {
  */
 export function buildDockerImage(repoPath: string): boolean {
   try {
-    console.log("[Docker] Building test runner image...");
+    log.info("[Docker] Building test runner image...");
     execSync(
       `docker build -f Dockerfile.test-runner -t ${DOCKER_IMAGE} .`,
       {
@@ -85,10 +88,10 @@ export function buildDockerImage(repoPath: string): boolean {
         stdio: "pipe",
       },
     );
-    console.log("[Docker] Image built successfully");
+    log.info("[Docker] Image built successfully");
     return true;
   } catch (err: any) {
-    console.error("[Docker] Image build failed:", err.message);
+    log.error("[Docker] Image build failed:", err.message);
     return false;
   }
 }

@@ -5,6 +5,9 @@
  * No Grammy dependency (runs as standalone script).
  */
 
+import { createLogger } from "../utils/logger";
+const log = createLogger("reporter");
+
 import type {
   MicroTask,
   TaskPlan,
@@ -22,7 +25,7 @@ export function initReporter(): void {
   BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
   CHAT_ID = process.env.TELEGRAM_ALLOWED_USERS || "";
   if (!BOT_TOKEN || !CHAT_ID) {
-    console.error("[Reporter] WARNING: TELEGRAM_BOT_TOKEN or TELEGRAM_ALLOWED_USERS not set");
+    log.error("[Reporter] WARNING: TELEGRAM_BOT_TOKEN or TELEGRAM_ALLOWED_USERS not set");
   }
 }
 
@@ -83,7 +86,7 @@ async function sendRaw(text: string): Promise<void> {
       }),
     });
   } catch (err) {
-    console.error("[Reporter] Send failed:", err);
+    log.error("[Reporter] Send failed:", err);
   }
 }
 

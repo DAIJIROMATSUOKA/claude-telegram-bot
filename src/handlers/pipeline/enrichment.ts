@@ -5,6 +5,9 @@
  * 各ステージは独立してテスト可能。
  */
 
+import { createLogger } from "../../utils/logger";
+const log = createLogger("enrichment");
+
 import { maybeEnrichWithXSummary } from "../../utils/x-summary";
 import { maybeEnrichWithWebSearch } from "../../utils/web-search";
 import { buildCroppyPrompt } from "../../utils/croppy-context";
@@ -46,7 +49,7 @@ export async function enrichMessage(
 
   // 3. Croppy Context Injection
   if (enrichedMessage.trim().toLowerCase().startsWith('croppy:')) {
-    console.log('[Enrichment] croppy: detected, injecting context...');
+    log.info('[Enrichment] croppy: detected, injecting context...');
     const originalPrompt = enrichedMessage.slice(7).trim();
     enrichedMessage = 'croppy: ' + await buildCroppyPrompt(originalPrompt, userId);
     croppyInjected = true;
@@ -59,7 +62,7 @@ export async function enrichMessage(
     enrichedMessage = enrichedMessage + '\n' + preloadedContext;
   }
   if (preloadedContext) {
-    console.log(`[Enrichment] Loaded ${preloaded.length} context(s): ${preloaded.map(p => p.type).join(', ')}`);
+    log.info(`[Enrichment] Loaded ${preloaded.length} context(s): ${preloaded.map(p => p.type).join(', ')}`);
   }
 
   return {

@@ -12,6 +12,9 @@
  * 従量課金ゼロ。全て固定費サブスク。
  */
 
+import { createLogger } from "./logger";
+const log = createLogger("session-bridge");
+
 import { spawn } from "node:child_process";
 import { readFileSync, writeFileSync, appendFileSync, renameSync } from "node:fs";
 import { join } from "node:path";
@@ -148,7 +151,7 @@ export async function saveSessionState(session: AISession): Promise<void> {
     }
 
     if (!summary || summary.trim().length === 0) {
-      console.log("[Session State] No summary generated, skipping save");
+      log.info("[Session State] No summary generated, skipping save");
       return;
     }
 
@@ -158,7 +161,7 @@ export async function saveSessionState(session: AISession): Promise<void> {
     const endCount = claudeMd.split(SESSION_STATE_END).length - 1;
 
     if (startCount !== 1 || endCount !== 1) {
-      console.error("[Session State] Marker count invalid (START=" + startCount + ", END=" + endCount + "), skipping to protect CLAUDE.md");
+      log.error("[Session State] Marker count invalid (START=" + startCount + ", END=" + endCount + "), skipping to protect CLAUDE.md");
       appendFileSync(SESSION_LOG_PATH, new Date().toISOString() + " FAIL: marker count invalid\n");
       return;
     }
@@ -167,7 +170,7 @@ export async function saveSessionState(session: AISession): Promise<void> {
     const endIdx = claudeMd.indexOf(SESSION_STATE_END);
 
     if (startIdx >= endIdx) {
-      console.error("[Session State] START marker after END marker, skipping");
+      log.error("[Session State] START marker after END marker, skipping");
       appendFileSync(SESSION_LOG_PATH, new Date().toISOString() + " FAIL: marker order invalid\n");
       return;
     }
@@ -180,7 +183,7 @@ export async function saveSessionState(session: AISession): Promise<void> {
     const tmpPath = CLAUDE_MD_PATH + ".tmp";
     writeFileSync(tmpPath, newContent, "utf-8");
     renameSync(tmpPath, CLAUDE_MD_PATH);
-    console.log("[Session State] CLAUDE.md updated (atomic write)");
+    log.info("[Session State] CLAUDE.md updated (atomic write)");
     appendFileSync(SESSION_LOG_PATH, new Date().toISOString() + " OK: session state saved\n");
 
     // git commit --only CLAUDE.md（他のステージ済みファイル混入防止）
@@ -194,14 +197,14 @@ export async function saveSessionState(session: AISession): Promise<void> {
       cwd,
     );
     if (commitResult.code === 0 || commitResult.stdout.includes("nothing to commit") || commitResult.stdout.includes("no changes added to commit")) {
-      console.log("[Session State] Git commit done");
+      log.info("[Session State] Git commit done");
     } else {
-      console.error("[Session State] Git commit failed:", JSON.stringify({code: commitResult.code, stdout: commitResult.stdout?.slice(-200), stderr: commitResult.stderr?.slice(-200), timedOut: commitResult.timedOut}));
+      log.error("[Session State] Git commit failed:", JSON.stringify({code: commitResult.code, stdout: commitResult.stdout?.slice(-200), stderr: commitResult.stderr?.slice(-200), timedOut: commitResult.timedOut}));
       appendFileSync(SESSION_LOG_PATH, new Date().toISOString() + " WARN: git commit failed\n");
     }
   } catch (e) {
     // セッション終了をブロックしない
-    console.error("[Session State] Failed to save:", e);
+    log.error("[Session State] Failed to save:", e);
   }
 }
 
@@ -446,7 +449,7 @@ export async function sendToSession(
         // 初回: セッションIDを保存
         if (parsed.sessionId && !session.cliSessionId) {
           session.cliSessionId = parsed.sessionId;
-          console.log("[Session Bridge] Claude CLI session ID saved:", parsed.sessionId);
+          log.info("[Session Bridge] Claude CLI session ID saved:", parsed.sessionId);
         }
 
         // stdoutを応答テキストに置換（JSON全体ではなく）

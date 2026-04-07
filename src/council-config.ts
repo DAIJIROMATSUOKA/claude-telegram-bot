@@ -4,6 +4,9 @@
  * Loads and validates workspace/COUNCIL.yml configuration.
  */
 
+import { createLogger } from "./utils/logger";
+const log = createLogger("council-config");
+
 import { readFileSync, existsSync } from "fs";
 import { resolve, dirname } from "path";
 import yaml from "js-yaml";
@@ -54,7 +57,7 @@ export function loadCouncilConfig(): CouncilConfig | null {
     );
 
     if (!existsSync(configPath)) {
-      console.log("No COUNCIL.yml found - AI Council disabled");
+      log.info("No COUNCIL.yml found - AI Council disabled");
       return null;
     }
 
@@ -70,7 +73,7 @@ export function loadCouncilConfig(): CouncilConfig | null {
 
     // Validate required fields
     if (!COUNCIL_CONFIG.enabled) {
-      console.log("AI Council is disabled in config");
+      log.info("AI Council is disabled in config");
       return COUNCIL_CONFIG;
     }
 
@@ -80,13 +83,13 @@ export function loadCouncilConfig(): CouncilConfig | null {
       return COUNCIL_CONFIG;
     }
 
-    console.log(
+    log.info(
       `Loaded AI Council config: ${Object.keys(COUNCIL_CONFIG.agents).length} agents, mode=${COUNCIL_CONFIG.mode}`
     );
 
     return COUNCIL_CONFIG;
   } catch (error) {
-    console.error("Failed to load COUNCIL.yml:", error);
+    log.error("Failed to load COUNCIL.yml:", error);
     return null;
   }
 }

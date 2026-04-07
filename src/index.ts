@@ -1,9 +1,9 @@
 // Global error handlers - prevent CLI crashes from killing the bot
 process.on("uncaughtException", (err) => {
-  console.error("[GLOBAL] Uncaught exception (bot continues):", err.message);
+  log.error("[GLOBAL] Uncaught exception (bot continues):", err.message);
 });
 process.on("unhandledRejection", (reason) => {
-  console.error("[GLOBAL] Unhandled rejection (bot continues):", reason);
+  log.error("[GLOBAL] Unhandled rejection (bot continues):", reason);
 });
 
 
@@ -12,6 +12,9 @@ process.on("unhandledRejection", (reason) => {
  *
  * Control Claude Code from your phone via Telegram.
  */
+
+import { createLogger } from "./utils/logger";
+const log = createLogger("index");
 
 import { Bot } from "grammy";
 import { run, sequentialize } from "@grammyjs/runner";
@@ -113,13 +116,13 @@ function loadAgentsMarkdown(): void {
   try {
     if (existsSync(agentsPath)) {
       AGENTS_MD_CONTENT = readFileSync(agentsPath, "utf-8");
-      console.log(`[Startup] Loaded CLAUDE.md (${AGENTS_MD_CONTENT.length} chars)`);
+      log.info(`[Startup] Loaded CLAUDE.md (${AGENTS_MD_CONTENT.length} chars)`);
     } else {
       console.warn("[Startup] CLAUDE.md not found at:", agentsPath);
       AGENTS_MD_CONTENT = "";
     }
   } catch (error) {
-    console.error("Failed to load CLAUDE.md:", error);
+    log.error("Failed to load CLAUDE.md:", error);
     AGENTS_MD_CONTENT = "";
   }
 }
@@ -152,7 +155,7 @@ try {
         // If still alive after 10s, abort to prevent 409
         try {
           process.kill(oldPid, 0);
-          console.error(`[409 Prevention] Old process ${oldPid} won't die. Aborting to prevent 409 Conflict.`);
+          log.error(`[409 Prevention] Old process ${oldPid} won't die. Aborting to prevent 409 Conflict.`);
           // process.exit(1); // TEMP: bypass 409 check
         } catch {
           // Good, it's dead
@@ -394,7 +397,7 @@ bot.on("callback_query:data", handleCallback);
 // ============== Error Handler ==============
 
 bot.catch((err) => {
-  console.error("Bot error:", err);
+  log.error("Bot error:", err);
 });
 
 // ============== Startup ==============
@@ -438,11 +441,11 @@ async function clearStalePolling(): Promise<void> {
       );
       const data = (await res.json()) as any;
       if (data.ok) {
-        console.log("[Startup] Telegram polling cleared");
+        log.info("[Startup] Telegram polling cleared");
         return;
       }
       if (data.error_code === 409) {
-        console.log(`[Startup] Stale polling detected, clearing... (${i + 1}/10)`);
+        log.info(`[Startup] Stale polling detected, clearing... (${i + 1}/10)`);
         await new Promise((r) => setTimeout(r, 3000));
         continue;
       }
@@ -467,7 +470,7 @@ export function decInFlight() { inFlightHandlers = Math.max(0, inFlightHandlers 
 async function gracefulShutdown(signal: string): Promise<void> {
   if (shutdownStarted) return;
   shutdownStarted = true;
-  console.log(`[Shutdown] ${signal} received — stopping gracefully`);
+  log.info(`[Shutdown] ${signal} received — stopping gracefully`);
 
   // Stop accepting new messages
   try { await runner.stop(); } catch {}
@@ -510,12 +513,12 @@ const runner = run(bot);
         ensureLearnedMemoryTable(),
         ensureSessionSummaryTable(),
       ]);
-      console.log('[Startup] Memory tables initialized');
+      log.info('[Startup] Memory tables initialized');
       // Inbox Zero: snooze re-notification checker
-      try { startSnoozeChecker(bot); } catch(e) { console.error("[Snooze] Init failed:", e); }
-      try { startInboxTriage(bot, ALLOWED_USERS[0] || 0); } catch(e) { console.error("[Triage] Init failed:", e); }
-      try { initNotifTable(); } catch(e) { console.error("[Notif] Table init failed:", e); }
-    } catch (e) { console.error('[Memory] Init failed:', e); }
+      try { startSnoozeChecker(bot); } catch(e) { log.error("[Snooze] Init failed:", e); }
+      try { startInboxTriage(bot, ALLOWED_USERS[0] || 0); } catch(e) { log.error("[Triage] Init failed:", e); }
+      try { initNotifTable(); } catch(e) { log.error("[Notif] Table init failed:", e); }
+    } catch (e) { log.error('[Memory] Init failed:', e); }
   })();
 
 

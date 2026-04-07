@@ -14,6 +14,9 @@
  *   - Delete operations for /forget command
  */
 
+import { createLogger } from "../utils/logger";
+const log = createLogger("jarvis-memory");
+
 import { callMemoryGateway } from '../handlers/ai-router';
 
 import { EMBED_SERVER, EMBED_TIMEOUT, PENDING_CONFIDENCE_THRESHOLD } from '../constants';
@@ -63,10 +66,10 @@ export async function ensureMemoryTables(): Promise<void> {
     try {
       await callMemoryGateway('/v1/db/query', 'POST', { sql, params: [] });
     } catch (e) {
-      console.error('[Memory] Table creation failed:', e);
+      log.error('[Memory] Table creation failed:', e);
     }
   }
-  console.log('[Memory] Tables initialized');
+  log.info('[Memory] Tables initialized');
 }
 
 // ─── User Profile ───
@@ -79,7 +82,7 @@ export async function getProfileFull(): Promise<Array<{key: string; value: strin
     });
     return (res as any)?.data?.results || [];
   } catch (e) {
-    console.error('[Memory] getProfileFull failed:', e);
+    log.error('[Memory] getProfileFull failed:', e);
     return [];
   }
 }
@@ -95,7 +98,7 @@ export async function getProfile(): Promise<Record<string, string>> {
     for (const r of rows) profile[r.key] = r.value;
     return profile;
   } catch (e) {
-    console.error('[Memory] getProfile failed:', e);
+    log.error('[Memory] getProfile failed:', e);
     return {};
   }
 }
@@ -119,11 +122,11 @@ export async function upsertProfile(
       if (rows.length > 0) {
         const ex = rows[0];
         if (ex.source === 'manual') {
-          console.log(`[Memory] Skip: ${key} (manual protected)`);
+          log.info(`[Memory] Skip: ${key} (manual protected)`);
           return false;
         }
         if (ex.confidence > confidence) {
-          console.log(`[Memory] Skip: ${key} (confidence ${ex.confidence} > ${confidence})`);
+          log.info(`[Memory] Skip: ${key} (confidence ${ex.confidence} > ${confidence})`);
           return false;
         }
       }
@@ -159,7 +162,7 @@ export async function getActiveProjects(): Promise<any[]> {
     });
     return (res as any)?.data?.results || [];
   } catch (e) {
-    console.error('[Memory] getActiveProjects failed:', e);
+    log.error('[Memory] getActiveProjects failed:', e);
     return [];
   }
 }
@@ -204,7 +207,7 @@ export async function addPendingMemory(
           VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
     params: [id, type, key, value, category, confidence, sourceConversation || null],
   });
-  console.log(`[Memory] Pending: ${type}/${key} (confidence=${confidence})`);
+  log.info(`[Memory] Pending: ${type}/${key} (confidence=${confidence})`);
 }
 
 export async function getPendingMemories(): Promise<any[]> {
@@ -424,7 +427,7 @@ export async function buildMemoryContext(userMessage: string): Promise<string> {
   }
 
   const elapsed = Date.now() - start;
-  console.log(`[Memory] Context built in ${elapsed}ms: facts=${facts.length} prefs=${prefs.length} projects=${projects.length} vectors=${vectorResults.length} summaries=${summaries.length} pending=${pending.length}`);
+  log.info(`[Memory] Context built in ${elapsed}ms: facts=${facts.length} prefs=${prefs.length} projects=${projects.length} vectors=${vectorResults.length} summaries=${summaries.length} pending=${pending.length}`);
 
   return parts.length === 0 ? '' : parts.join('\n\n') + '\n';
 }
@@ -447,5 +450,5 @@ export async function seedDJProfile(): Promise<void> {
   for (const [key, value, category] of seeds) {
     await upsertProfile(key, value, category, 1.0, 'manual');
   }
-  console.log('[Memory] DJ profile seeded');
+  log.info('[Memory] DJ profile seeded');
 }

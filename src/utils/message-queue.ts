@@ -5,6 +5,9 @@
  * messages are saved here and retried on next successful route.
  */
 
+import { createLogger } from "./logger";
+const log = createLogger("message-queue");
+
 import { writeFileSync, existsSync, mkdirSync } from "fs";
 import { loadJsonFile } from "./json-loader";
 import { homedir } from "os";
@@ -75,7 +78,7 @@ export function enqueueMessage(opts: {
     : fresh;
 
   saveQueue(trimmed);
-  console.log(`[MsgQueue] Enqueued for ${opts.projectId} (${trimmed.length} in queue)`);
+  log.info(`[MsgQueue] Enqueued for ${opts.projectId} (${trimmed.length} in queue)`);
 }
 
 /**
@@ -87,7 +90,7 @@ export function dequeueForProject(projectId: string): QueuedMessage[] {
   const remaining = queue.filter((m) => m.projectId !== projectId);
   if (matching.length > 0) {
     saveQueue(remaining);
-    console.log(`[MsgQueue] Dequeued ${matching.length} for ${projectId}`);
+    log.info(`[MsgQueue] Dequeued ${matching.length} for ${projectId}`);
   }
   return matching;
 }
@@ -112,7 +115,7 @@ export function markRetryFailed(id: string, error: string): void {
     if (msg.retries >= 3) {
       const idx = queue.indexOf(msg);
       queue.splice(idx, 1);
-      console.log(`[MsgQueue] Dropped ${id} after ${msg.retries} retries`);
+      log.info(`[MsgQueue] Dropped ${id} after ${msg.retries} retries`);
     }
     saveQueue(queue);
   }

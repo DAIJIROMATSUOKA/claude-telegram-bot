@@ -8,6 +8,9 @@
  * - formatFileSize: Human-readable file size string.
  */
 
+import { createLogger } from "../../utils/logger";
+const log = createLogger("file-handler");
+
 import { Context } from "grammy";
 import { existsSync, mkdirSync } from "fs";
 import { writeFile, unlink } from "fs/promises";
@@ -66,17 +69,17 @@ export async function downloadPhoto(ctx: Context): Promise<string | null> {
         const proc = Bun.spawnSync(["sips", "-s", "format", "jpeg", localPath, "--out", jpegPath]);
         if (proc.exitCode === 0 && existsSync(jpegPath)) {
           try { await unlink(localPath); } catch {}
-          console.log(`[media] Converted HEIC → JPEG: ${jpegPath}`);
+          log.info(`[media] Converted HEIC → JPEG: ${jpegPath}`);
           return jpegPath;
         }
       } catch (e) {
-        console.error("[media] HEIC conversion failed, using original:", e);
+        log.error("[media] HEIC conversion failed, using original:", e);
       }
     }
 
     return localPath;
   } catch (e) {
-    console.error("[media] Photo download error:", e);
+    log.error("[media] Photo download error:", e);
     return null;
   }
 }

@@ -4,6 +4,9 @@
  * Handles inline keyboard button presses (ask_user MCP integration).
  */
 
+import { createLogger } from "../utils/logger";
+const log = createLogger("callback");
+
 import type { Context } from "grammy";
 import { unlinkSync } from "fs";
 import { execSync } from "child_process";
@@ -176,7 +179,7 @@ export async function handleCallback(ctx: Context): Promise<void> {
     const text = await file.text();
     requestData = JSON.parse(text);
   } catch (error) {
-    console.error(`Failed to load ask-user request ${requestId}:`, error);
+    log.error(`Failed to load ask-user request ${requestId}:`, error);
     await ctx.answerCallbackQuery({ text: "Request expired or invalid" });
     return;
   }
@@ -213,7 +216,7 @@ export async function handleCallback(ctx: Context): Promise<void> {
 
   // Interrupt any running query - button responses are always immediate
   if (session.isRunning) {
-    console.log("[Callback] Interrupting current query for button response");
+    log.info("[Callback] Interrupting current query for button response");
     await session.stop();
     // Small delay to ensure clean interruption
     await new Promise((resolve) => setTimeout(resolve, 100));
@@ -238,7 +241,7 @@ export async function handleCallback(ctx: Context): Promise<void> {
 
     await auditLog(userId, username, "CALLBACK", message, response);
   } catch (error) {
-    console.error("[Callback] Error processing callback:", error);
+    log.error("[Callback] Error processing callback:", error);
 
     for (const toolMsg of state.toolMessages) {
       try {
@@ -319,7 +322,7 @@ async function handleResumeCallback(
       ctx
     );
   } catch (error) {
-    console.error("[Callback] Error getting recap:", error);
+    log.error("[Callback] Error getting recap:", error);
     // Don't show error to user - session is still resumed, recap just failed
   } finally {
     typing.stop();

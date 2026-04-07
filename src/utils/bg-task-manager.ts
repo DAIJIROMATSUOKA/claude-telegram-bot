@@ -5,6 +5,9 @@
  * リトライ・成功率追跡・失敗通知を提供する。
  */
 
+import { createLogger } from "./logger";
+const log = createLogger("bg-task-manager");
+
 import { recordBgTaskMetrics } from './metrics';
 
 export interface BgTaskOptions {
@@ -64,7 +67,7 @@ export function runBgTask(
       }
 
       // 最終失敗
-      console.error(`[BgTask:${name}] Failed after ${attempt + 1} attempts: ${errorMsg}`);
+      log.error(`[BgTask:${name}] Failed after ${attempt + 1} attempts: ${errorMsg}`);
       const result: TaskResult = {
         name,
         success: false,
@@ -79,7 +82,7 @@ export function runBgTask(
 
   // 非同期で開始（呼び出し元をブロックしない）
   execute(0).catch(err =>
-    console.error(`[BgTask:${name}] Unhandled error:`, err)
+    log.error(`[BgTask:${name}] Unhandled error:`, err)
   );
 }
 

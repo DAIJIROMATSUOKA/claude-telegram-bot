@@ -4,6 +4,9 @@
  * croppy呼び出し時に文脈を注入
  */
 
+import { createLogger } from "./logger";
+const log = createLogger("croppy-context");
+
 import { getJarvisContext, formatContextForPrompt } from './jarvis-context';
 import { getChatHistory, formatChatHistoryForPrompt } from './chat-history';
 import { getMemoryPack } from '../handlers/ai-router';
@@ -38,7 +41,7 @@ export async function getCroppyContext(userId: string | number): Promise<{
       aiMemory: typeof aiMemory === 'string' ? aiMemory : '（AI_MEMORYなし）',
     };
   } catch (error) {
-    console.error('[Croppy Context] 文脈取得エラー:', error);
+    log.error('[Croppy Context] 文脈取得エラー:', error);
 
     // Degraded mode: エラーでも続行
     return {
