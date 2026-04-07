@@ -30,7 +30,7 @@ mock.module("../utils", () => ({
 }));
 
 const createStatusCallbackSpy = spyOn(streamingModule, "createStatusCallback").mockImplementation(
-  () => mock(() => {})
+  () => mock(() => Promise.resolve()) as any
 );
 
 const handleTriageCallbackSpy = spyOn(inboxTriageModule, "handleTriageCallback").mockImplementation(
@@ -42,7 +42,7 @@ const handleTaskCallbackSpy = spyOn(taskCommandModule, "handleTaskCallback").moc
 );
 
 const gatewayQuerySpy = spyOn(gatewayDbModule, "gatewayQuery").mockImplementation(
-  () => Promise.resolve()
+  () => Promise.resolve(null)
 );
 
 import { handleCallback } from "./callback";

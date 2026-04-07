@@ -66,7 +66,7 @@ mock.module("../../utils/logger", () => ({
 
 // ── Mock streaming ──
 const createStatusCallbackSpy = spyOn(streamingModule, "createStatusCallback").mockImplementation(
-  () => mock(() => {})
+  () => mock(() => Promise.resolve()) as any
 );
 
 // ── Mock control tower ──

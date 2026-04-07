@@ -18,15 +18,15 @@ const mockState = {
 
 // Spy on ai-router (spyOn restores in afterAll → no cross-file contamination)
 const callGeminiAPISpy = spyOn(aiRouterModule, 'callGeminiAPI').mockImplementation(
-  () => Promise.resolve({ ...mockState.geminiResponse })
+  () => Promise.resolve({ ...mockState.geminiResponse } as any)
 );
 const callCodexCLISpy = spyOn(aiRouterModule, 'callCodexCLI').mockImplementation(
-  () => Promise.resolve({ ...mockState.codexResponse })
+  () => Promise.resolve({ ...mockState.codexResponse } as any)
 );
 
 // Spy on promisify to return a function that returns our fake diff (spyOn restores in afterAll → no cross-file contamination)
 const promisifySpy = spyOn(util, 'promisify').mockImplementation(
-  (_fn: any) => () => Promise.resolve({ stdout: mockState.fakeDiff, stderr: '' })
+  ((_fn: any) => () => Promise.resolve({ stdout: mockState.fakeDiff, stderr: '' })) as unknown as typeof util.promisify
 );
 
 // Store imported functions - will be populated in beforeAll

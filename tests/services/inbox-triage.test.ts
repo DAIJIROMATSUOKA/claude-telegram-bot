@@ -20,7 +20,7 @@ mock.module("child_process", () => ({
   },
 }));
 
-const promisifySpy = spyOn(util, "promisify").mockImplementation((_fn: any) => mockExecAsync as any);
+const promisifySpy = spyOn(util, "promisify").mockImplementation(((_fn: any) => mockExecAsync) as unknown as typeof util.promisify);
 
 let mockExistsSync = mock((_path?: any) => false);
 const existsSyncSpy = spyOn(fs, "existsSync").mockImplementation((...args: any[]) => mockExistsSync(...args) as any);
