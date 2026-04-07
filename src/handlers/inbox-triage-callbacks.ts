@@ -234,7 +234,7 @@ export async function handleSnooze(
 /**
  * Snooze until next morning (7:00 JST)
  */
-export async function handleSnoozeNextMorning(
+async function handleSnoozeNextMorning(
   ctx: Context,
   gmailId: string,
   msgId?: number,

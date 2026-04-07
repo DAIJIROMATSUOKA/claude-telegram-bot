@@ -110,7 +110,7 @@ export function isCouncilEnabled(): boolean {
 /**
  * Check if a chat is allowed to use AI Council.
  */
-export function isCouncilAllowedForChat(chatId: number): boolean {
+function isCouncilAllowedForChat(chatId: number): boolean {
   const config = getCouncilConfig();
   if (!config?.enabled) return false;
 

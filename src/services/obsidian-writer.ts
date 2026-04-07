@@ -93,7 +93,7 @@ export async function archiveToObsidian(
 /**
  * Append news to daily note
  */
-export async function appendNews(title: string, summary: string, url?: string): Promise<void> {
+async function appendNews(title: string, summary: string, url?: string): Promise<void> {
   try {
     const path = await getDailyNotePath();
     const link = url ? ` [→](${url})` : "";

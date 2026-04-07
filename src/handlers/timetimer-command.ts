@@ -8,7 +8,7 @@ import { Context } from "grammy";
 import { gatewayQuery } from "../services/gateway-db";
 
 /** Initialize the D1 timetimer table at startup. */
-export async function initTimerTable(): Promise<void> {
+async function initTimerTable(): Promise<void> {
   await gatewayQuery(
     `CREATE TABLE IF NOT EXISTS jarvis_timetimers (
       id INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -15,7 +15,7 @@ const GAS_GMAIL_KEY = process.env.GAS_GMAIL_KEY || "";
 /**
  * Gmail archive/trash → GAS Web App → auto-delete notification
  */
-export async function handleGmailAction(
+async function handleGmailAction(
   ctx: Context,
   action: string,
   gmailId: string,

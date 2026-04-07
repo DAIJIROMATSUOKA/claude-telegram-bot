@@ -30,7 +30,7 @@ export async function logContact(
 /**
  * Ensure contact_log table exists in D1.
  */
-export async function ensureContactLogTable(): Promise<void> {
+async function ensureContactLogTable(): Promise<void> {
   await gatewayQuery(
     `CREATE TABLE IF NOT EXISTS contact_log (
       id INTEGER PRIMARY KEY AUTOINCREMENT,

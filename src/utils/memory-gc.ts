@@ -199,7 +199,7 @@ let gcTimer: ReturnType<typeof setInterval> | null = null;
  *
  * Bot起動時に呼ぶ。即時実行 + 24時間毎に再実行。
  */
-export function startMemoryGCScheduler(): void {
+function startMemoryGCScheduler(): void {
   if (gcTimer) {
     console.log('[Memory GC] Scheduler already running');
     return;

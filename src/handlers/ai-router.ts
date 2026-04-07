@@ -654,7 +654,7 @@ export async function callAICouncil(
 /**
  * AIルーター - メインエントリーポイント
  */
-export async function routeToAI(
+async function routeToAI(
   provider: AIProvider,
   prompt: string,
   credentialsPath: string,

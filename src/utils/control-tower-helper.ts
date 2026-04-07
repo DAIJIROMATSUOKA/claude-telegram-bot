@@ -89,7 +89,7 @@ export async function startPhase(
 /**
  * Complete current phase - update tower with completion status
  */
-export async function completePhase(
+async function completePhase(
   sessionId: string,
   phaseName: string,
   success: boolean,

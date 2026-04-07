@@ -120,7 +120,7 @@ export async function getLatestSnapshot(userId: string): Promise<InterruptSnapsh
  *
  * @param snapshotId - Snapshot ID to mark as restored
  */
-export async function markAsRestored(snapshotId: number): Promise<void> {
+async function markAsRestored(snapshotId: number): Promise<void> {
   try {
     const sql = `
       UPDATE interrupt_snapshot
@@ -174,7 +174,7 @@ export async function getAllPendingSnapshots(userId: string): Promise<InterruptS
  *
  * @param daysOld - Delete snapshots older than X days
  */
-export async function cleanupOldSnapshots(daysOld: number = 7): Promise<void> {
+async function cleanupOldSnapshots(daysOld: number = 7): Promise<void> {
   try {
     const sql = `
       DELETE FROM interrupt_snapshot

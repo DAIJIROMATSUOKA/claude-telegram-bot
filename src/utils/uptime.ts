@@ -7,7 +7,7 @@ const startTime = new Date();
 /**
  * Returns the time the bot process started.
  */
-export function getStartTime(): Date {
+function getStartTime(): Date {
   return startTime;
 }
 
