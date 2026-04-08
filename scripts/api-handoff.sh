@@ -62,7 +62,7 @@ case "$MODE" in
   file)
     if [ ! -f "$SUMMARY_FILE" ]; then
       log "ERROR: summary file not found: $SUMMARY_FILE"
-      rm -f "$LOCK_FILE"
+      touch "/tmp/domain-handoff-cooldown-${DOMAIN}"; rm -f "$LOCK_FILE"
       exit 1
     fi
     SUMMARY=$(cat "$SUMMARY_FILE")
@@ -119,7 +119,7 @@ File: $CHATLOG_TAIL"
     ;;
   *)
     log "ERROR: specify --summary-file, --summary-stdin, or --agent-sdk"
-    rm -f "$LOCK_FILE"
+    touch "/tmp/domain-handoff-cooldown-${DOMAIN}"; rm -f "$LOCK_FILE"
     exit 1
     ;;
 esac
@@ -157,6 +157,7 @@ NEW_UUID=$(python3 "$SCRIPTS_DIR/stateless-handoff.py" "$PROJ_UUID" --name "$NEW
 if [ -z "$NEW_UUID" ]; then
   log "ERROR: failed to create chat"
   bash "$NOTIFY" "❌ $DOMAIN handoff fail: API chat creation" 2>/dev/null
+  touch "/tmp/domain-handoff-cooldown-${DOMAIN}"
   rm -f "$LOCK_FILE"
   exit 1
 fi
