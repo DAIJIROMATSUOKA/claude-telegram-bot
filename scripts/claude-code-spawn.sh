@@ -117,9 +117,25 @@ with open(runsh, "w") as f:
 os.chmod(runsh, os.stat(runsh).st_mode | stat.S_IEXEC)
 PYBLOCK
 
-# setsid detaches from poller process group; nohup survives HUP
-nohup python3 -c "import os,sys; os.setsid(); os.execvp('bash', ['bash', sys.argv[1]])" "$RUNSH" > "$TASK_DIR/${TASK_ID}.runner.log" 2>&1 &
-PID=$!
+# Verify .run.sh was created by PYBLOCK
+if [ ! -f "$RUNSH" ]; then
+  echo "ERROR: .run.sh not created by PYBLOCK" >&2
+  bash "$NOTIFY" "❌ Claude Code spawn失敗: .run.sh未生成 $TASK_ID"
+  exit 1
+fi
+
+# start_new_session=True: proven setsid pattern (PROCESS-DETACH.md)
+PID=$(python3 -c "
+import subprocess, sys
+p = subprocess.Popen(
+    ['/bin/bash', sys.argv[1]],
+    stdin=subprocess.DEVNULL,
+    stdout=open(sys.argv[2], 'w'),
+    stderr=subprocess.STDOUT,
+    start_new_session=True
+)
+print(p.pid)
+" "$RUNSH" "$TASK_DIR/${TASK_ID}.runner.log")
 
 # Update PID
 python3 -c "
