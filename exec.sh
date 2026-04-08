@@ -82,7 +82,7 @@ done
 
 CMD="$1"
 # Set home dir based on target
-if [ "$TARGET" = "m3" ]; then
+if [ "$TARGET" = "m3" ] || [ "$TARGET" = "m5" ]; then
   _HOME="/Users/daijiromatsuoka"
 else
   _HOME="/Users/daijiromatsuokam1"
