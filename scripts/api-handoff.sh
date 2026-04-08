@@ -263,8 +263,19 @@ print(f'\n---\n📨 HANDOFF中にDJから届いたメッセージ ({len(entries)
 fi
 
 # --- Step 6: Save to handoffs directory ---
-# --- Step 5.5: Validate handoff quality (仕組み化 — 3要素チェック: 現状・次アクション・完了条件) ---
-VALIDATION=$(python3 "$SCRIPTS_DIR/validate-handoff.py" "$SUMMARY_FILE" 2>/dev/null || echo "VALIDATION_ERROR")
+# --- Step 5.5: Collect session evidence + Validate handoff quality (仕組み化 v3) ---
+# Collect git commits and 【決定】marks from chatlog for cross-check
+bash "$SCRIPTS_DIR/collect-session-evidence.sh" "$DOMAIN" "$SUMMARY_FILE" > /tmp/evidence-result-${DOMAIN}.txt 2>/dev/null
+EVIDENCE_COMMITS=$(grep '^COMMITS=' /tmp/evidence-result-${DOMAIN}.txt 2>/dev/null | cut -d= -f2)
+EVIDENCE_DECISIONS=$(grep '^DECISIONS=' /tmp/evidence-result-${DOMAIN}.txt 2>/dev/null | cut -d= -f2)
+VALIDATE_ARGS="$SUMMARY_FILE"
+if [ -n "$EVIDENCE_COMMITS" ] && [ -s "$EVIDENCE_COMMITS" ]; then
+  VALIDATE_ARGS="$VALIDATE_ARGS --commits-file $EVIDENCE_COMMITS"
+fi
+if [ -n "$EVIDENCE_DECISIONS" ] && [ -s "$EVIDENCE_DECISIONS" ]; then
+  VALIDATE_ARGS="$VALIDATE_ARGS --decisions-file $EVIDENCE_DECISIONS"
+fi
+VALIDATION=$(python3 "$SCRIPTS_DIR/validate-handoff.py" $VALIDATE_ARGS 2>/dev/null || echo "VALIDATION_ERROR")
 
 if [ "$VALIDATION" != "OK" ]; then
   log "WARNING: Handoff quality check failed"
