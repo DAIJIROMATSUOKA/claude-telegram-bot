@@ -94,6 +94,12 @@ fi
 # Enable Agent Teams for batch coordination
 export CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1
 
+# Load API key for headless auth (no OAuth in background)
+if [ -f "$HOME/claude-telegram-bot/.env" ]; then
+  _AK=$(grep '^#\{0,1\}ANTHROPIC_API_KEY=' "$HOME/claude-telegram-bot/.env" | tail -1 | sed 's/^#//;s/ANTHROPIC_API_KEY=//')
+  if [ -n "$_AK" ]; then export ANTHROPIC_API_KEY="$_AK"; fi
+fi
+
 # Workaround: claude-code issue #7263 — long prompt as arg causes 0-byte output
 RESUME_FLAG=""
 if [ -n "${{RESUME_SESSION:-}}" ]; then
