@@ -130,3 +130,8 @@ This prevents worktree index corruption from silently deleting the entire codeba
 ## Commit Style
 
 Do not add "Generated with Claude Code" footers or "Co-Authored-By" trailers.
+
+## 🧠 Thinking Quality Rules
+- 読んでいないコードは変更するな。変更前に必ずファイル全体を読め
+- grepで対象箇所を特定してから編集。推測で編集しない
+- git diff --cached --stat でコミット前に必ず変更内容を確認
