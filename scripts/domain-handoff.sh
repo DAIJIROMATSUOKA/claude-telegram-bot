@@ -35,6 +35,18 @@ STANDBY_FILE="$LOCK_DIR/domain-warm-standby-${DOMAIN}.json"
 
 log() { echo "[$(date '+%H:%M:%S')] [Handoff/$DOMAIN] $1"; }
 
+# --- Cooldown guard (prevent re-trigger loop) ---
+COOLDOWN_FILE="/tmp/domain-handoff-cooldown-${DOMAIN}"
+if [ "$MODE" != "lock" ] && [ "$MODE" != "unlock" ] && [ "$MODE" != "flush" ] && [ -f "$COOLDOWN_FILE" ]; then
+  COOLDOWN_AGE=$(( $(date +%s) - $(stat -f %m "$COOLDOWN_FILE" 2>/dev/null || echo 0) ))
+  if [ "$COOLDOWN_AGE" -lt 3600 ]; then
+    log "Cooldown active (${COOLDOWN_AGE}s < 3600s), aborting"
+    exit 0
+  else
+    rm -f "$COOLDOWN_FILE"
+  fi
+fi
+
 # --- Lock/Unlock only ---
 if [ "$MODE" = "lock" ]; then
   echo "{\"type\":\"handoff\",\"pid\":$$,\"since\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"domain\":\"$DOMAIN\"}" > "$LOCK_FILE"
