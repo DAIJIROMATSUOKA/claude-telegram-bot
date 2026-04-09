@@ -5,8 +5,9 @@ Checks:
   1. REMAINING items: 現状・次アクション・完了条件 (v2)
   2. ARTIFACTS context (v2)
   3. COMPRESSED E: boundary conditions (v2)
-  4. [NEW] Git commits: each session commit appears in summary
-  5. [NEW] 【決定】marks: each decision from chatlog reflected in DECISIONS
+  4. [NEW] COMPRESSED section existence
+  5. [NEW] Git commits: each session commit appears in summary
+  6. [NEW] 【決定】marks: each decision from chatlog reflected in DECISIONS
 
 Usage:
   python3 validate-handoff.py <summary-file> [--commits-file FILE] [--decisions-file FILE]
@@ -156,6 +157,14 @@ for line in lines:
                "必須", "不要", "専用", "限定", "のみ"]
         if not any(kw in entry.lower() for kw in bkw):
             warnings.append(f"  E_NO_BOUNDARY: {entry}  ← 境界条件を含めて (何がOK/何がNG)")
+
+
+# ============================================================
+# COMPRESSED section existence check
+# ============================================================
+has_compressed = any(line.strip().startswith("## COMPRESSED") for line in lines)
+if not has_compressed:
+    warnings.append("NO_COMPRESSED: ## COMPRESSEDセクションが存在しない。handoff要約にCOMPRESSED(D:/W:/F:/E:/Q:形式)は必須。")
 
 
 # ============================================================
