@@ -69,6 +69,10 @@ async function executeBatch(chatId: number): Promise<void> {
 
         case "archive":
         case "trash": {
+          if (!GAS_GMAIL_URL) {
+            log.error("[Batch] GAS_GMAIL_URL not set, skipping", e.action);
+            break;
+          }
           const url = `${GAS_GMAIL_URL}?action=${e.action}&gmail_id=${e.sourceId}&key=${GAS_GMAIL_KEY}`;
           const res = await fetchWithTimeout(url, { redirect: "follow" });
           const result: any = await res.json();
@@ -83,6 +87,10 @@ async function executeBatch(chatId: number): Promise<void> {
         }
 
         case "untrash": {
+          if (!GAS_GMAIL_URL) {
+            log.error("[Batch] GAS_GMAIL_URL not set, skipping untrash");
+            break;
+          }
           const untrashUrl = `${GAS_GMAIL_URL}?action=untrash&gmail_id=${e.sourceId}&key=${GAS_GMAIL_KEY}`;
           const untrashRes = await fetchWithTimeout(untrashUrl, { redirect: "follow" });
           const untrashResult: any = await untrashRes.json();

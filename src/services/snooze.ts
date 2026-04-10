@@ -65,7 +65,8 @@ async function checkSnoozeQueue(bot: Bot): Promise<void> {
         const rawText = content.text || "(内容不明)";
         const safeText = rawText.replace(/<(?!\/?(?:b|i|u|s|a|code|pre|em|strong)[ >])/gi, "&lt;");
         const text = `⏰ スヌーズ復帰\n\n${safeText}`;
-        const replyMarkup = content.reply_markup ? JSON.parse(content.reply_markup) : undefined;
+        let replyMarkup = content.reply_markup ? JSON.parse(content.reply_markup) : undefined;
+        if (typeof replyMarkup === "string") { try { replyMarkup = JSON.parse(replyMarkup); } catch {} }
 
         const sent = await bot.api.sendMessage(chatId, text.substring(0, 4000), {
           parse_mode: "HTML",

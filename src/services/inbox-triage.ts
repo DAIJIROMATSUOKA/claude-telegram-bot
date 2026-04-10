@@ -772,9 +772,11 @@ export async function handleTriageCallback(
   switch (action) {
     case 'approve':
       await reportFeedback(itemId, 'approved', 'manual-approve');
+      { const t = autoApproveTimers.get(itemId); if (t) { clearTimeout(t); autoApproveTimers.delete(itemId); } }
       if (botApi && chatId && msgId) {
         await botApi.editMessageText(chatId, msgId, '✅ 承認済み').catch((e: unknown) => log.error('[inbox-triage]', e));
-        setTimeout(() => botApi.deleteMessage(chatId, msgId).catch((e: unknown) => log.error('[inbox-triage]', e)), 5000);
+        const delTimer = setTimeout(() => { autoApproveTimers.delete(itemId); botApi.deleteMessage(chatId, msgId).catch((e: unknown) => log.error('[inbox-triage]', e)); }, 5000);
+        autoApproveTimers.set(itemId, delTimer);
       }
       break;
 
