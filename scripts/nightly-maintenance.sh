@@ -151,7 +151,31 @@ $CONTACT_COUNT"
   log "Weekly digest sent"
 fi
 
-# 12. Nightly batch scheduler
+# 12. Compressed history rotation check
+KNOWLEDGE_DIR="/root/machinelab-knowledge"
+HIST_WARN=""
+for hfile in ""/*/history.compressed.md; do
+  [ -f "$hfile" ] || continue
+  LINES=$(wc -l < "$hfile" | tr -d ' ')
+  DOMAIN=$(basename "$(dirname "$hfile")")
+  if [ "$LINES" -gt 150 ]; then
+    HIST_WARN="${HIST_WARN}${DOMAIN}(${LINES}行) "
+  fi
+done
+if [ -n "$HIST_WARN" ]; then
+  add "⚠️ History rotation needed: $HIST_WARN"
+else
+  add "✅ All compressed histories under 150 lines"
+fi
+
+# 13. Project index update (weekly diff)
+if [ -f "/root/scripts/project-indexer.py" ]; then
+  log "Running project indexer (recent 7 days)..."
+  IDX_OUT=$(python3 "/root/scripts/project-indexer.py" --recent 7 2>&1 | tail -1)
+  add "📁 Project index: $IDX_OUT"
+fi
+
+# 14. Nightly batch scheduler
 log "Running nightly batch scheduler..."
 bash "$(dirname "$0")/nightly-batch-scheduler.sh" 2>&1 | while IFS= read -r line; do log "$line"; done || true
 
