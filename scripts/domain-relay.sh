@@ -227,7 +227,8 @@ log "Response (${#RESPONSE} chars)"
 printf "RESPONSE: %s\n" "$RESPONSE"
 
 # --- 8. Token usage check (async handoff trigger) ---
-if [ "$DOMAIN" != "inbox" ] && [ "$DOMAIN" != "direct" ] && [ "$DOMAIN" != "pc" ] && [ "$DOMAIN" != "forge-code" ]; then
+EXCLUDE_FILE="$(dirname "$0")/../autonomous/state/auto-handoff-exclude.txt"
+if ! grep -qx "$DOMAIN" "$EXCLUDE_FILE" 2>/dev/null; then
   TOKEN_RAW=$(bash "$TAB_MANAGER" token-estimate "$WT" 2>/dev/null)
   TOKEN_PCT=$(echo "$TOKEN_RAW" | grep -o '"pct":[0-9]*' | grep -o '[0-9]*' 2>/dev/null)
   HANDOFF_LOCK="/tmp/domain-lock-${DOMAIN}.json"
