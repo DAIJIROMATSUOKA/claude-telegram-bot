@@ -179,6 +179,18 @@ fi
 log "Running nightly batch scheduler..."
 bash "$(dirname "$0")/nightly-batch-scheduler.sh" 2>&1 | while IFS= read -r line; do log "$line"; done || true
 
+# 15. Handoff file rotation (keep last 5)
+HANDOFF_DIR="$(dirname "$0")/../autonomous/state/handoffs"
+if [ -d "$HANDOFF_DIR" ]; then
+  HANDOFF_COUNT=$(ls -1 "$HANDOFF_DIR" 2>/dev/null | wc -l | tr -d " ")
+  if [ "$HANDOFF_COUNT" -gt 5 ]; then
+    DELETED=$(ls -1t "$HANDOFF_DIR" | tail -n +6 | while read f; do rm "$HANDOFF_DIR/$f" 2>/dev/null && echo 1; done | wc -l | tr -d " ")
+    add "🗑️ Handoff cleanup: $DELETED old files removed ($HANDOFF_COUNT→5)"
+  else
+    add "✅ Handoff files: $HANDOFF_COUNT (≤5)"
+  fi
+fi
+
 # Send report
 echo -e "$REPORT"
 bash "$NOTIFY" "$(echo -e "$REPORT")" 2>/dev/null || true
