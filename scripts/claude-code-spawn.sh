@@ -96,7 +96,7 @@ export CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1
 
 # Load API key for headless auth (no OAuth in background)
 if [ -f "$HOME/claude-telegram-bot/.env" ]; then
-  _AK=$(grep '^#\{0,1\}ANTHROPIC_API_KEY=' "$HOME/claude-telegram-bot/.env" | tail -1 | sed 's/^#//;s/ANTHROPIC_API_KEY=//')
+  _AK=$(grep -E '^#?ANTHROPIC_API_KEY=' "$HOME/claude-telegram-bot/.env" | tail -1 | sed 's/^#//;s/ANTHROPIC_API_KEY=//')
   if [ -n "$_AK" ]; then export ANTHROPIC_API_KEY="$_AK"; fi
 fi
 
