@@ -105,10 +105,69 @@ RESUME_FLAG=""
 if [ -n "${{RESUME_SESSION:-}}" ]; then
   RESUME_FLAG="--continue ${{RESUME_SESSION}}"
 fi
+
+# === Watchdog: detect zombie claude -p and auto-retry (max 3 attempts) ===
+_WD_MAX=2
+_WD_INTERVAL=15
+_WD_ZOMBIE_RSS=2048
+_WD_STALL_SEC=120
+_WD_ATTEMPT=0
+_WD_LOG="{output}.watchdog"
+
+while [ "$_WD_ATTEMPT" -le "$_WD_MAX" ]; do
+  _WD_ATTEMPT=$((_WD_ATTEMPT + 1))
+  echo "[$(date +%H:%M:%S)] attempt $_WD_ATTEMPT/$((_WD_MAX + 1))" >> "$_WD_LOG"
+
 claude -p "Read the file {prompt} and follow every instruction in it exactly." \
   --dangerously-skip-permissions --model "{model}" $RESUME_FLAG \
-  < /dev/null > "{output}" 2>&1
-CC_EXIT=$?
+  < /dev/null > "{output}" 2>&1 &
+  _WD_PID=$!
+  _WD_START=$(date +%s)
+  _WD_LAST_SZ=0
+  _WD_STALL_AT=$_WD_START
+  _WD_ZOMBIE=0
+
+  while kill -0 "$_WD_PID" 2>/dev/null; do
+    sleep "$_WD_INTERVAL"
+    _WD_NOW=$(date +%s)
+    _WD_ELAPSED=$((_WD_NOW - _WD_START))
+    _WD_RSS=$(ps -o rss= -p "$_WD_PID" 2>/dev/null | tr -d ' ')
+    _WD_RSS=${{_WD_RSS:-0}}
+    _WD_SZ=$(stat -f%z "{output}" 2>/dev/null || echo 0)
+
+    if [ "$_WD_SZ" -gt "$_WD_LAST_SZ" ]; then
+      _WD_LAST_SZ=$_WD_SZ
+      _WD_STALL_AT=$_WD_NOW
+    fi
+
+    if [ "$_WD_ELAPSED" -gt 30 ] && [ "$_WD_RSS" -lt "$_WD_ZOMBIE_RSS" ]; then
+      echo "[$(date +%H:%M:%S)] ZOMBIE: RSS=${{_WD_RSS}}KB < ${{_WD_ZOMBIE_RSS}}KB @ ${{_WD_ELAPSED}}s" >> "$_WD_LOG"
+      _WD_ZOMBIE=1; break
+    fi
+
+    _WD_STALL=$((_WD_NOW - _WD_STALL_AT))
+    if [ "$_WD_ELAPSED" -gt 60 ] && [ "$_WD_STALL" -gt "$_WD_STALL_SEC" ]; then
+      echo "[$(date +%H:%M:%S)] STALL: no output ${{_WD_STALL}}s" >> "$_WD_LOG"
+      _WD_ZOMBIE=1; break
+    fi
+  done
+
+  if [ "$_WD_ZOMBIE" -eq 1 ]; then
+    kill -9 "$_WD_PID" 2>/dev/null; wait "$_WD_PID" 2>/dev/null
+    echo "[$(date +%H:%M:%S)] killed PID=$_WD_PID, retry..." >> "$_WD_LOG"
+    sleep 3; continue
+  fi
+
+  wait "$_WD_PID"; CC_EXIT=$?
+  echo "[$(date +%H:%M:%S)] exit=$CC_EXIT attempt=$_WD_ATTEMPT" >> "$_WD_LOG"
+  break
+done
+
+if [ "$_WD_ZOMBIE" -eq 1 ]; then
+  CC_EXIT=143
+  echo "[$(date +%H:%M:%S)] all attempts failed" >> "$_WD_LOG"
+  echo "ERROR: claude -p zombie after $((_WD_MAX + 1)) attempts" > "{output}"
+fi
 
 python3 "{cleanup}" "{current}" "{task_dir}" "{task_id}" "$CC_EXIT" "{notify}"
 """
