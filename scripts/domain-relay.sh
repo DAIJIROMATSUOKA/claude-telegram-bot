@@ -226,30 +226,8 @@ fi
 log "Response (${#RESPONSE} chars)"
 printf "RESPONSE: %s\n" "$RESPONSE"
 
-# --- 8. Token usage check (async handoff trigger) ---
-EXCLUDE_FILE="$(dirname "$0")/../autonomous/state/auto-handoff-exclude.txt"
-if ! grep -qx "$DOMAIN" "$EXCLUDE_FILE" 2>/dev/null; then
-  TOKEN_RAW=$(bash "$TAB_MANAGER" token-estimate "$WT" 2>/dev/null)
-  TOKEN_PCT=$(echo "$TOKEN_RAW" | grep -o '"pct":[0-9]*' | grep -o '[0-9]*' 2>/dev/null)
-  HANDOFF_LOCK="/tmp/domain-lock-${DOMAIN}.json"
-  HANDOFF_COOLDOWN="/tmp/domain-handoff-cooldown-${DOMAIN}"
-  if [ "${TOKEN_PCT:-0}" -ge 70 ] && [ ! -f "$HANDOFF_LOCK" ]; then
-    # Cooldown: skip if handoff failed recently (1 hour)
-    if [ -f "$HANDOFF_COOLDOWN" ]; then
-      COOLDOWN_AGE=$(( $(date +%s) - $(stat -f %m "$HANDOFF_COOLDOWN" 2>/dev/null || echo 0) ))
-      if [ "$COOLDOWN_AGE" -lt 3600 ]; then
-        log "Handoff cooldown active for $DOMAIN (${COOLDOWN_AGE}s < 3600s), skipping"
-      else
-        rm -f "$HANDOFF_COOLDOWN"
-      fi
-    fi
-    if [ ! -f "$HANDOFF_COOLDOWN" ]; then
-      log "Token warning: ${TOKEN_PCT}% -> triggering handoff for $DOMAIN"
-      echo "TOKEN_WARNING: ${TOKEN_PCT}%"
-      # Fire-and-forget handoff (don't block relay response)
-      nohup bash "$SCRIPTS_DIR/domain-handoff.sh" --activate "$DOMAIN" > /tmp/domain-handoff-$DOMAIN.log 2>&1 &
-    fi
-  fi
-fi
+# --- 8. Token monitoring (notification only, no auto-switch) ---
+# Auto-handoff handled by auto-handoff-claude-ai.py (in-chat notification at 70%)
+# domain-relay.sh no longer triggers auto-switch
 
 exit 0
