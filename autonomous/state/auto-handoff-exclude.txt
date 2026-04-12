@@ -1,6 +1,0 @@
-# Auto-handoff除外ドメイン（1行1ドメイン）
-# Web UI直接利用のためChrome tab-manager経由のトークン検出が不正確なドメイン
-inbox
-direct
-pc
-forge-code
