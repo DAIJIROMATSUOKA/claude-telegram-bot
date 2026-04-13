@@ -66,5 +66,14 @@ if [ -n "$HISTORY_WARNINGS" ]; then
   printf "$HISTORY_WARNINGS"
 fi
 
+
+# 6. Weekly pattern detection (first session of week)
+PATTERN_LOCK="/tmp/pattern-detect-week-$(date +%Y-%W)"
+if [ ! -f "$PATTERN_LOCK" ] && [ -x "$HOME/scripts/pattern-detect.sh" ]; then
+  echo ""
+  echo "=== WEEKLY PATTERN DETECTION ==="
+  bash "$HOME/scripts/pattern-detect.sh" 14 2>/dev/null
+  touch "$PATTERN_LOCK"
+fi
 echo ''
 echo '=== END ==='
