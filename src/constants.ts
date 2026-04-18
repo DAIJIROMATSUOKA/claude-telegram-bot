@@ -180,3 +180,8 @@ export const AUTO_HANDOFF_INJECT_COUNT = 40;
 
 /** Minimum confidence to store directly (below = pending for review) */
 export const PENDING_CONFIDENCE_THRESHOLD = 0.7;
+
+// ============== AI Model ==============
+
+/** Default Claude model — change here to upgrade all references */
+export const CLAUDE_MODEL = process.env.CLAUDE_MODEL || "claude-opus-4-7";

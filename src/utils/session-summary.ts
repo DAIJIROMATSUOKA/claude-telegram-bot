@@ -12,6 +12,7 @@ const log = createLogger("session-summary");
 
 import { callMemoryGateway } from '../handlers/ai-router';
 import { ulid } from 'ulidx';
+import { CLAUDE_MODEL } from "../constants";
 
 /**
  * 会話履歴をコンパクトに整形（各メッセージ最大500文字、最大30件）
@@ -265,7 +266,7 @@ async function generateSummaryWithCroppy(
     await fs.writeFile(tempFile, prompt, 'utf-8');
 
     const { stdout } = await execPromise(
-      `claude --model claude-opus-4-6 --print < ${tempFile}`,
+      `claude --model ${CLAUDE_MODEL} --print < ${tempFile}`,
       {
         timeout: 60000,
         cwd: '/Users/daijiromatsuokam1',

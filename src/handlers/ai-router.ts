@@ -16,7 +16,7 @@
 import { createLogger } from "../utils/logger";
 const log = createLogger("ai-router");
 
-import { CMD_TIMEOUT_LONG_MS, COUNCIL_TIMEOUT_MS } from "../constants";
+import { CMD_TIMEOUT_LONG_MS, COUNCIL_TIMEOUT_MS, CLAUDE_MODEL } from "../constants";
 import { logger } from "../utils/logger";
 import { fetchWithTimeout } from "../utils/fetch-with-timeout";
 
@@ -290,7 +290,7 @@ ${memoryPack}
 
       // Execute claude with file input
       const { stdout, stderr } = await execPromise(
-        `claude --model claude-opus-4-6 --print < ${tempFile}`,
+        `claude --model ${CLAUDE_MODEL} --print < ${tempFile}`,
         {
           timeout: CMD_TIMEOUT_LONG_MS,
           cwd: '/Users/daijiromatsuokam1',

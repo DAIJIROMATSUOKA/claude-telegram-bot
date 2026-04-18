@@ -9,6 +9,7 @@
  */
 
 import { spawn } from "node:child_process";
+import { CLAUDE_MODEL } from "../constants";
 
 export interface AIResponse {
   output: string;
@@ -82,7 +83,7 @@ function spawnCLI(
  */
 export async function askClaude(prompt: string, timeoutMs = 600_000): Promise<AIResponse> {
   const start = Date.now();
-  const r = await spawnCLI("claude", ["--model", "claude-opus-4-6", "-p", "-"], prompt, timeoutMs);
+  const r = await spawnCLI("claude", ["--model", CLAUDE_MODEL, "-p", "-"], prompt, timeoutMs);
   return {
     output: (r.code === 0 || r.stdout) ? r.stdout : "",
     backend: "claude",

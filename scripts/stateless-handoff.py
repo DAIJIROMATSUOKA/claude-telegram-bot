@@ -1,3 +1,4 @@
+import os
 #!/usr/bin/env python3
 """Create a new claude.ai chat via API. Optionally set name.
 Usage: stateless-handoff.py [project_uuid] [--name "chat name"]
@@ -15,7 +16,7 @@ cfg = json.load(open(os.path.expanduser("~/.claude-chatlog-config.json")))
 sk, org = cfg["session_key"], cfg["org_id"]
 
 url = f"https://claude.ai/api/organizations/{org}/chat_conversations"
-body = json.dumps({"name": chat_name, "project_uuid": proj_uuid, "model": "claude-opus-4-6"}).encode()
+body = json.dumps({"name": chat_name, "project_uuid": proj_uuid, "model": os.environ.get("CLAUDE_MODEL", "claude-opus-4-7")}).encode()
 req = urllib.request.Request(url, data=body, method="POST", headers={
     "Cookie": f"sessionKey={sk}",
     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",

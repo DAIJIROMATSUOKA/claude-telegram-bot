@@ -37,6 +37,7 @@ import { getLearnedMemories, formatLearnedMemoryForPrompt, filterRelevantMemorie
 import { getRecentSessionSummaries, formatSessionSummariesForPrompt } from "./utils/session-summary";
 import { getWorkState, formatWorkStateForContext } from "./utils/work-state";
 import { memoryGatewayBreaker } from "./utils/circuit-breaker";
+import { CLAUDE_MODEL } from "./constants";
 import type {
   SavedSession,
   SessionHistory,
@@ -421,7 +422,7 @@ class ClaudeSession {
 
     // Build SDK V1 options - supports all features
     const options: Options = {
-      model: "claude-opus-4-6",
+      model: CLAUDE_MODEL,
       cwd: WORKING_DIR,
       settingSources: ["user", "project"],
       permissionMode: "bypassPermissions",

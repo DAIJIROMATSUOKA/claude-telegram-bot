@@ -18,6 +18,7 @@ const log = createLogger("session-bridge");
 import { spawn } from "node:child_process";
 import { readFileSync, writeFileSync, appendFileSync, renameSync } from "node:fs";
 import { join } from "node:path";
+import { CLAUDE_MODEL } from "../constants";
 
 // ========================================
 // Types
@@ -220,7 +221,7 @@ async function getClaudeSummary(cliSessionId: string): Promise<string> {
     "### 現在の問題\n- (箇条書き、あれば)";
 
   const args = [
-    "--model", "claude-opus-4-6",
+    "--model", CLAUDE_MODEL,
     "--dangerously-skip-permissions",
     "--output-format", "json",
     "--resume", cliSessionId,
@@ -426,7 +427,7 @@ export async function sendToSession(
       // Claude CLI: --resume でセッション継続、--output-format json でセッションID取得
       // 履歴注入は不要（CLI側が全履歴を自動保持）
       const args: string[] = [
-        "--model", "claude-opus-4-6",
+        "--model", CLAUDE_MODEL,
         "--dangerously-skip-permissions",
         "--output-format", "json",
       ];

@@ -9,6 +9,7 @@ const log = createLogger("agent-task");
 
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { Api } from "grammy";
+import { CLAUDE_MODEL } from "../constants";
 
 export type AgentMode = "read" | "execute";
 
@@ -134,7 +135,7 @@ export async function handleAgentTask(
         permissionMode: preset.permissionMode,
         maxTurns: preset.maxTurns,
         settingSources: ["user", "project"],
-        model: "claude-opus-4-6",
+        model: CLAUDE_MODEL,
         abortController,
       },
     })) {
