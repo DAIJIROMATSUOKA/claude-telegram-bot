@@ -276,9 +276,17 @@ if [ -n "$EVIDENCE_DECISIONS" ] && [ -s "$EVIDENCE_DECISIONS" ]; then
   VALIDATE_ARGS="$VALIDATE_ARGS --decisions-file $EVIDENCE_DECISIONS"
 fi
 VALIDATION=$(python3 "$SCRIPTS_DIR/validate-handoff.py" $VALIDATE_ARGS 2>/dev/null || echo "VALIDATION_ERROR")
+VALIDATE_EXIT=${PIPESTATUS[0]:-$?}
 
 if [ "$VALIDATION" != "OK" ]; then
   log "WARNING: Handoff quality check failed"
+  WARN_COUNT=$(echo "$VALIDATION" | grep -o "WARN_COUNT: [0-9]*" | grep -o "[0-9]*" || echo "0")
+  if [ "${WARN_COUNT:-0}" -ge 3 ]; then
+    log "BLOCK: ${WARN_COUNT} warnings >= threshold(3). Rewrite summary and retry."
+    bash "$NOTIFY" "🚫 HANDOFF BLOCKED: ${WARN_COUNT}件警告 — 要約を書き直してください" 2>/dev/null &
+    rm -f "$LOCK_FILE" "$GLOBAL_RELAY_LOCK"
+    exit 2
+  fi
   # Inject warning into handoff file
   {
     echo ""

@@ -299,8 +299,26 @@ if decision_warnings:
     for w in decision_warnings:
         print(w)
 
+# Count total warnings
+total_warns = len(remaining_warns) + len(artifact_warns) + len(e_warns) + len(commit_warnings) + len(decision_warnings)
+WARN_THRESHOLD = 3  # 3件以上でhandoffブロック
+
 if has_any:
     print()
     print("次セッションが自力で判断できるよう、各項目にスクリプト名・現在の状態・境界条件を含めてください。")
+    print(f"WARN_COUNT: {total_warns}")
 else:
     print("OK")
+    total_warns = 0
+
+# Quality log
+log_path = os.path.expanduser("~/machinelab-knowledge/pc/handoff-quality.log")
+os.makedirs(os.path.dirname(log_path), exist_ok=True)
+ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+with open(log_path, "a") as f:
+    f.write(f"{ts}\twarn={total_warns}\t{'BLOCK' if total_warns >= WARN_THRESHOLD else 'OK'}\n")
+
+# Exit 1 if warnings >= threshold (allows api-handoff.sh to block)
+if total_warns >= WARN_THRESHOLD:
+    import sys
+    sys.exit(1)

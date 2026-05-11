@@ -8,7 +8,12 @@
 #   bash exec.sh --notify "command"                     # sync + Telegram notify
 
 GATEWAY="https://jarvis-memory-gateway.jarvis-matsuoka.workers.dev"
-PROXY_OPT="--proxy-insecure -x $HTTPS_PROXY"
+# Only set proxy if HTTPS_PROXY is non-empty (empty value causes curl to misparse -X as proxy)
+if [ -n "${HTTPS_PROXY:-}" ]; then
+  PROXY_OPT="--proxy-insecure -x $HTTPS_PROXY"
+else
+  PROXY_OPT=""
+fi
 
 # --- Mode: --check ---
 if [ "$1" = "--check" ]; then
