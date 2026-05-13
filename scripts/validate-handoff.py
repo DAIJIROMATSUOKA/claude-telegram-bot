@@ -12,7 +12,7 @@ Checks:
 Usage:
   python3 validate-handoff.py <summary-file> [--commits-file FILE] [--decisions-file FILE]
 """
-import sys, re, argparse
+import sys, re, argparse, os, datetime
 
 parser = argparse.ArgumentParser()
 parser.add_argument("summary_file")
