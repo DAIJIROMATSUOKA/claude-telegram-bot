@@ -490,8 +490,10 @@ async function executeAction(item: TriageItem, judgment: TriageJudgment): Promis
       }
       // Confirm to DJ
       const icon = judgment.action === 'archive' ? '📦' : '🗑';
-      const bodyExcerpt = item.body.substring(0, 150).replace(/\n/g, " ").trim();
-      const confirmText = `🦞 ${icon}${judgment.action === 'archive' ? 'アーカイブ' : '削除'}済み\n📧 ${item.sender_name}: ${item.subject || '(件名なし)'}\n📝 ${bodyExcerpt}\n\n💭 ${judgment.reason}`;
+      const label = judgment.action === 'archive' ? '🏷 Jarvis-Auto-Archived' : '🗑 Trash';
+      const actionLabel = judgment.action === 'archive' ? 'アーカイブ' : '削除';
+      const bodyExcerpt = item.body.substring(0, 60).replace(/\n/g, " ").trim();
+      const confirmText = `🦞 ${icon} ${actionLabel}済み  |  ${label}\n━━━━━━━━━━━━━━━\n📧 ${item.sender_name}\n📋 ${item.subject || '(件名なし)'}\n💭 ${judgment.reason}\n   ${bodyExcerpt}…`;
       log.info('[Triage] Sending confirm to chatId:', chatId, 'text:', confirmText.substring(0, 80));
       let confirmMsg: any;
       try {
