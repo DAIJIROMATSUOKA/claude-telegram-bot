@@ -610,7 +610,7 @@ def check_domain_token_usage():
                 continue
 
             file_size = os.path.getsize(filepath)
-            est_tokens = int(file_size * 1.5) + 60000
+            est_tokens = int(file_size * 1.5) + 20000  # offset for system prompt overhead
             pct = int(est_tokens * 100 / 200000)
 
             # Only act at 70%+
@@ -642,7 +642,8 @@ def check_domain_token_usage():
 
                 # Post notification message
                 comp_url = f"https://claude.ai/api/organizations/{org_id}/chat_conversations/{chat_id}/completion"
-                notify_msg = f"[AUTO] このチャットのトークン使用量が{pct}%に達しました。会話品質が低下する前に  を実行してください。"
+                handoff_cmd = f"bash exec.sh 'bash ~/claude-telegram-bot/scripts/api-handoff.sh {domain_name}'"
+                notify_msg = f"[AUTO] このチャットのトークン使用量が{pct}%に達しました。会話品質が低下する前に `{handoff_cmd}` を実行してください。"
                 body = json.dumps({
                     "prompt": notify_msg,
                     "parent_message_uuid": leaf_uuid or "",
