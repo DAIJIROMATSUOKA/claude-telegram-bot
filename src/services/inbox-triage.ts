@@ -6,6 +6,7 @@
  */
 
 import { createLogger } from "../utils/logger";
+import { logArchivedMail } from "../utils/archived-mail-log";
 const log = createLogger("inbox-triage");
 
 import { exec } from 'child_process';
@@ -491,6 +492,14 @@ async function executeAction(item: TriageItem, judgment: TriageJudgment): Promis
       // Confirm to DJ
       const icon = judgment.action === 'archive' ? '📦' : '🗑';
       const label = judgment.action === 'archive' ? '🏷 Jarvis-Auto-Archived' : '🗑 Trash';
+      // Log to local SQLite for daily summary (best-effort)
+      logArchivedMail({
+        action: judgment.action as 'archive' | 'delete',
+        sender: item.sender_name,
+        subject: item.subject || '(件名なし)',
+        reason: judgment.reason,
+        gmailId: item.source === 'gmail' ? item.source_id : undefined,
+      });
       const actionLabel = judgment.action === 'archive' ? 'アーカイブ' : '削除';
       const bodyExcerpt = item.body.substring(0, 60).replace(/\n/g, " ").trim();
       const confirmText = `🦞 ${icon} ${actionLabel}済み  |  ${label}\n━━━━━━━━━━━━━━━\n📧 ${item.sender_name}\n📋 ${item.subject || '(件名なし)'}\n💭 ${judgment.reason}\n   ${bodyExcerpt}…`;
