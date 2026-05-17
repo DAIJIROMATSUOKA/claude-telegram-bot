@@ -566,7 +566,7 @@ def compress_and_append_history(title, chat_text, chat_id):
 
 
 def check_domain_token_usage():
-    """Monitor domain chat token usage. At 70%+, notify DJ in-chat via completion API.
+    """Monitor domain chat token usage. At 90%+, notify DJ in-chat via completion API.
     No automatic URL switching. No warm standby. DJ decides when to handoff."""
     try:
         import urllib.request, urllib.parse
@@ -613,8 +613,8 @@ def check_domain_token_usage():
             est_tokens = int(file_size * 1.5) + 20000  # offset for system prompt overhead
             pct = int(est_tokens * 100 / 200000)
 
-            # Only act at 70%+
-            if pct < 70:
+            # Only act at 90%+ (DJ preference 2026-05-17)
+            if pct < 90:
                 continue
 
             # Check if already notified for THIS chat (one notification per chat)
