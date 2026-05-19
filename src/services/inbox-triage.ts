@@ -319,18 +319,20 @@ async function fetchCorrections(limit = 20): Promise<CorrectionItem[]> {
 }
 
 function buildLearningContext(corrections: CorrectionItem[]): string {
-  if (corrections.length === 0) return '';
+  // D2 fix (2026-05-19): only learn from REJECTED (DJ-undone) cases.
+  // 'approved' includes 30s-auto-approvals where DJ never confirmed,
+  // which created a self-reinforcing pollution loop (165+ misclassified
+  // important contacts were marked approved). Hard rules (D1) and rejected
+  // feedback are sufficient signal.
+  const rejected = corrections.filter(c => c.feedback === 'rejected');
+  if (rejected.length === 0) return '';
 
-  const lines: string[] = ['\n## Past triage history (learn from these)'];
-  for (const c of corrections) {
+  const lines: string[] = ['\n## Past mistakes (DJ undid these — DO NOT repeat)'];
+  for (const c of rejected) {
     const sender = (c.sender_name || 'unknown').replace(/"/g, '');
     const subj = c.subject || '(no subject)';
     const reason = c.feedback_reason ? ` (${c.feedback_reason})` : '';
-    if (c.feedback === 'rejected') {
-      lines.push(`WRONG: ${sender} "${subj}" -> ${c.triage_action} -> DJ undid${reason}`);
-    } else {
-      lines.push(`OK: ${sender} "${subj}" -> ${c.triage_action}`);
-    }
+    lines.push(`WRONG: ${sender} "${subj}" -> ${c.triage_action} -> DJ undid${reason}`);
   }
   return lines.join('\n');
 }
@@ -360,6 +362,89 @@ function buildTriagePrompt(item: TriageItem, learningContext: string = ''): stri
 // ============================================================
 // Response parsing
 // ============================================================
+
+// ============================================================
+// D1 Hard Rule Guard (2026-05-19)
+//
+// Forces escalate for known critical senders regardless of what Claude
+// returns. Protects against learning-context pollution. List is conservative
+// — only adds, never removes. If we ever want to archive a known contact,
+// DJ should explicitly say so via the Telegram override.
+// ============================================================
+const ESCALATE_DOMAINS = new Set([
+  // Customer / business partners
+  '28bring.jp',
+  'miyakokiko.co.jp',
+  'keyence.co.jp',
+  'nakanishi-mfg.com',
+  'nakanishi-mfg.co.jp',
+  'yagai.co.jp',
+  'ito-ham.co.jp',
+  'jp.multivac.com',
+  'multivac.com',
+  'proceed-pfm.co.jp',
+  'procced-pfm.co.jp',
+  'silverlife.co.jp',
+  'hakuzou.co.jp',
+  // Internal
+  'machinelab.co.jp',
+]);
+const ESCALATE_NAME_KEYWORDS = [
+  '内海', 'Uchiumi', 'uchiumi',
+  '的場', 'Matoba', 'matoba',
+  '大原', 'Ohara', 'ohara', 'h.ohara',
+  '柴田亮二', 'shibata',
+  '松岡真之介', 'shinnosuke',
+  '松岡綾', 'aya.matsuoka',
+  '野尻香菜', 'kana.nojiri',
+  '野尻佑一', 'yuichi.nojiri',
+  '込山', 'komiyama',
+  'Mihoko Ouchi', 'mihoko.ouchi',
+  '大越', 'okoshi', 'Okoshi',
+  '西久保', 'nishikubo',
+  '石井竹次', 'ishii',
+  '石原', 'ishihara',
+  'Kenji Matoba',
+];
+function enforceHardRules(item: TriageItem, judgment: TriageJudgment): TriageJudgment {
+  if (judgment.action === 'escalate') return judgment;
+  const sender = (item.sender_name || '').toLowerCase();
+  const subject = (item.subject || '').toLowerCase();
+  // Extract domain from sender_name (typical format: "Name" <user@domain>)
+  let domain = '';
+  const m = sender.match(/<[^@>]+@([^>]+)>/);
+  if (m && m[1]) domain = m[1].trim();
+  // Domain check
+  if (domain && ESCALATE_DOMAINS.has(domain)) {
+    log.warn(`[HardRule] domain=${domain} forces escalate (Claude said ${judgment.action})`);
+    return {
+      ...judgment,
+      action: 'escalate',
+      reason: `[HardRule:domain=${domain}] Claude original: ${judgment.reason}`,
+    };
+  }
+  // Sender keyword check
+  for (const kw of ESCALATE_NAME_KEYWORDS) {
+    if (sender.includes(kw.toLowerCase()) || subject.includes(kw.toLowerCase())) {
+      log.warn(`[HardRule] keyword=${kw} forces escalate (Claude said ${judgment.action})`);
+      return {
+        ...judgment,
+        action: 'escalate',
+        reason: `[HardRule:keyword=${kw}] Claude original: ${judgment.reason}`,
+      };
+    }
+  }
+  // M-number subject (M1234 format) = always work-related
+  if (/M\d{3,4}(-\d+)?/.test(item.subject || '')) {
+    log.warn(`[HardRule] M-number in subject forces escalate (Claude said ${judgment.action})`);
+    return {
+      ...judgment,
+      action: 'escalate',
+      reason: `[HardRule:M-number] Claude original: ${judgment.reason}`,
+    };
+  }
+  return judgment;
+}
 
 function parseTriageResponse(raw: string): TriageJudgment | null {
   // 1. Try JSON first
@@ -698,12 +783,15 @@ async function triageCycle(): Promise<void> {
       }
 
       // Parse judgment
-      const judgment = parseTriageResponse(response);
-      if (!judgment) {
+      const parsedJudgment = parseTriageResponse(response);
+      if (!parsedJudgment) {
         log.error(`[Triage] Parse failed for ${item.id}:`, response.substring(0, 200));
         await reportResult(item.id, 'escalate', 0, 'Failed to parse 🦞 response', false);
         continue;
       }
+
+      // D1: Hard rule guard (forces escalate for known critical contacts)
+      const judgment = enforceHardRules(item, parsedJudgment);
 
       log.info(`[Triage] ${item.id}: ${judgment.action} (${judgment.confidence})`);
 
