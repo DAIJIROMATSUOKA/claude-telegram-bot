@@ -1,6 +1,10 @@
 import { describe, test, expect } from 'bun:test';
 import { getClaudeVersion, runHealthCheck } from '../task/health-check';
 
+// 実claude CLI起動テスト: pre-commit(bun test)では起動させない
+// 手動実行は RUN_HEALTH_INTEGRATION=1 bun test
+const SKIP_INTEGRATION = !process.env.RUN_HEALTH_INTEGRATION;
+
 describe('health-check', () => {
   test('getClaudeVersion returns object with version string', () => {
     const result = getClaudeVersion();
@@ -21,7 +25,7 @@ describe('health-check', () => {
     }
   });
 
-  test('runHealthCheck returns passed=true when claude CLI is available', () => {
+  test.skipIf(SKIP_INTEGRATION)('runHealthCheck returns passed=true when claude CLI is available', () => {
     const result = runHealthCheck();
     if (result.errors.length > 0) {
       console.log('Claude CLI not available, skipping:', result.errors);
@@ -31,7 +35,7 @@ describe('health-check', () => {
     }
   }, 35_000);
 
-  test('runHealthCheck returns empty errors array on success', () => {
+  test.skipIf(SKIP_INTEGRATION)('runHealthCheck returns empty errors array on success', () => {
     const result = runHealthCheck();
     expect(Array.isArray(result.errors)).toBe(true);
     if (result.passed) {
@@ -49,7 +53,7 @@ describe('health-check', () => {
     }
   });
 
-  test('runHealthCheck result includes claudeVersion field', () => {
+  test.skipIf(SKIP_INTEGRATION)('runHealthCheck result includes claudeVersion field', () => {
     const result = runHealthCheck();
     expect('claudeVersion' in result).toBe(true);
     expect(typeof result.claudeVersion).toBe('string');
