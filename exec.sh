@@ -89,10 +89,12 @@ CMD="$1"
 # Set home dir based on target
 if [ "$TARGET" = "m3" ] || [ "$TARGET" = "m5" ]; then
   _HOME="/Users/daijiromatsuoka"
+  _DEFAULT_CWD="$_HOME"
 else
   _HOME="/Users/daijiromatsuokam1"
+  _DEFAULT_CWD="$_HOME/claude-telegram-bot"
 fi
-CWD="${2:-$_HOME/claude-telegram-bot}"
+CWD="${2:-$_DEFAULT_CWD}"
 # Fix container ~ (/root) → target home
 CWD=$(echo "$CWD" | sed "s|^/root|$_HOME|;s|^~|$_HOME|")
 TIMEOUT="${3:-300}"
