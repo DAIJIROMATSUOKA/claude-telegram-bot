@@ -6,7 +6,7 @@ HEARTBEAT="/tmp/poller-heartbeat-m1"
 PLIST="$HOME/Library/LaunchAgents/com.jarvis.task-poller.plist"
 LABEL="com.jarvis.task-poller"
 LOG="/tmp/poller-watchdog.log"
-MAX_AGE=60  # seconds - poller polls every 3s, so 60s = very generous
+MAX_AGE=86400  # pgrep-only liveness; tolerate stale (poller beats only on task activity)
 
 needs_restart=0
 
