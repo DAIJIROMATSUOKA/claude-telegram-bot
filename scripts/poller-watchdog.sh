@@ -2,7 +2,7 @@
 # poller-watchdog.sh - Cron job to ensure task-poller stays alive
 # Install: crontab -e -> */1 * * * * /Users/daijiromatsuokam1/claude-telegram-bot/scripts/poller-watchdog.sh
 
-HEARTBEAT="/tmp/poller-heartbeat"
+HEARTBEAT="/tmp/poller-heartbeat-m1"
 PLIST="$HOME/Library/LaunchAgents/com.jarvis.task-poller.plist"
 LABEL="com.jarvis.task-poller"
 LOG="/tmp/poller-watchdog.log"
