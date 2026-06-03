@@ -69,5 +69,10 @@ workspace/*-analysis/
 # Aerox watcher runtime state (regenerated)
 data/aerox-watch-cache.json
 
+# inbox-watch / idle-gate runtime state (regenerated)
+workspace/.last-dj-ts
+workspace/.inbox-watch-STOPPED
+workspace/.inbox-watch-last
+
 # runtime notification logs
 logs/
