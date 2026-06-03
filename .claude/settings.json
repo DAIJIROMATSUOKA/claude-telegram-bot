@@ -19,10 +19,28 @@
         "allowWrite": [
           "/opt/homebrew",
           "/usr/local",
-          "/tmp"
+          "/tmp",
+          "/Users/daijiromatsuokam1/Machinelab Dropbox"
         ]
       }
     }
+  },
+  "permissions": {
+    "defaultMode": "auto",
+    "allow": [
+      "Bash(python3 ~/scripts/search-chatlogs.py *)",
+      "Bash(bash ~/scripts/proj.sh *)",
+      "Bash(bash ~/scripts/project-search.sh *)",
+      "Bash(prlctl list)",
+      "Bash(prlctl list *)",
+      "Bash(python3 ~/scripts/search-cc-sessions.py *)",
+      "Bash(launchctl list *)",
+      "Bash(launchctl list)",
+      "Bash(launchctl print *)",
+      "Bash(bash exec.sh *)",
+      "Bash(curl https://jarvis-memory-gateway.jarvis-matsuoka.workers.dev/*)",
+      "Bash(curl -s https://jarvis-memory-gateway.jarvis-matsuoka.workers.dev/*)"
+    ]
   },
   "hooks": {
     "PostToolUse": [
