@@ -95,7 +95,6 @@ echo "--- LaunchAgents ---"
 AGENTS=(
   "com.claude-telegram-ts"
   "com.jarvis.task-poller"
-  "com.jarvis.autokick-watchdog"
   "com.jarvis.nightly"
   "com.jarvis.morning-briefing"
 )
