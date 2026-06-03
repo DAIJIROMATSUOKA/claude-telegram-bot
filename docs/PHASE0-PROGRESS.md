@@ -34,6 +34,17 @@ _通知=Telegram残置で確定(DJ承認 2026-06-03)。設計=`CC-ONLY-MIGRATION
 - [x] **bridge 3本(imessage/phone/slack)= UI据置**: inline_keyboard付きインタラクティブ送信 → 通知でなくUI。直sendMessageのまま正(botハンドラと同原則)。transport統一対象外と確定。
 - [ ] exec.sh(critical据置) / auto-handoff*(遺物・hook配線確認後)
 
+## 残り全部完遂(2026-06-04, exec bridge経由=非サンドボックスで実機検証込み)
+**★exec bridge発見**: `bash exec.sh "cmd"`=M1 poller(非サンドボックス)実行 → .env/bun test/TG送信/launchctl/restart-bot 全部通る。サンドボックス制約を完全迂回(MEMORY ★記録)。
+- [x] **LINE命名罠 完全解消**: ops-briefing.sh のバグ修正(`tg-notify.py "$ENV_FILE" "$MSG_FILE"`=envパス送信 → `line-notify.py --file "$MSG_FILE"`)。`tg-notify.py`/`telegram-notify.py` 両削除。5 briefing全て line-notify.py へ。
+- [x] **遺物 auto-handoff×2 削除**(hook配線なし・auto-memory-sync.pyが後継と明記)。
+- [x] **ネスト重複dir(218M/6753f, untracked)** → `~/.Trash/nested-ctb-backup-stale-feb5` 退避(可逆, bridge経由)。
+- [x] **heartbeat writer 実装+実機検証**: src/index.ts に epoch秒30秒毎writer。bridge経由 typecheck緑 → restart-bot.sh → **BOT up + heartbeat 2秒鮮度確認**。WARNINGループ根治+ハング検知実動。
+- [x] **TS rewire 実送信検証**: daily-archive を bridge経由で実行 → TG着信。notify.ts経路OK。
+- [ ] **exec.sh**: critical据置(通知1本・bridgeで多用中につき非変更が正)。
+- [ ] **テスト健全化**(別タスク): 17失敗=mock.module汚染(`docs/TEST-TRIAGE-17-failures.md`、単体passで確証済)。
+- [ ] **push**: DJ明示指示時のみ。
+
 ## 朝DJ判断・実行(破壊的/検証要)
 - notify-dj.sh ライブ切替(TG実送信テスト要。sandboxから検証不可)
 - LINE送信器 改名の呼出元5件更新 + 宛先監査

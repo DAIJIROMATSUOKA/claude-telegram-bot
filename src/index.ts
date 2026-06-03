@@ -505,6 +505,12 @@ process.on("SIGINT", () => gracefulShutdown("SIGINT"));
 // Start with concurrent runner (commands work immediately)
 const runner = run(bot);
 
+// Heartbeat for check-heartbeat.sh hang detection — epoch秒を30秒毎に書く。
+// (writer不在で/tmp/jarvis-heartbeatが永久に無く WARNINGループ化していた根本原因の修理 / docs/PHASE0-HEARTBEAT-DIAGNOSIS.md)
+const writeHeartbeat = () => { Bun.write("/tmp/jarvis-heartbeat", String(Math.floor(Date.now() / 1000))).catch(() => {}); };
+writeHeartbeat();
+setInterval(writeHeartbeat, 30_000);
+
 // Start task poller for remote execution
 // Initialize memory tables (non-blocking)
   (async () => {
