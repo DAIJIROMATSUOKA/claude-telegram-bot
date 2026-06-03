@@ -54,11 +54,6 @@ import {
   handleAskGPT,
   handleAskGemini,
 } from "./handlers/council";
-import { handleAISession } from "./handlers/ai-session";
-import { handleBridgeCommand } from "./handlers/croppy-bridge";
-import { handleChatCommand, handlePostCommand, handleChatsCommand } from "./handlers/claude-chat";
-import { handleFindChat, handleAskUuid, handleNewDomain } from "./handlers/claude-chat-api";
-import { handleAsk as handleAskChrome } from "./handlers/ask-command";
 import { handleAudit } from "./handlers/audit-command";
 import { handleSpec, handleDecide, handleDecisions } from "./handlers/dj-spec-command";
 import { handleRefresh } from "./handlers/refresh-command";
@@ -324,8 +319,6 @@ bot.command("debate", handleDebate);
 bot.command("gpt", handleAskGPT);
 bot.command("gem", handleAskGemini);
 
-// AI Session Bridge
-bot.command("ai", handleAISession);
 bot.command("code", handleCode);
 
 // Nightshift — 夜間バッチモード
@@ -336,20 +329,11 @@ registerMediaCommands(bot);
 bot.command("timer", handleCroppyDispatch);
 bot.command("git", handleCroppyDispatch);
 bot.command("scout", handleScout);
-bot.command("bridge", handleBridgeCommand);
-bot.command("workers", handleBridgeCommand);
-bot.command("chat", handleChatCommand);
-bot.command("post", handlePostCommand);
-bot.command("chats", handleChatsCommand);
-bot.command("ask", handleAskChrome); // G7: Chrome version
 bot.command("audit", handleAudit);
 bot.command("spec", handleSpec);
 bot.command("decide", handleDecide);
 bot.command("decisions", handleDecisions);
 bot.command("refresh", handleRefresh);
-bot.command("findchat", handleFindChat);
-bot.command("askuuid", handleAskUuid);
-bot.command("newdomain", handleNewDomain);
 bot.command("manual", handleManual);
 bot.command("search", handleSearch);
 bot.command("stats", handleStats);
