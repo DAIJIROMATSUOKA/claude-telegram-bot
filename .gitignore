@@ -62,3 +62,6 @@ cache/
 # Maker manual extracted text (copyrighted, do not commit) — keyence / iai / oriental-motor / ...
 workspace/*-manuals/**/text/
 workspace/*-manuals/**/*.pdf
+
+# Project ladder analysis scratch (customer-derived; canonical copy lives in Dropbox project _AI解析_croppy/)
+workspace/*-analysis/
