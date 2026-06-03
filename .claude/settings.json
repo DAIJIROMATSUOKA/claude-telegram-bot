@@ -28,7 +28,12 @@
     "PostToolUse": [
       {
         "matcher": "Edit|Write",
-        "command": "if echo \"$CLAUDE_FILE_PATH\" | grep -q \"\\.ts$\"; then cd ~/claude-telegram-bot && timeout 60 bun test --timeout 30000 2>&1 | tail -3; fi"
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if echo \"$CLAUDE_FILE_PATH\" | grep -q \"\\.ts$\"; then cd ~/claude-telegram-bot && timeout 60 bun test --timeout 30000 2>&1 | tail -3; fi"
+          }
+        ]
       }
     ]
   }
