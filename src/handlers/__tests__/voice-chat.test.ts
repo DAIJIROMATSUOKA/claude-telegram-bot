@@ -30,11 +30,6 @@ const mockUnlinkSync = mock(() => {});
 const writeFileSyncSpy = spyOn(fs, "writeFileSync").mockImplementation(mockWriteFileSync as any);
 const unlinkSyncSpy = spyOn(fs, "unlinkSync").mockImplementation(mockUnlinkSync as any);
 
-const mockDispatchToWorker = mock(() => Promise.resolve());
-mock.module("../croppy-bridge", () => ({
-  dispatchToWorker: mockDispatchToWorker,
-}));
-
 // --- Import module under test ---
 import { handleVoice } from "../voice-chat";
 
@@ -76,7 +71,6 @@ describe("handleVoice", () => {
     mockExecAsync.mockClear();
     mockWriteFileSync.mockClear();
     mockUnlinkSync.mockClear();
-    mockDispatchToWorker.mockClear();
 
     // Default: whisper returns transcribed text
     mockExecAsync.mockImplementation((cmd: string, _opts?: any) => {
@@ -118,15 +112,15 @@ describe("handleVoice", () => {
     expect(replyCall).toBeTruthy();
   });
 
-  // 2. Croppy bridge dispatch with transcribed text
-  test("dispatches transcribed text to croppy bridge worker", async () => {
+  // 2. Phase4-B: shows transcription only, no claude.ai relay
+  test("shows transcription only (AI relay discontinued)", async () => {
     const ctx = makeMockCtx();
     await handleVoice(ctx);
 
-    expect(mockDispatchToWorker).toHaveBeenCalledTimes(1);
-    expect(mockDispatchToWorker).toHaveBeenCalledWith(ctx, "Hello world", {
-      raw: true,
-    });
+    const transcriptReply = ctx.reply.mock.calls.find((c: any[]) =>
+      String(c[0]).includes("Hello world")
+    );
+    expect(transcriptReply).toBeTruthy();
   });
 
   // 3. Error handling: download failure
@@ -201,8 +195,6 @@ describe("handleVoice", () => {
       String(c[0]).includes("音声を認識できませんでした")
     );
     expect(failReply).toBeTruthy();
-    // Should NOT dispatch to bridge
-    expect(mockDispatchToWorker).not.toHaveBeenCalled();
   });
 
   // 8. FFmpeg conversion: OGG to WAV with correct parameters

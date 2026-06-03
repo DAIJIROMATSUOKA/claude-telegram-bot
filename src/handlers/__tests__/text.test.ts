@@ -1,6 +1,4 @@
 import { describe, test, expect, mock, spyOn, beforeEach, afterAll } from "bun:test";
-import * as claudeChatModule from "../claude-chat";
-import * as domainBufferModule from "../../services/domain-buffer";
 import * as streamingModule from "../streaming";
 
 // ── Mock session ──
@@ -128,7 +126,7 @@ mock.module("../../utils/croppy-context", () => ({
   formatCroppyDebugOutput: mock(() => Promise.resolve("<b>debug output</b>")),
 }));
 
-// ── Mock session bridge ──
+// ── Mock session bridge (CLI, non-Chrome) ──
 const mockHasActiveSession = mock((_userId: number) => false);
 const mockSendToSession = mock((_userId: number, _msg: string) => Promise.resolve("AI response"));
 const mockSplitTelegramMessage = mock((text: string) => [text]);
@@ -140,23 +138,11 @@ mock.module("../../utils/session-bridge", () => ({
 }));
 
 // ── Mock handlers ──
-const mockHandleDomainRelay = mock((_ctx: any, _msg: string) => Promise.resolve(false));
-mock.module("../domain-router", () => ({
-  handleDomainRelay: mockHandleDomainRelay,
-}));
-
 const mockHandleInboxReply = mock((_ctx: any) => Promise.resolve(false));
 mock.module("../inbox", () => ({
   handleInboxReply: mockHandleInboxReply,
   handleInboxCallback: mock(() => Promise.resolve(false)),
 }));
-
-const mockRelayDomain = mock((_domain: string, _msg: string, _onProgress?: any): Promise<string | null> => Promise.resolve("domain response"));
-const mockGetLock = mock((_domain: string): null | { type: string; since: number } => null);
-const mockGetBufferCount = mock((_domain: string) => 0);
-const relayDomainSpy = spyOn(domainBufferModule, "relayDomain").mockImplementation((...args: any[]) => (mockRelayDomain as any)(...args));
-const getLockSpy = spyOn(domainBufferModule, "getLock").mockImplementation((...args: any[]) => (mockGetLock as any)(...args));
-const getBufferCountSpy = spyOn(domainBufferModule, "getBufferCount").mockImplementation((...args: any[]) => (mockGetBufferCount as any)(...args));
 
 const mockEnrichMessage = mock((_msg: string, _userId: number) =>
   Promise.resolve({ message: _msg, enrichmentMs: 10 })
@@ -181,34 +167,6 @@ mock.module("../../services/obsidian-writer", () => ({
   archiveToObsidian: mock(() => Promise.resolve()),
   detectProjectNumbers: mock(() => []),
 }));
-
-const mockGetChromeOrchestrator = mock(() => null);
-mock.module("../orchestrator-chrome", () => ({
-  getChromeOrchestrator: mockGetChromeOrchestrator,
-  initChromeOrchestrator: mock(() => null),
-}));
-
-const mockDispatchToWorker = mock((_ctx: any, _msg: string, _opts?: any) => Promise.resolve());
-const mockHandleBridgeReply = mock((_ctx: any) => Promise.resolve(false));
-mock.module("../croppy-bridge", () => ({
-  dispatchToWorker: mockDispatchToWorker,
-  handleBridgeReply: mockHandleBridgeReply,
-  registerBridgeReply: mock(() => {}),
-}));
-
-const mockHandleChatReply = mock((_ctx: any) => Promise.resolve(false));
-const handleChatReplySpy = spyOn(claudeChatModule, "handleChatReply").mockImplementation(
-  (...args: any[]) => (mockHandleChatReply as any)(...args)
-);
-const handleChatCommandSpy = spyOn(claudeChatModule, "handleChatCommand").mockImplementation(
-  () => Promise.resolve()
-);
-const handlePostCommandSpy = spyOn(claudeChatModule, "handlePostCommand").mockImplementation(
-  () => Promise.resolve()
-);
-const handleChatsCommandSpy = spyOn(claudeChatModule, "handleChatsCommand").mockImplementation(
-  () => Promise.resolve()
-);
 
 const mockHandleAgentTask = mock((_prompt: string, _chatId: number, _api: any) => Promise.resolve());
 mock.module("../agent-task", () => ({
@@ -270,32 +228,26 @@ function makeMockCtx(opts: {
   } as any;
 }
 
+function repliedWith(ctx: any, substr: string): boolean {
+  return ctx.reply.mock.calls.some(
+    (c: any[]) => typeof c[0] === "string" && c[0].includes(substr)
+  );
+}
+
 function resetAllMocks() {
   mockSession.startProcessing.mockClear();
   mockSession.sendMessageStreaming.mockClear();
-  mockHandleDomainRelay.mockClear();
-  mockHandleDomainRelay.mockImplementation(() => Promise.resolve(false));
   mockHandleInboxReply.mockClear();
   mockHandleInboxReply.mockImplementation(() => Promise.resolve(false));
-  mockHandleChatReply.mockClear();
-  mockHandleChatReply.mockImplementation(() => Promise.resolve(false));
-  mockHandleBridgeReply.mockClear();
-  mockHandleBridgeReply.mockImplementation(() => Promise.resolve(false));
   mockHasActiveSession.mockClear();
   mockHasActiveSession.mockImplementation(() => false);
   mockSendToSession.mockClear();
   mockSendToSession.mockImplementation(() => Promise.resolve("AI response"));
-  mockGetChromeOrchestrator.mockClear();
-  mockGetChromeOrchestrator.mockImplementation(() => null);
-  mockDispatchToWorker.mockClear();
   mockHandleAgentTask.mockClear();
   mockHandleDeadlineInput.mockClear();
   mockHandleDeadlineInput.mockImplementation(() => Promise.resolve(false));
-  mockRelayDomain.mockClear();
-  mockRelayDomain.mockImplementation(() => Promise.resolve("domain response"));
-  mockGetLock.mockClear();
-  mockGetBufferCount.mockClear();
   mockRouteToProjectNotes.mockClear();
+  mockRouteToProjectNotes.mockImplementation(() => Promise.resolve());
   mockEnrichMessage.mockClear();
   mockEnrichMessage.mockImplementation((_msg: string) => Promise.resolve({ message: _msg, enrichmentMs: 10 }));
   mockRunPostProcess.mockClear();
@@ -307,13 +259,6 @@ function resetAllMocks() {
 }
 
 afterAll(() => {
-  handleChatReplySpy.mockRestore();
-  handleChatCommandSpy.mockRestore();
-  handlePostCommandSpy.mockRestore();
-  handleChatsCommandSpy.mockRestore();
-  relayDomainSpy.mockRestore();
-  getLockSpy.mockRestore();
-  getBufferCountSpy.mockRestore();
   createStatusCallbackSpy.mockRestore();
 });
 
@@ -324,16 +269,17 @@ describe("handleText", () => {
     resetAllMocks();
   });
 
-  // ── 1. Message routing: plain text to bridge/worker ──
+  // ── 1. Plain-text routing (Phase4-B: AI relay discontinued) ──
   describe("plain text routing", () => {
-    test("routes plain text to dispatchToWorker (bridge mode)", async () => {
+    test("plain text with no active session replies with B hint (no AI relay)", async () => {
       const ctx = makeMockCtx({ text: "hello world" });
       await handleText(ctx);
-      expect(mockDispatchToWorker).toHaveBeenCalled();
-      expect((mockDispatchToWorker.mock.calls[0] as any[])[1]).toBe("hello world");
+      // B behavior: short hint pointing to Claude Code, no claude.ai relay
+      expect(repliedWith(ctx, "Claude Code")).toBe(true);
+      expect(mockSendToSession).not.toHaveBeenCalled();
     });
 
-    test("routes to AI session when active session exists", async () => {
+    test("routes to AI session (CLI) when active session exists", async () => {
       mockHasActiveSession.mockImplementation(() => true);
       const ctx = makeMockCtx({ text: "tell me about the code" });
       await handleText(ctx);
@@ -342,36 +288,7 @@ describe("handleText", () => {
     });
   });
 
-  // ── 2. Domain tag detection ──
-  describe("domain tag detection in reply", () => {
-    test("reply to bot message with domain tag routes to domain", async () => {
-      const ctx = makeMockCtx({
-        text: "follow up question",
-        replyToMessage: {
-          from: { id: 999, is_bot: true },
-          text: "\u{1F4CB} [pc]\nSome previous response",
-          message_id: 50,
-        },
-      });
-      await handleText(ctx);
-      expect(mockRelayDomain).toHaveBeenCalledWith("pc", expect.any(String), expect.any(Function));
-    });
-
-    test("reply to bot message with pin tag routes to domain", async () => {
-      const ctx = makeMockCtx({
-        text: "another question",
-        replyToMessage: {
-          from: { id: 999, is_bot: true },
-          text: "\u{1F4CC} design\nSome response",
-          message_id: 51,
-        },
-      });
-      await handleText(ctx);
-      expect(mockRelayDomain).toHaveBeenCalledWith("design", expect.any(String), expect.any(Function));
-    });
-  });
-
-  // ── 3. Security: blocked user rejection ──
+  // ── 2. Security: blocked user rejection ──
   describe("security", () => {
     test("unauthorized user receives rejection message", async () => {
       const ctx = makeMockCtx({ text: "hello", userId: 999999 });
@@ -383,14 +300,13 @@ describe("handleText", () => {
     test("authorized user does not get rejection", async () => {
       const ctx = makeMockCtx({ text: "hello", userId: 123456 });
       await handleText(ctx);
-      // Should NOT have "Unauthorized" reply
       const replies = ctx.reply.mock.calls.map((c: any) => c[0]);
       const hasUnauthorized = replies.some((r: string) => typeof r === "string" && r.includes("Unauthorized"));
       expect(hasUnauthorized).toBe(false);
     });
   });
 
-  // ── 4. Rate limiting behavior ──
+  // ── 3. Rate limiting behavior ──
   describe("rate limiting", () => {
     test("rate-limited user receives wait message", async () => {
       const { rateLimiter } = await import("../../security");
@@ -407,7 +323,7 @@ describe("handleText", () => {
     });
   });
 
-  // ── 5. Chunk splitting for long messages ──
+  // ── 4. Chunk splitting for long AI-session responses ──
   describe("chunk splitting", () => {
     test("AI session splits long responses using splitTelegramMessage", async () => {
       mockHasActiveSession.mockImplementation(() => true);
@@ -421,12 +337,11 @@ describe("handleText", () => {
       await handleText(ctx);
 
       expect(mockSplitTelegramMessage).toHaveBeenCalled();
-      // Should reply multiple chunks
       expect(ctx.reply.mock.calls.length).toBeGreaterThanOrEqual(2);
     });
   });
 
-  // ── 6. Edge cases ──
+  // ── 5. Edge cases ──
   describe("edge cases", () => {
     test("missing message text returns early", async () => {
       const ctx = {
@@ -476,28 +391,26 @@ describe("handleText", () => {
       expect(ctx.reply).not.toHaveBeenCalled();
     });
 
-    test("empty string after checkInterrupt returns early", async () => {
+    test("empty string after checkInterrupt returns early (no AI)", async () => {
       const { checkInterrupt } = await import("../../utils");
       (checkInterrupt as any).mockImplementation(() => Promise.resolve("   "));
 
       const ctx = makeMockCtx({ text: "will become empty" });
       await handleText(ctx);
-      // Should not dispatch to worker since text is empty after interrupt check
-      expect(mockDispatchToWorker).not.toHaveBeenCalled();
+      expect(mockSendToSession).not.toHaveBeenCalled();
+      expect(repliedWith(ctx, "Claude Code")).toBe(false);
 
       // Restore
       (checkInterrupt as any).mockImplementation((t: string) => Promise.resolve(t));
     });
   });
 
-  // ── 7. Memo mode ──
+  // ── 6. Memo mode ──
   describe("memo mode (。prefix)", () => {
     test("memo mode deletes user message and sends confirmation", async () => {
       const ctx = makeMockCtx({ text: "。buy groceries" });
       await handleText(ctx);
-      // Should delete original message
       expect(ctx.api.deleteMessage).toHaveBeenCalledWith(100, 42);
-      // Should send confirmation
       expect(ctx.api.sendMessage).toHaveBeenCalledWith(100, expect.stringContaining("✓"));
     });
 
@@ -508,15 +421,15 @@ describe("handleText", () => {
       expect(ctx.api.sendMessage).toHaveBeenCalled();
     });
 
-    test("memo mode does not route to AI session or bridge", async () => {
+    test("memo mode does not route to AI session", async () => {
       const ctx = makeMockCtx({ text: "。remember this" });
       await handleText(ctx);
-      expect(mockDispatchToWorker).not.toHaveBeenCalled();
       expect(mockSendToSession).not.toHaveBeenCalled();
+      expect(repliedWith(ctx, "Claude Code")).toBe(false);
     });
   });
 
-  // ── 8. Task mode ──
+  // ── 7. Task mode ──
   describe("task mode (、prefix)", () => {
     test("task mode deletes user message and sends checkbox confirmation", async () => {
       const ctx = makeMockCtx({ text: "、fix the bug in text.ts" });
@@ -525,15 +438,15 @@ describe("handleText", () => {
       expect(ctx.api.sendMessage).toHaveBeenCalledWith(100, expect.stringContaining("✓"));
     });
 
-    test("task mode does not route to AI or bridge", async () => {
+    test("task mode does not route to AI", async () => {
       const ctx = makeMockCtx({ text: "、do something" });
       await handleText(ctx);
-      expect(mockDispatchToWorker).not.toHaveBeenCalled();
       expect(mockSendToSession).not.toHaveBeenCalled();
+      expect(repliedWith(ctx, "Claude Code")).toBe(false);
     });
   });
 
-  // ── 9. Reply routing to inbox ──
+  // ── 8. Reply routing to inbox ──
   describe("inbox reply routing", () => {
     test("reply to message triggers handleInboxReply check", async () => {
       const ctx = makeMockCtx({
@@ -559,57 +472,12 @@ describe("handleText", () => {
         },
       });
       await handleText(ctx);
-      // Should not continue to bridge
-      expect(mockDispatchToWorker).not.toHaveBeenCalled();
+      expect(mockSendToSession).not.toHaveBeenCalled();
+      expect(repliedWith(ctx, "Claude Code")).toBe(false);
     });
   });
 
-  // ── 10. Domain reply routing ──
-  describe("domain reply routing", () => {
-    test("domain reply sends BUFFERED status when domain is busy", async () => {
-      mockRelayDomain.mockImplementation(() => Promise.resolve("BUFFERED"));
-      mockGetLock.mockImplementation(() => ({ type: "handoff" as const, since: Date.now() }));
-      mockGetBufferCount.mockImplementation(() => 3);
-
-      const ctx = makeMockCtx({
-        text: "next question",
-        replyToMessage: {
-          from: { id: 999, is_bot: true },
-          text: "\u{1F4CB} [pc]\nPrevious answer",
-          message_id: 70,
-        },
-      });
-      await handleText(ctx);
-      expect(ctx.api.editMessageText).toHaveBeenCalled();
-      // The edit should contain buffer info
-      const editCalls = ctx.api.editMessageText.mock.calls;
-      const hasBufferMsg = editCalls.some((c: any[]) =>
-        typeof c[2] === "string" && c[2].includes("3/10")
-      );
-      expect(hasBufferMsg).toBe(true);
-    });
-
-    test("domain reply with no response shows empty message", async () => {
-      mockRelayDomain.mockImplementation(() => Promise.resolve(null));
-
-      const ctx = makeMockCtx({
-        text: "hello",
-        replyToMessage: {
-          from: { id: 999, is_bot: true },
-          text: "\u{1F4CB} [pc]\nPrev",
-          message_id: 71,
-        },
-      });
-      await handleText(ctx);
-      const editCalls = ctx.api.editMessageText.mock.calls;
-      const hasNoResponse = editCalls.some((c: any[]) =>
-        typeof c[2] === "string" && c[2].includes("\u5FDC\u7B54\u306A\u3057")
-      );
-      expect(hasNoResponse).toBe(true);
-    });
-  });
-
-  // ── 11. [AGENT] prefix ──
+  // ── 9. [AGENT] prefix ──
   describe("[AGENT] prefix handling", () => {
     test("[AGENT] prefix triggers handleAgentTask", async () => {
       const ctx = makeMockCtx({ text: "[AGENT] run full analysis" });
@@ -627,14 +495,15 @@ describe("handleText", () => {
       expect(mockHandleAgentTask).not.toHaveBeenCalled();
     });
 
-    test("[AGENT] returns early without dispatching to worker", async () => {
+    test("[AGENT] returns early without AI relay", async () => {
       const ctx = makeMockCtx({ text: "[AGENT] do something" });
       await handleText(ctx);
-      expect(mockDispatchToWorker).not.toHaveBeenCalled();
+      expect(mockSendToSession).not.toHaveBeenCalled();
+      expect(repliedWith(ctx, "Claude Code")).toBe(false);
     });
   });
 
-  // ── 12. M-number project routing ──
+  // ── 10. M-number project routing ──
   describe("M-number project routing", () => {
     test("routeToProjectNotes is called for regular messages", async () => {
       const ctx = makeMockCtx({ text: "M1300 design review" });
@@ -645,13 +514,13 @@ describe("handleText", () => {
     test("routeToProjectNotes failure does not break message flow", async () => {
       mockRouteToProjectNotes.mockImplementation(() => { throw new Error("Obsidian down"); });
       const ctx = makeMockCtx({ text: "M1317 progress update" });
-      // Should not throw
+      // Should not throw, and still reach B hint
       await handleText(ctx);
-      expect(mockDispatchToWorker).toHaveBeenCalled();
+      expect(repliedWith(ctx, "Claude Code")).toBe(true);
     });
   });
 
-  // ── 13. Special commands (/line, /mail, /imsg) ──
+  // ── 11. Special commands (/line, /mail, /imsg) ──
   describe("special commands", () => {
     test("/line routes to handleLinePost", async () => {
       const ctx = makeMockCtx({ text: "/line hello group" });
@@ -680,7 +549,7 @@ describe("handleText", () => {
     });
   });
 
-  // ── 14. Croppy debug routing ──
+  // ── 12. Croppy debug routing ──
   describe("croppy debug", () => {
     test("croppy: debug returns debug output", async () => {
       const ctx = makeMockCtx({ text: "croppy: debug" });
@@ -691,25 +560,25 @@ describe("handleText", () => {
     });
   });
 
-  // ── 15. handleDeadlineInput ──
+  // ── 13. handleDeadlineInput ──
   describe("deadline input", () => {
     test("returns early when handleDeadlineInput returns true", async () => {
       mockHandleDeadlineInput.mockImplementation(() => Promise.resolve(true));
-      const ctx = makeMockCtx({ text: "M1300\u306E\u7D0D\u671F2026/03/31" });
+      const ctx = makeMockCtx({ text: "M1300の納期2026/03/31" });
       await handleText(ctx);
-      expect(mockDispatchToWorker).not.toHaveBeenCalled();
+      expect(mockSendToSession).not.toHaveBeenCalled();
+      expect(repliedWith(ctx, "Claude Code")).toBe(false);
     });
 
     test("continues when handleDeadlineInput returns false", async () => {
       mockHandleDeadlineInput.mockImplementation(() => Promise.resolve(false));
       const ctx = makeMockCtx({ text: "M1300 is progressing" });
       await handleText(ctx);
-      // Should continue to further routing
       expect(mockRouteToProjectNotes).toHaveBeenCalled();
     });
   });
 
-  // ── 16. Reply context enrichment ──
+  // ── 14. Reply context enrichment ──
   describe("reply context", () => {
     test("prepends reply context to message for non-bot replies", async () => {
       const ctx = makeMockCtx({
@@ -721,8 +590,6 @@ describe("handleText", () => {
         },
       });
       await handleText(ctx);
-      // The message should include reply context when sent to bridge
-      // Check that routeToProjectNotes got the enriched message
       const callArgs = mockRouteToProjectNotes.mock.calls[0];
       if (callArgs) {
         const enrichedMsg = callArgs[0] as string;
@@ -742,55 +609,6 @@ describe("handleText", () => {
       });
       await handleText(ctx);
       expect(ctx.api.deleteMessage).toHaveBeenCalledWith(100, 81);
-    });
-  });
-
-  // ── 17. handleChatReply and handleBridgeReply ──
-  describe("chat reply and bridge reply routing", () => {
-    test("handleChatReply returning true stops processing", async () => {
-      mockHandleChatReply.mockImplementation(() => Promise.resolve(true));
-      const ctx = makeMockCtx({ text: "chat reply" });
-      await handleText(ctx);
-      expect(mockDispatchToWorker).not.toHaveBeenCalled();
-    });
-
-    test("handleBridgeReply returning true stops processing", async () => {
-      mockHandleBridgeReply.mockImplementation(() => Promise.resolve(true));
-      const ctx = makeMockCtx({ text: "bridge reply" });
-      await handleText(ctx);
-      expect(mockDispatchToWorker).not.toHaveBeenCalled();
-    });
-  });
-
-  // ── 18. Domain routing (handleDomainRelay) ──
-  describe("domain routing via handleDomainRelay", () => {
-    test("handleDomainRelay returning true stops message from reaching bridge", async () => {
-      mockHandleDomainRelay.mockImplementation(() => Promise.resolve(true));
-      const ctx = makeMockCtx({ text: "design review the homepage" });
-      await handleText(ctx);
-      // orchestratorHandled=true, so it should skip bridge
-      expect(mockDispatchToWorker).not.toHaveBeenCalled();
-    });
-
-    test("domain routing skipped for messages starting with /", async () => {
-      // The code checks !message.startsWith("/")
-      const ctx = makeMockCtx({ text: "/unknowncommand" });
-      await handleText(ctx);
-      // handleDomainRelay should NOT be called for / prefixed messages
-      // (the /unknowncommand won't match direct domain either)
-      expect(mockHandleDomainRelay).not.toHaveBeenCalled();
-    });
-
-    test("domain routing skipped for memo prefix", async () => {
-      const ctx = makeMockCtx({ text: "\u3002some memo" });
-      await handleText(ctx);
-      expect(mockHandleDomainRelay).not.toHaveBeenCalled();
-    });
-
-    test("domain routing skipped for task prefix", async () => {
-      const ctx = makeMockCtx({ text: "\u3001some task" });
-      await handleText(ctx);
-      expect(mockHandleDomainRelay).not.toHaveBeenCalled();
     });
   });
 });

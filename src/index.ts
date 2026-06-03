@@ -56,7 +56,6 @@ import {
 } from "./handlers/council";
 import { handleAudit } from "./handlers/audit-command";
 import { handleSpec, handleDecide, handleDecisions } from "./handlers/dj-spec-command";
-import { handleRefresh } from "./handlers/refresh-command";
 import { handleCode } from "./handlers/code-command";
 import { handleScout } from "./handlers/scout-command";
 import { handleManual } from "./handlers/manual-command";
@@ -333,7 +332,6 @@ bot.command("audit", handleAudit);
 bot.command("spec", handleSpec);
 bot.command("decide", handleDecide);
 bot.command("decisions", handleDecisions);
-bot.command("refresh", handleRefresh);
 bot.command("manual", handleManual);
 bot.command("search", handleSearch);
 bot.command("stats", handleStats);
