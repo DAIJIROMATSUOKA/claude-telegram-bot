@@ -50,16 +50,14 @@ def load_env():
 
 # ===== Telegram送信 =====
 def send_telegram(token: str, chat_id: str, text: str):
-    url = f"https://api.telegram.org/bot{token}/sendMessage"
-    data = json.dumps({
-        "chat_id": chat_id,
-        "text": text,
-        "parse_mode": "HTML",
-    }).encode()
-    req = urllib.request.Request(url, data=data,
-                                  headers={"Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=10) as res:
-        return json.loads(res.read())
+    # Phase0: 統一transport(notify.sh)経由。配信ログ+失敗時リトライキューを獲得。
+    # token/chat_id は notify.sh が .env から解決するため未使用(signature保持)。
+    import subprocess
+    subprocess.run(
+        [os.path.expanduser("~/claude-telegram-bot/scripts/notify.sh"),
+         text, "--parse", "HTML", "--tag", "gcal"],
+        check=False,
+    )
 
 # ===== 通知済み記録 =====
 def load_notified() -> dict:

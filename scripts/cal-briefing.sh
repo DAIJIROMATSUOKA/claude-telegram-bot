@@ -1,7 +1,7 @@
 #!/bin/bash
 # cal-briefing.sh - 毎朝7:00 カレンダー+Todoistブリーフィング送信
 PROJECT_DIR="$HOME/claude-telegram-bot"
-NOTIFY="python3 $PROJECT_DIR/scripts/telegram-notify.py"
+NOTIFY="python3 $PROJECT_DIR/scripts/line-notify.py"
 OUT_FILE="/tmp/cal-briefing-out.txt"
 
 python3 $PROJECT_DIR/scripts/gcal-todoist.py briefing > "$OUT_FILE" 2>&1

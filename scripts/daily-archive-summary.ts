@@ -6,6 +6,7 @@
 import { Database } from "bun:sqlite";
 import { resolve } from "path";
 import { homedir } from "os";
+import { notify } from "../src/utils/notify";
 
 const DB_PATH =
   process.env.ARCHIVED_MAIL_LOG_PATH ||
@@ -64,24 +65,10 @@ if (trashed.length > 0) {
 
 msg += "\n🔍 全件Gmail検索: label:Jarvis-Auto-Archived\n(※ラベル付与はGAS実装後に有効化)";
 
-const TG_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-const TG_USER = process.env.TELEGRAM_ALLOWED_USERS;
-
-if (TG_TOKEN && TG_USER) {
-  const res = await fetch(
-    `https://api.telegram.org/bot${TG_TOKEN}/sendMessage`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chat_id: TG_USER, text: msg }),
-    },
-  );
-  if (!res.ok) {
-    console.error("Telegram send failed:", res.status, await res.text());
-    process.exit(1);
-  }
-  console.log("Sent. archived=" + archived.length + " trashed=" + trashed.length);
-} else {
-  console.log(msg);
-  console.error("TELEGRAM_BOT_TOKEN or TELEGRAM_ALLOWED_USERS missing");
+// Phase0: notify.sh が .env を読むので process.env ガード不要(どの起動経路でも送れる)。
+const code = await notify(msg, { tag: "archive" });
+if (code !== 0) {
+  console.error("Telegram send failed (queued for retry)");
+  process.exit(1);
 }
+console.log("Sent. archived=" + archived.length + " trashed=" + trashed.length);

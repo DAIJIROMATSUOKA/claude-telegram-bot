@@ -10,7 +10,7 @@
 PROJECT_DIR="$HOME/claude-telegram-bot"
 CLAUDE_BIN="/opt/homebrew/bin/claude"
 OBSIDIAN_CLI="/Applications/Obsidian.app/Contents/MacOS/Obsidian"
-NOTIFY="python3 $PROJECT_DIR/scripts/telegram-notify.py"
+NOTIFY="python3 $PROJECT_DIR/scripts/line-notify.py"
 VAULT="$HOME/Library/Mobile Documents/iCloud~md~obsidian/Documents/MyObsidian"
 INBOX_FILE="$VAULT/00_Inbox/jarvis.md"
 STATE_FILE="$HOME/.jarvis/inbox-processed.txt"

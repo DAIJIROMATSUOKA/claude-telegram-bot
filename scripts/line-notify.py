@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """
-telegram-notify.py - LINE notification sender (drop-in replacement for Telegram version)
-Usage: python3 telegram-notify.py "message text"
-   or: echo "message" | python3 telegram-notify.py -
-   or: python3 telegram-notify.py --file /path/to/file.txt
+line-notify.py - LINE notification sender (api.line.me push).
+Canonical replacement for the mis-named tg-notify.py / telegram-notify.py (both were LINE senders).
+Usage: python3 line-notify.py "message text"
+   or: echo "message" | python3 line-notify.py -
+   or: python3 line-notify.py --file /path/to/file.txt
 Exit 0 on success, 1 on failure.
 """
 import sys, os, json, urllib.request

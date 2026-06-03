@@ -68,3 +68,6 @@ workspace/*-analysis/
 
 # Aerox watcher runtime state (regenerated)
 data/aerox-watch-cache.json
+
+# runtime notification logs
+logs/
