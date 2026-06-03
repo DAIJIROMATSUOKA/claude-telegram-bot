@@ -65,3 +65,6 @@ workspace/*-manuals/**/*.pdf
 
 # Project ladder analysis scratch (customer-derived; canonical copy lives in Dropbox project _AI解析_croppy/)
 workspace/*-analysis/
+
+# Aerox watcher runtime state (regenerated)
+data/aerox-watch-cache.json
