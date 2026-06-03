@@ -58,3 +58,7 @@ models/
 .env.backup
 *.env.bak
 cache/
+
+# Maker manual extracted text (copyrighted, do not commit) — keyence / iai / oriental-motor / ...
+workspace/*-manuals/**/text/
+workspace/*-manuals/**/*.pdf
