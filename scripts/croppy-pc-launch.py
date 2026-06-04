@@ -2,7 +2,7 @@
 """
 croppy-pc-launch.py - PTY-backed launcher for interactive Remote Control with session resume.
 
-Mode: `claude --resume <id> --remote-control <name> --permission-mode bypassPermissions`
+Mode: `claude --resume <id> --remote-control <name> --permission-mode acceptEdits`
 (interactive + RC flag, NOT the server-mode `remote-control` subcommand).
 Server mode cannot resume (GitHub anthropics/claude-code #29748); this flag form can,
 so context survives restarts.
@@ -16,13 +16,12 @@ PTY: interactive RC needs a TTY; parent holds master open so claude's stdin neve
 On claude exit, master EOFs, this process exits, launchd (KeepAlive) restarts it -> resume
 keeps the same conversation.
 
-Permission: --permission-mode bypassPermissions (decision 2026-06-04, DJ): zero prompts for
-iPhone-only operation. The bash sandbox (Seatbelt filesystem/network isolation) is an INDEPENDENT
-layer per Claude Code docs (code.claude.com/docs/en/sandboxing) and stays active regardless of
-permission mode — .env/.ssh stay unreadable, non-allowlisted hosts blocked, writes confined to
-allowed paths. Accepted trade-off: exec-bridge M1 commands (non-sandboxed) also auto-run with no
-prompt, so the M1-privileged-op checkpoint is gone. (Earlier note kept acceptEdits over the false
-belief that skipping prompts disabled the sandbox; modern model decouples them.)
+Permission: --permission-mode acceptEdits. Remote Control sessions support ONLY
+default / acceptEdits / plan — bypassPermissions and auto are NOT available for RC per docs
+(code.claude.com/docs/en/permission-modes, "Web and mobile" tab). So RC prompt-fatigue is reduced
+NOT by switching mode but by permission allow-rules (acceptEdits auto-approves edits + fs commands
+mkdir/touch/rm/mv/cp/sed incl. timeout/nohup wrappers; the allowlist in .claude/settings.json
+pre-approves the rest). The sandbox (Seatbelt) is an independent layer that stays active regardless.
 """
 import os, sys, pty, select, re, subprocess, glob, time
 
@@ -74,9 +73,9 @@ def write_session(sid):
 
 prev_id = read_prev_session()
 if prev_id:
-    ARGS = [CLAUDE, "--resume", prev_id, "--remote-control", NAME, "--permission-mode", "bypassPermissions"]
+    ARGS = [CLAUDE, "--resume", prev_id, "--remote-control", NAME, "--permission-mode", "acceptEdits"]
 else:
-    ARGS = [CLAUDE, "--remote-control", NAME, "--permission-mode", "bypassPermissions"]
+    ARGS = [CLAUDE, "--remote-control", NAME, "--permission-mode", "acceptEdits"]
 
 before_ids = list_session_ids()
 
