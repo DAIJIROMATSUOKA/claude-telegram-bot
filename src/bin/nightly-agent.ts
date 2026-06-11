@@ -4,6 +4,7 @@
  * READ-ONLY: no file modifications, proposals only
  */
 import { createLogger } from "../utils/logger";
+import { notify } from "../utils/notify";
 const log = createLogger("nightly-agent");
 
 import { query } from "@anthropic-ai/claude-agent-sdk";
@@ -13,20 +14,9 @@ const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
 const CHAT_ID = process.env.TELEGRAM_ALLOWED_USERS || "";
 
 async function sendTelegram(text: string) {
-  if (!BOT_TOKEN || !CHAT_ID) {
-    log.info("[Nightly] No Telegram config, printing:", text);
-    return;
-  }
-  const chunks = [];
+  // Phase0: notify.sh が .env を読むので env ガード不要。4000字チャンク維持(TG上限)。
   for (let i = 0; i < text.length; i += 4000) {
-    chunks.push(text.substring(i, i + 4000));
-  }
-  for (const chunk of chunks) {
-    await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chat_id: CHAT_ID, text: chunk }),
-    }).catch(e => log.error("[Nightly] Telegram error:", e));
+    await notify(text.substring(i, i + 4000), { tag: "nightly" });
   }
 }
 

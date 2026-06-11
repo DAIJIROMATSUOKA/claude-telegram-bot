@@ -58,3 +58,21 @@ models/
 .env.backup
 *.env.bak
 cache/
+
+# Maker manual extracted text (copyrighted, do not commit) — keyence / iai / oriental-motor / ...
+workspace/*-manuals/**/text/
+workspace/*-manuals/**/*.pdf
+
+# Project ladder analysis scratch (customer-derived; canonical copy lives in Dropbox project _AI解析_croppy/)
+workspace/*-analysis/
+
+# Aerox watcher runtime state (regenerated)
+data/aerox-watch-cache.json
+
+# inbox-watch / idle-gate runtime state (regenerated)
+workspace/.last-dj-ts
+workspace/.inbox-watch-STOPPED
+workspace/.inbox-watch-last
+
+# runtime notification logs
+logs/

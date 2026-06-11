@@ -95,9 +95,6 @@ cmd_status() {
     echo "Poller: ❌ no lock"
   fi
 
-  echo "=== Auto-Kick ==="
-  [ -f /tmp/autokick-armed ] && echo "Watchdog: 🟢 armed" || echo "Watchdog: ⚪ disarmed"
-
   echo "=== ComfyUI ==="
   pgrep -f "ComfyUI" > /dev/null && echo "ComfyUI: ✅ running" || echo "ComfyUI: ⚪ not running"
 

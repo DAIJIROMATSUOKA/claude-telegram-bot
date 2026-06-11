@@ -31,4 +31,3 @@ else
 fi
 
 bash ~/scripts/notify-line.sh "$MSG" 2>/dev/null || true
-rm -f /tmp/autokick-armed

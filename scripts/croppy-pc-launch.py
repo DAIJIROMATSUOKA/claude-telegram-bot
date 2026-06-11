@@ -16,8 +16,12 @@ PTY: interactive RC needs a TTY; parent holds master open so claude's stdin neve
 On claude exit, master EOFs, this process exits, launchd (KeepAlive) restarts it -> resume
 keeps the same conversation.
 
-NO --dangerously-skip-permissions (decision: prioritize sandbox network isolation; RC is
-interactive so permission prompts surface to the operator; acceptEdits auto-approves edits).
+Permission: --permission-mode acceptEdits. Remote Control sessions support ONLY
+default / acceptEdits / plan — bypassPermissions and auto are NOT available for RC per docs
+(code.claude.com/docs/en/permission-modes, "Web and mobile" tab). So RC prompt-fatigue is reduced
+NOT by switching mode but by permission allow-rules (acceptEdits auto-approves edits + fs commands
+mkdir/touch/rm/mv/cp/sed incl. timeout/nohup wrappers; the allowlist in .claude/settings.json
+pre-approves the rest). The sandbox (Seatbelt) is an independent layer that stays active regardless.
 """
 import os, sys, pty, select, re, subprocess, glob, time
 

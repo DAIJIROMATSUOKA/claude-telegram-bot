@@ -11,7 +11,7 @@
 # === Config ===
 PROJECT_DIR="$HOME/claude-telegram-bot"
 CLAUDE_BIN="/opt/homebrew/bin/claude"
-NOTIFY="python3 $PROJECT_DIR/scripts/telegram-notify.py"
+NOTIFY="python3 $PROJECT_DIR/scripts/line-notify.py"
 LOG_DIR="/tmp/jarvis-briefing"
 STOP_FILE="/tmp/jarvis-briefing-stop"
 PROMPT_FILE="$LOG_DIR/ops-prompt.txt"

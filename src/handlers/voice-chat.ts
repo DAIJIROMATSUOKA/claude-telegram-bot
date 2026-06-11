@@ -76,11 +76,8 @@ export async function handleVoice(ctx: Context): Promise<void> {
     // 4. Show transcription
     await ctx.reply(`🎤 ${text}`);
 
-    // 5. Send transcribed text through Bridge (claude.ai Worker Tab)
-    // This gives full capabilities: web search, MCP, artifacts, etc.
-    const { dispatchToWorker } = await import('./croppy-bridge');
-    typing.stop(); // Bridge handles its own typing indicator
-    await dispatchToWorker(ctx, text, { raw: true });
+    // [Phase4-B 2026-06-04] 音声のclaude.ai中継は廃止。文字起こし表示のみ。
+    typing.stop();
 
   } catch (error: any) {
     const msg = error.message || String(error);

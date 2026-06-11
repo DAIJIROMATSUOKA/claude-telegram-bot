@@ -9,6 +9,7 @@ import { createLogger } from "../utils/logger";
 const log = createLogger("line-schedule-poller");
 
 import { fetchWithTimeout } from '../utils/fetch-with-timeout';
+import { notify } from "../utils/notify";
 
 const GATEWAY_URL = process.env.GATEWAY_URL || 'https://jarvis-memory-gateway.jarvis-matsuoka.workers.dev';
 const LINE_WORKER_URL = process.env.LINE_WORKER_URL || '';
@@ -25,14 +26,8 @@ async function query(sql: string, params?: any[]) {
 }
 
 async function notifyDJ(msg: string) {
-  if (!TG_TOKEN || !TG_CHAT) return;
-  try {
-    await fetchWithTimeout(`https://api.telegram.org/bot${TG_TOKEN}/sendMessage`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id: TG_CHAT, text: msg }),
-    });
-  } catch {}
+  // Phase0: notify.sh が .env を読むので env ガード不要。
+  await notify(msg, { tag: "line-poller" });
 }
 
 async function getTgFileUrl(fileId: string): Promise<string | null> {

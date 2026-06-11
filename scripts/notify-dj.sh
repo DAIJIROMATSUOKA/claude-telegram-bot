@@ -1,19 +1,9 @@
 #!/bin/bash
-# Universal Telegram notification with 🗑 delete button
-# Usage: notify-dj.sh "message" [HTML|Markdown|""]
-MSG="${1:-🦞 作業完了}"
-PARSE="${2:-}"
-source ~/claude-telegram-bot/.env 2>/dev/null
-
-MARKUP='{"inline_keyboard":[[{"text":"🗑","callback_data":"ib:del:sys"}]]}'
-
-ARGS=(-s -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage"
-  -d "chat_id=$TELEGRAM_ALLOWED_USERS"
-  --data-urlencode "text=$MSG"
-  -d "reply_markup=$MARKUP")
-
-if [ -n "$PARSE" ]; then
-  ARGS+=(-d "parse_mode=$PARSE")
-fi
-
-curl "${ARGS[@]}" > /dev/null 2>&1
+# notify-dj.sh — backward-compat shim → 統一通知transport (scripts/notify.sh)。
+# 後方互換: 🗑削除ボタン + 任意parse_mode を維持。獲得: 配信ログ + 失敗時リトライキュー + transport差替可。
+# ※新規/無ボタンで良い通知は notify.sh を直接使う(H1: ghost button削減)。
+set -uo pipefail
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+args=("${1:-🦞 作業完了}" --button --tag notify-dj)
+[ -n "${2:-}" ] && args+=(--parse "$2")
+exec "$DIR/notify.sh" "${args[@]}"

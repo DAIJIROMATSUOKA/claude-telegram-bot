@@ -24,6 +24,7 @@ const TAB_MANAGER = `${SCRIPTS_DIR}/croppy-tab-manager.sh`;
 
 // GAS Gmail Web App (for archive/trash)
 const GAS_GMAIL_URL = process.env.GAS_GMAIL_URL || '';
+const AUTO_ARCHIVE_ENABLED = process.env.AUTO_ARCHIVE_ENABLED !== 'false';
 const GAS_GMAIL_KEY = process.env.GAS_GMAIL_KEY || '';
 
 const POLL_INTERVAL = 60_000;    // 60 seconds
@@ -547,6 +548,13 @@ async function executeAction(item: TriageItem, judgment: TriageJudgment): Promis
   // Always delete GAS notification first (triage replaces it)
   if (item.telegram_msg_id) {
     try { await botApi.deleteMessage(chatId, item.telegram_msg_id); } catch (e) { /* expired */ }
+  }
+
+  // [AUTO_ARCHIVE_OFF guard 2026-05-27] Force archive/delete -> escalate when disabled
+  if (!AUTO_ARCHIVE_ENABLED && (judgment.action === 'archive' || judgment.action === 'delete')) {
+    log.info(`[Triage] AUTO_ARCHIVE_ENABLED=false, forcing escalate. original=${judgment.action}`);
+    judgment.reason = `[AUTO_ARCHIVE_OFF] 元判定=${judgment.action}: ${judgment.reason}`;
+    judgment.action = 'escalate';
   }
 
   switch (judgment.action) {

@@ -25,7 +25,7 @@ log() { echo "[$(date '+%H:%M:%S')] $1" | tee -a "$LOGFILE"; }
 notify() {
   local MSG_FILE="$LOG_DIR/.tg-msg-$$.txt"
   echo "$1" > "$MSG_FILE"
-  python3 "$PROJECT_DIR/scripts/tg-notify.py" "$ENV_FILE" "$MSG_FILE" 2>&1 | tee -a "$LOGFILE"
+  python3 "$PROJECT_DIR/scripts/line-notify.py" --file "$MSG_FILE" 2>&1 | tee -a "$LOGFILE"
   rm -f "$MSG_FILE"
 }
 
